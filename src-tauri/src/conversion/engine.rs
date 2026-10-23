@@ -238,8 +238,8 @@ pub fn export_docx(
         } else {
             local(source)?
         };
-        if bytes.len() > 4 * 1024 * 1024 {
-            return Err("Word 单张图片超过 4 MiB".into());
+        if bytes.len() as u64 > MAX_MEDIA {
+            return Err("Word 单张图片超过 64 MiB 上限".into());
         }
         total += bytes.len() as u64;
         if total > MAX_MEDIA {

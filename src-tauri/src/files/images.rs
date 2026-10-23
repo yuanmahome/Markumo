@@ -8,7 +8,10 @@ use std::{
     io::{Read, Write},
 };
 
-const MAX_IMAGE_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_IMAGE_FILE_BYTES: u64 = 100 * 1024 * 1024;
+pub const MAX_CLIPBOARD_BYTES: usize = 50 * 1024 * 1024;
+pub const MAX_SAFE_SINGLE_DIM: u32 = 65_535;
+pub const MAX_SAFE_PIXELS: u64 = 150_000_000;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -150,25 +153,25 @@ mod dropped_directory_tests {
         files.set_owner("window-a");
         let token = files.open_selected(document, None).unwrap().metadata.token;
         assert!(files
-            .markdown_image(&token, "assets/inside.png", &[])
+            .markdown_image(&token, "assets/inside.png", &[], false)
             .is_ok());
 
         files.set_owner("window-b");
         assert!(files
-            .markdown_image(&token, "assets/inside.png", &[])
+            .markdown_image(&token, "assets/inside.png", &[], false)
             .is_err());
         files.set_owner("window-a");
         let absolute = outside.to_string_lossy().into_owned();
-        assert!(files.markdown_image(&token, &absolute, &[]).is_err());
+        assert!(files.markdown_image(&token, &absolute, &[], false).is_err());
         assert!(files
             .authorize_image_read(&token, &absolute, &outside)
             .is_ok());
-        assert!(files.markdown_image(&token, &absolute, &[]).is_ok());
+        assert!(files.markdown_image(&token, &absolute, &[], false).is_ok());
 
         files.release(&token);
         assert!(files.image_reads.is_empty());
         assert!(files
-            .markdown_image(&token, "assets/inside.png", &[])
+            .markdown_image(&token, "assets/inside.png", &[], false)
             .is_err());
     }
 
@@ -177,11 +180,68 @@ mod dropped_directory_tests {
         use serde::de::value::{Error as ValueError, SeqDeserializer};
         use serde::Deserialize;
         let oversized =
-            SeqDeserializer::<_, ValueError>::new(std::iter::repeat_n(0u8, MAX_IMAGE_BYTES + 1));
+            SeqDeserializer::<_, ValueError>::new(std::iter::repeat_n(0u8, MAX_CLIPBOARD_BYTES + 1));
         assert!(ImageBytes::deserialize(oversized).is_err());
 
         let valid = SeqDeserializer::<_, ValueError>::new(vec![1u8, 2, 3].into_iter());
         assert_eq!(ImageBytes::deserialize(valid).unwrap().0, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn svg_security_sanitization_rejects_scripts_and_external_resources() {
+        let clean = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><circle cx=\"50\" cy=\"50\" r=\"40\" fill=\"blue\"/></svg>";
+        assert!(is_svg(clean));
+        assert!(sanitize_svg(clean).is_ok());
+        assert_eq!(svg_dimensions(clean), Some((100, 100)));
+
+        let with_script = b"<svg><script>alert(1)</script><rect/></svg>";
+        assert!(sanitize_svg(with_script).is_err());
+
+        let with_onload = b"<svg onload=\"alert(1)\"><circle/></svg>";
+        assert!(sanitize_svg(with_onload).is_err());
+
+        let with_js_href = b"<svg><image href=\"javascript:alert(1)\"/></svg>";
+        assert!(sanitize_svg(with_js_href).is_err());
+
+        let with_remote = b"<svg><image href=\"https://evil.com/leak.png\"/></svg>";
+        assert!(sanitize_svg(with_remote).is_err());
+
+        let with_foreign_obj = b"<svg><foreignObject><div>bad</div></foreignObject></svg>";
+        assert!(sanitize_svg(with_foreign_obj).is_err());
+
+        let with_xxe = b"<?xml version=\"1.0\"?><!DOCTYPE svg SYSTEM \"http://evil.com/xxe\"><svg/>";
+        assert!(sanitize_svg(with_xxe).is_err());
+    }
+
+    #[test]
+    fn decompression_bomb_checks_protect_memory_without_refusing_normal_large_images() {
+        // Normal 120MP image: 12000 x 10000 with 15MB file size
+        assert!(check_decompression_bomb(15 * 1024 * 1024, 12000, 10000).is_ok());
+
+        // Extreme pixel bomb: 200MP
+        assert!(check_decompression_bomb(10 * 1024 * 1024, 20000, 10000).is_err());
+
+        // Extreme single dimension > 65535
+        assert!(check_decompression_bomb(10 * 1024 * 1024, 70000, 100).is_err());
+
+        // High ratio decompression bomb: 50KB file claiming 10000 x 10000 (400MB uncompressed)
+        assert!(check_decompression_bomb(50 * 1024, 10000, 10000).is_err());
+    }
+
+    #[test]
+    fn preview_dimensions_adapts_for_large_and_long_images() {
+        // Normal image: 1920 x 1080 -> No downsample needed
+        assert_eq!(target_preview_dimensions(1920, 1080, 500 * 1024), None);
+
+        // 6000 x 4000 camera photo -> Downsample to width 2048
+        let d = target_preview_dimensions(6000, 4000, 8 * 1024 * 1024);
+        assert!(d.is_some());
+        let (tw, th) = d.unwrap();
+        assert_eq!(tw, 2048);
+        assert_eq!(th, 1365);
+
+        // Long screenshot: 800 x 10000 (8MP) -> Keep full width 800 so text is crisp!
+        assert_eq!(target_preview_dimensions(800, 10000, 2 * 1024 * 1024), None);
     }
 }
 
@@ -198,7 +258,7 @@ pub struct ImageImport {
 
 /// Clipboard pixels arrive as a JSON number array. Apply the image budget while
 /// the array is being read so an oversized or malicious IPC payload cannot
-/// allocate more than the viewer's 4 MiB encoded-image budget first.
+/// allocate more than the viewer's 50 MiB encoded-image budget first.
 pub struct ImageBytes(Vec<u8>);
 
 impl<'de> Deserialize<'de> for ImageBytes {
@@ -210,17 +270,17 @@ impl<'de> Deserialize<'de> for ImageBytes {
         impl<'de> serde::de::Visitor<'de> for ImageBytesVisitor {
             type Value = ImageBytes;
             fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(formatter, "图片字节数组（最多 4 MiB）")
+                write!(formatter, "图片字节数组（最多 50 MiB）")
             }
             fn visit_seq<A>(self, mut sequence: A) -> std::result::Result<ImageBytes, A::Error>
             where
                 A: serde::de::SeqAccess<'de>,
             {
                 let mut bytes =
-                    Vec::with_capacity(sequence.size_hint().unwrap_or(0).min(MAX_IMAGE_BYTES));
+                    Vec::with_capacity(sequence.size_hint().unwrap_or(0).min(MAX_CLIPBOARD_BYTES));
                 while let Some(byte) = sequence.next_element::<u8>()? {
-                    if bytes.len() >= MAX_IMAGE_BYTES {
-                        return Err(serde::de::Error::custom("图片超过 4 MiB 上限"));
+                    if bytes.len() >= MAX_CLIPBOARD_BYTES {
+                        return Err(serde::de::Error::custom("图片超过 50 MiB 上限"));
                     }
                     bytes.push(byte);
                 }
@@ -238,6 +298,157 @@ pub struct ImportedImage {
     pub name: String,
 }
 
+pub fn is_svg(bytes: &[u8]) -> bool {
+    let s = match std::str::from_utf8(bytes) {
+        Ok(s) => s.trim_start_matches('\u{feff}').trim_start(),
+        Err(_) => return false,
+    };
+    (s.starts_with("<svg")
+        || s.starts_with("<?xml")
+        || s.starts_with("<!--")
+        || s.starts_with("<!DOCTYPE"))
+        && s.contains("<svg")
+}
+
+pub fn sanitize_svg(bytes: &[u8]) -> Result<()> {
+    let s = std::str::from_utf8(bytes)
+        .map_err(|_| FileError::new("image_format", "SVG 文件不是有效的 UTF-8 编码。"))?;
+    let lower = s.to_ascii_lowercase();
+
+    if lower.contains("<script") || lower.contains("</script>") {
+        return fail("image_format", "SVG 包含未受信任的脚本，已被阻止显示以保证安全。");
+    }
+    if lower.contains("<foreignobject")
+        || lower.contains("<iframe")
+        || lower.contains("<embed")
+        || lower.contains("<object")
+        || lower.contains("<applet")
+    {
+        return fail("image_format", "SVG 包含危险内嵌对象，已被阻止显示以保证安全。");
+    }
+    if lower.contains("<!entity")
+        || (lower.contains("<!doctype") && (lower.contains("system") || lower.contains("public")))
+    {
+        return fail("image_format", "SVG 包含外部实体声明，已被阻止显示以保证安全。");
+    }
+    if lower.contains("@import") {
+        return fail("image_format", "SVG 包含外部样式表引用，已被阻止显示以保证安全。");
+    }
+    if let Ok(re_handler) = regex::Regex::new(r#"(?i)\bon[a-z]{2,}\s*="#) {
+        if re_handler.is_match(&lower) {
+            return fail("image_format", "SVG 包含未受信任的事件处理器，已被阻止显示以保证安全。");
+        }
+    }
+    if let Ok(re_js) = regex::Regex::new(r#"(?i)(?:href|src|xlink:href)\s*=\s*['"]\s*(?:javascript|data|vbscript):"#) {
+        if re_js.is_match(&lower) {
+            return fail("image_format", "SVG 包含危险协议链接，已被阻止显示以保证安全。");
+        }
+    }
+    if let Ok(re_ext) = regex::Regex::new(r#"(?i)(?:href|src|xlink:href)\s*=\s*['"]\s*(?:https?:|//)"#) {
+        if re_ext.is_match(&lower) {
+            return fail("image_format", "SVG 包含不可信外部网络资源引用，已被阻止显示以保证安全。");
+        }
+    }
+
+    Ok(())
+}
+
+pub fn svg_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    let s = std::str::from_utf8(bytes).ok()?;
+    let svg_tag_start = s.find("<svg")?;
+    let svg_tag_end = s[svg_tag_start..].find('>')? + svg_tag_start;
+    let tag = &s[svg_tag_start..svg_tag_end];
+
+    if let Ok(re_viewbox) = regex::Regex::new(r#"(?i)viewBox\s*=\s*["']\s*([\d.-]+)[\s,]+([\d.-]+)[\s,]+([\d.-]+)[\s,]+([\d.-]+)\s*["']"#) {
+        if let Some(caps) = re_viewbox.captures(tag) {
+            if let (Ok(w), Ok(h)) = (caps[3].parse::<f64>(), caps[4].parse::<f64>()) {
+                if w > 0.0 && h > 0.0 {
+                    return Some((w.round() as u32, h.round() as u32));
+                }
+            }
+        }
+    }
+    let re_w = regex::Regex::new(r#"(?i)\bwidth\s*=\s*["']\s*([\d.]+)"#).ok();
+    let re_h = regex::Regex::new(r#"(?i)\bheight\s*=\s*["']\s*([\d.]+)"#).ok();
+    if let (Some(re_w), Some(re_h)) = (re_w, re_h) {
+        if let (Some(w_cap), Some(h_cap)) = (re_w.captures(tag), re_h.captures(tag)) {
+            if let (Ok(w), Ok(h)) = (w_cap[1].parse::<f64>(), h_cap[1].parse::<f64>()) {
+                if w > 0.0 && h > 0.0 {
+                    return Some((w.round() as u32, h.round() as u32));
+                }
+            }
+        }
+    }
+    Some((800, 600))
+}
+
+pub fn check_decompression_bomb(file_size: u64, width: u32, height: u32) -> Result<()> {
+    if width == 0 || height == 0 {
+        return fail("image_format", "图片尺寸无效（宽或高为 0）。");
+    }
+    if width > MAX_SAFE_SINGLE_DIM || height > MAX_SAFE_SINGLE_DIM {
+        return fail(
+            "image_size",
+            "图片单边尺寸超出安全上限（最大 65535 像素）。",
+        );
+    }
+    let pixels = (width as u64) * (height as u64);
+    if pixels > MAX_SAFE_PIXELS {
+        return fail(
+            "image_size",
+            "图片总像素超出安全上限（最大 1.5 亿像素），可能为解压炸弹。",
+        );
+    }
+    let uncompressed_bytes = pixels.saturating_mul(4);
+    if uncompressed_bytes > 30 * 1024 * 1024 && file_size < 100 * 1024 {
+        let ratio = uncompressed_bytes / file_size.max(1);
+        if ratio > 1500 {
+            return fail(
+                "image_size",
+                "图片压缩比异常，可能为解压炸弹，已阻止加载以保护内存。",
+            );
+        }
+    }
+    Ok(())
+}
+
+pub fn target_preview_dimensions(w: u32, h: u32, byte_len: usize) -> Option<(u32, u32)> {
+    let pixels = (w as u64) * (h as u64);
+    if w <= 2048 && h <= 4096 && pixels <= 8_000_000 && byte_len <= 4 * 1024 * 1024 {
+        return None;
+    }
+    let scale_w = if w > 2048 { 2048.0 / w as f64 } else { 1.0 };
+    let scale_h = if h > 16384 { 16384.0 / h as f64 } else { 1.0 };
+    let scale_pixels = if pixels > 8_000_000 {
+        (8_000_000.0 / pixels as f64).sqrt()
+    } else {
+        1.0
+    };
+    let scale = scale_w.min(scale_h).min(scale_pixels);
+    if scale >= 0.95 && byte_len <= 4 * 1024 * 1024 {
+        return None;
+    }
+    let tw = ((w as f64 * scale).round() as u32).max(1);
+    let th = ((h as f64 * scale).round() as u32).max(1);
+    Some((tw, th))
+}
+
+pub fn downsample_image(bytes: &[u8], target_w: u32, target_h: u32, is_png: bool) -> Result<Vec<u8>> {
+    let img = image::load_from_memory(bytes)
+        .map_err(|e| FileError::new("image_format", &format!("图片解码失败: {e}")))?;
+    let thumb = img.thumbnail(target_w, target_h);
+    let mut out = Vec::new();
+    let mut cursor = std::io::Cursor::new(&mut out);
+    if is_png && img.color().has_alpha() {
+        thumb.write_to(&mut cursor, image::ImageFormat::Png)
+            .map_err(|e| FileError::new("image_format", &format!("生成预览失败: {e}")))?;
+    } else {
+        thumb.write_to(&mut cursor, image::ImageFormat::Jpeg)
+            .map_err(|e| FileError::new("image_format", &format!("生成预览失败: {e}")))?;
+    }
+    Ok(out)
+}
+
 fn image_type(bytes: &[u8]) -> Result<&'static str> {
     let kind = if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         "png"
@@ -247,26 +458,21 @@ fn image_type(bytes: &[u8]) -> Result<&'static str> {
         "gif"
     } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
         "webp"
+    } else if is_svg(bytes) {
+        "svg"
     } else {
         return fail(
             "image_format",
-            "仅支持 PNG、JPEG、GIF、WebP 图片，不支持 SVG。",
+            "仅支持 PNG、JPEG、GIF、WebP、SVG 图片。",
         );
     };
+    if kind == "svg" {
+        sanitize_svg(bytes)?;
+        return Ok(kind);
+    }
     let (w, h) = dimensions(bytes)
         .ok_or_else(|| FileError::new("image_format", "图片头损坏或格式不受支持。"))?;
-    if bytes.len() > MAX_IMAGE_BYTES
-        || w == 0
-        || h == 0
-        || w > 16384
-        || h > 16384
-        || u64::from(w) * u64::from(h) > 16_000_000
-    {
-        return fail(
-            "image_size",
-            "图片限制：4 MiB、1600 万像素、单边 16384 像素。",
-        );
-    }
+    check_decompression_bomb(bytes.len() as u64, w, h)?;
     Ok(kind)
 }
 
@@ -358,18 +564,18 @@ fn read_raster(path: &Path) -> Result<Vec<u8>> {
             );
         }
     }
-    if !metadata.is_file() || metadata.len() > MAX_IMAGE_BYTES as u64 {
-        return fail("image_size", "图片必须为不超过 4 MiB 的普通文件。");
+    if !metadata.is_file() || metadata.len() > MAX_IMAGE_FILE_BYTES {
+        return fail("image_size", "图片必须为不超过 100 MiB 的普通文件。");
     }
     let mut bytes = Vec::new();
     Read::by_ref(&mut file)
-        .take(MAX_IMAGE_BYTES as u64 + 1)
+        .take(MAX_IMAGE_FILE_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(FileError::io)?;
-    if bytes.len() > MAX_IMAGE_BYTES
+    if bytes.len() as u64 > MAX_IMAGE_FILE_BYTES
         || file.metadata().map_err(FileError::io)?.modified().ok() != metadata.modified().ok()
     {
-        return fail("image_size", "图片超出预算或读取期间发生变化。");
+        return fail("image_size", "图片超出 100 MiB 上限或读取期间发生变化。");
     }
     Ok(bytes)
 }
@@ -575,7 +781,7 @@ impl FileService {
         Ok(())
     }
 
-    fn resolve_image(&self, token: &str, source: &str) -> Result<PathBuf> {
+    pub(crate) fn resolve_image(&self, token: &str, source: &str) -> Result<PathBuf> {
         let document = self.image_document(token)?;
         if source.is_empty() || source.contains(['\0', '\r', '\n']) || source.len() > 4096 {
             return fail("image_scope", "图片路径无效。");
@@ -824,6 +1030,9 @@ pub fn dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
             offset += length;
         }
     }
+    if is_svg(bytes) {
+        return svg_dimensions(bytes);
+    }
     None
 }
 
@@ -833,6 +1042,7 @@ impl FileService {
         token: &str,
         relative: &str,
         roots: &[PathBuf],
+        full: bool,
     ) -> Result<Vec<u8>> {
         let document = self.image_document(token)?;
         let canonical = self.resolve_image(token, relative)?;
@@ -862,30 +1072,25 @@ impl FileService {
             );
         }
         let metadata = std::fs::metadata(&canonical).map_err(FileError::io)?;
-        if metadata.len() > MAX_IMAGE_BYTES as u64 {
-            return fail("image_size", "图片超过 4 MiB，已保留可编辑路径。");
+        if metadata.len() > MAX_IMAGE_FILE_BYTES {
+            return fail("image_size", "图片超过 100 MiB，已保留可编辑路径。");
         }
         let bytes = read_raster(&canonical)?;
         if checked_path(&target, false)? != canonical {
             return fail("image_scope", "读取期间图片路径发生变化，请重试。");
         }
-        if bytes.len() > MAX_IMAGE_BYTES {
-            return fail("image_size", "图片超过 4 MiB。");
+        let kind = image_type(&bytes)?;
+        if kind == "svg" || kind == "gif" || kind == "webp" || full {
+            return Ok(bytes);
         }
-        let (width, height) = dimensions(&bytes).ok_or_else(|| {
-            FileError::new(
-                "image_format",
-                "仅预览 PNG、JPEG、GIF、WebP；损坏图片或 SVG 保留源码。",
-            )
-        })?;
-        if width == 0
-            || height == 0
-            || width > 16384
-            || height > 16384
-            || width as u64 * height as u64 > 16_000_000
-        {
-            return fail("image_size", "图片尺寸超过安全预览范围。");
+        let (width, height) = dimensions(&bytes).unwrap_or((0, 0));
+        if let Some((tw, th)) = target_preview_dimensions(width, height, bytes.len()) {
+            match downsample_image(&bytes, tw, th, kind == "png") {
+                Ok(thumb) => Ok(thumb),
+                Err(_) => Ok(bytes),
+            }
+        } else {
+            Ok(bytes)
         }
-        Ok(bytes)
     }
 }

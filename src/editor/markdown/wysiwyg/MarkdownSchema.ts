@@ -23,6 +23,13 @@ nodes.html_inline = {
   attrs: { source: {default:''} },
   toDOM: node => ['span', {'data-html-inline':'true', class:'md-html-inline-node'}, node.attrs.source],
 }
+// A transient, inert atom holds the exact text of an image being edited. It
+// serializes to ordinary source; no private draft is kept outside the document.
+nodes.image_source = {
+  group: 'inline', inline: true, atom: true,
+  attrs: { source: { default: '' } },
+  toDOM: node => ['span', { class: 'md-image-draft' }, node.attrs.source],
+}
 nodes.protected_source = {
   group: 'block', atom: true, selectable: true, isolating: true,
   attrs: { sourceId: {default:null}, source: {default:''}, label: {default:'受保护源码'}, kind: {default:'unknown'} },
@@ -100,6 +107,7 @@ nodes.image = {
     align: { default: null },
     htmlSource: { default: null },
     zoom: { default: null },
+    unresolvedReference: { default: null },
   },
   parseDOM: [
     {

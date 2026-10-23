@@ -53,10 +53,10 @@ window.f = {
     id = clean ? manager.openFile({ token: 'live-fixture', path: 'C:/fixture/live.md', name: 'live.md', text: source,
       version: 'fixture-v1', encoding: 'UTF-8', bom: false, eol: 'LF', readOnly }) : manager.createUntitled('md')
     if (!clean) manager.dispatch(id, { changes: { from: 0, insert: source }, annotations: CMTransaction.addToHistory.of(false) })
-    manager.getState(id).facet(markdownResources).loadLocal = async (p) => {
+    manager.getState(id).facet(markdownResources).loadLocal = window.__globalLoadLocal || (async (p) => {
       if (String(p).includes('broken')) throw new Error('File not found')
       return pixel
-    }
+    })
     publications = []
     const dispatch = manager.dispatch.bind(manager)
     manager.dispatch = (documentId, spec) => {

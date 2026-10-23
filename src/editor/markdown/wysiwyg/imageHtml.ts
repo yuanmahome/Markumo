@@ -3,7 +3,7 @@
  * write for sized/aligned images.
  *
  * Only the attributes this editor itself emits are accepted. Anything else —
- * event handlers, style, srcset, unknown attributes — makes the element fall
+ * event handlers, arbitrary CSS, srcset, unknown attributes — makes the element fall
  * back to the inert "protected source" block so hostile document content can
  * never become executable markup or an editable node with smuggled state.
  */
@@ -59,7 +59,6 @@ export function escapeHtmlAttribute(value: unknown): string {
  */
 export function parseControlledImageHtml(source: string): ControlledImage | null {
   const text = source.trim().replace(/\r\n/g, '\n')
-  if (text.includes('\n')) return null
   const element = IMAGE_PATTERN.exec(text)
   if (!element) return null
 

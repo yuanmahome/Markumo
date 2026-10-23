@@ -5,7 +5,6 @@ import { parser } from '@lezer/markdown'
 import { markdownSyntaxExtensions } from '../semantics'
 import { markdownParser } from './MarkdownParser'
 import { parseControlledImageHtml } from './imageHtml'
-import { positionImageOverlay } from './imageOverlay'
 import type { MarkdownSourceBridge, SourcePatch } from './MarkdownSourceBridge'
 
 const syntax = parser.configure(markdownSyntaxExtensions)
@@ -38,8 +37,11 @@ export function inlineSourceRange(bridge: MarkdownSourceBridge, doc: PMNode, fro
       // Attribute edits may have rewritten HTML while the atom still retains
       // its previous spelling. Compare image semantics without that spelling.
       const image = content?.firstChild, target = expected.firstChild
-      return !!(parseControlledImageHtml(raw) && content?.childCount === 1 && expected.childCount === 1 && image && target &&
-        image.type.create({ ...image.attrs, htmlSource: target.attrs.htmlSource }, image.content, image.marks).eq(target))
+      return !!(content?.childCount === 1 && expected.childCount === 1 && image && target && image.type === target.type &&
+        (image.attrs.alt ?? '') === (target.attrs.alt ?? '') && (image.attrs.title ?? null) === (target.attrs.title ?? null) &&
+        image.type.create({ ...image.attrs, alt: target.attrs.alt, title: target.attrs.title,
+          ...(parseControlledImageHtml(raw) ? { htmlSource: target.attrs.htmlSource } : {}),
+        }, image.content, image.marks).eq(target))
     }
     // Source syntax and PM atoms share document order, including duplicate
     // images and images nested in lists, quotes and table cells.
@@ -102,7 +104,6 @@ export class InlineSourceView {
   private pointerDown=false
   private blurPending=false
   private blurTimer:ReturnType<typeof setTimeout>|undefined
-  private overlayCleanup?: () => void
   private onPointerDown=()=>{this.pointerDown=true}
   private onPointerUp=()=>{
     this.pointerDown=false
@@ -133,23 +134,34 @@ export class InlineSourceView {
     document.addEventListener('pointerdown',this.onPointerDown,true)
     document.addEventListener('pointerup',this.onPointerUp,true)
     document.addEventListener('pointercancel',this.onPointerUp,true)
+    const publishInput = (raw: string, content: Fragment) => {
+      const focused = document.activeElement === this.input
+      const accepted = this.publish(this, raw, content)
+      // Replacing an image atom by incomplete source may move its preceding
+      // widget in PM's DOM reconciliation. Keep the editing surface focused.
+      if (focused && !this.dead && this.dom.isConnected) this.input.focus({ preventScroll: true })
+      return accepted
+    }
     const accept = () => {
       if (this.dead || this.composing) return
       this.draft = this.input.innerText.replace(/\r\n?/g, '\n')
       if (this.kind === 'image' && !this.draft.trim()) {
-        if (this.publish(this, '', Fragment.empty)) {
+        if (publishInput('', Fragment.empty)) {
           this.accepted = ''
           this.expected = Fragment.empty
           this.close(true, this.from)
           return
         }
       }
-      const content = parseInlineSource(this.draft, this.inherited, environment())
-      if (content && this.publish(this, this.draft, content)) { this.accepted = this.draft; this.expected = content }
+      let content = parseInlineSource(this.draft, this.inherited, environment())
+      if (this.kind === 'image' && (!content || content.childCount !== 1 || content.firstChild?.type.name !== 'image')) {
+        content = Fragment.from(markdownParser.schema.nodes.image_source.create({ source: this.draft }, null, this.inherited))
+      }
+      const selection = this.selection()
+      if (content && publishInput(this.draft, content)) { this.accepted = this.draft; this.expected = content }
       this.dom.classList.toggle('md-local-source-invalid', this.pending)
       this.status.hidden = !this.pending
       this.status.textContent = this.pending ? '此局部修改尚未应用。请修正为行内 Markdown，或按 Esc 取消未应用内容。' : ''
-      const selection = this.selection()
       this.paint()
       if (selection) this.select(selection.anchor, selection.head)
     }
@@ -278,33 +290,22 @@ export class InlineSourceView {
     this.input.focus({preventScroll:true})
     if (selectAll) this.select(0, this.draft.length)
     else if (this.kind === 'image' && offset === undefined) {
+      if (/^!\[(?:\\.|[^\]\\])*\]\(\s*\)$/.test(this.draft)) {
+        const path = this.draft.lastIndexOf('(') + 1
+        this.select(path, path)
+        return
+      }
       const alt = /^!\[([^\]]*)\]/.exec(this.draft)
       const at = alt ? 2 : this.draft.length
       this.select(at, alt ? at + alt[1].length : at)
     } else this.select(offset ?? 0, offset ?? 0)
   }
-  attachImageOverlay(pane: HTMLElement, anchor: () => HTMLElement | null) {
-    const reposition = () => {
-      const image = anchor()
-      if (!this.dead && image && this.dom.isConnected) positionImageOverlay(this.dom, image, pane)
-    }
-    const observer = new ResizeObserver(reposition)
-    observer.observe(pane)
-    observer.observe(this.dom)
-    const image = anchor()
-    if (image) observer.observe(image)
-    window.addEventListener('resize', reposition)
-    document.addEventListener('scroll', reposition, true)
-    this.overlayCleanup = () => {
-      observer.disconnect()
-      window.removeEventListener('resize', reposition)
-      document.removeEventListener('scroll', reposition, true)
-    }
-    queueMicrotask(reposition)
-  }
   decorations(doc: PMNode) {
     if (this.dead || this.to > doc.content.size) return DecorationSet.empty
-    const decorations = [Decoration.widget(this.kind === 'image' ? this.from : this.to, this.dom, { key:this.key, side:this.kind === 'image' ? -1 : 1, stopEvent:()=>true, ignoreSelection:true })]
+    const decorations = [Decoration.widget(this.kind === 'image' ? this.from : this.to, this.dom, { key:this.key, side:this.kind === 'image' ? -1 : 1, stopEvent:event=>this.kind !== 'image' || event.type !== 'contextmenu', ignoreSelection:true })]
+    if (this.kind === 'image' && this.from < this.to) decorations.push(Decoration.node(this.from, this.to, {
+      class: doc.nodeAt(this.from)?.type.name === 'image_source' ? 'md-image-draft-covered' : 'md-image-source-open',
+    }))
     if (this.kind !== 'image' && this.from < this.to) decorations.push(Decoration.inline(this.from, this.to, { class: 'md-local-source-covered' }))
     return DecorationSet.create(doc, decorations)
   }
@@ -324,11 +325,10 @@ export class InlineSourceView {
     if (patch.to <= this.sourceFrom) { const delta = patch.insert.length - (patch.to - patch.from); this.sourceFrom += delta; this.sourceTo += delta }
     else if (patch.from < this.sourceTo) this.close()
   }
-  acceptRange(to: number, sourceTo: number) { this.to = to; this.sourceTo = sourceTo }
+  acceptRange(to: number, sourceTo: number, expected?: Fragment) { this.to = to; this.sourceTo = sourceTo; if (expected) this.expected = expected }
   destroy() {
     if (this.dead) return
     this.dead=true
-    this.overlayCleanup?.()
     if(this.blurTimer)clearTimeout(this.blurTimer)
     document.removeEventListener('pointerdown',this.onPointerDown,true)
     document.removeEventListener('pointerup',this.onPointerUp,true)

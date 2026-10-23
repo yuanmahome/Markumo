@@ -90,33 +90,46 @@ body.light .markdown-live { --text: #333; --bright: #333; --muted: #777; --line:
 .markdown-live .md-raw-link { color: var(--md-link-color); text-decoration: underline; }
 .markdown-live .md-raw-delimiter, .markdown-live .md-raw-destination { color: var(--muted); opacity: .65; font-weight: normal; font-style: normal; text-decoration: none; }
 .markdown-live .md-source-image {
-  position: fixed;
-  z-index: 30;
-  display: block;
-  width: max-content;
+  position: static;
+  display: inline;
   min-width: 0;
   box-sizing: border-box;
   margin: 0;
-  padding: 3px 6px;
-  border-radius: 3px;
-  background: var(--paper);
+  padding: 0;
+  background: transparent;
   color: var(--ink);
   font: 13px/1.65 var(--font-mono);
   line-height: 1.65;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  overflow: auto;
   user-select: text;
   cursor: text;
 }
 .markdown-live .md-source-image .md-inline-source-input {
-  display: block;
+  display: inline;
   min-width: 1ch;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
   -webkit-user-select: text;
 }
+.markdown-live .md-prose p:has(> .md-image-standalone) > .md-source-image { display: block; line-height: 1.65; text-align: left; }
+.markdown-live .md-image-draft-covered { display: none !important; }
+.markdown-live .md-image-source-open > .md-image-compact-source { display: none; }
+.markdown-live .md-image-compact-source, .markdown-live .md-image-draft {
+  font: 13px/1.65 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  cursor: text;
+}
+.markdown-live .md-image-preview.md-image-compact { display: inline !important; width: auto !important; line-height: 1.65; }
+.markdown-live .md-image-compact > .md-image-media { display: inline; vertical-align: baseline; }
+.markdown-live .md-image-compact .md-image-status { display: inline; }
+.markdown-live .md-image-compact .broken-image-tag { padding: 0 2px; font: 14px/1.4 var(--font-sans); vertical-align: baseline; }
+.markdown-live .md-image-compact .md-image-browse { display: inline-block; vertical-align: baseline; }
+.markdown-live .md-image-compact .md-image-browse[hidden] { display: none; }
+.markdown-live .md-document .md-prose p:has(> .md-image-preview.md-image-compact) { line-height: 1.65; text-align: left; }
 .markdown-live .md-local-source-invalid { outline: 1px solid var(--pink); }
 .markdown-live .md-inline-source-warning { display: block; font: var(--ui-small-font-size)/1.5 var(--font-sans); color: var(--pink); padding: 3px 5px; }
 

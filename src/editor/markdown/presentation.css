@@ -185,16 +185,16 @@ body.light :is(.markdown-live, .split-preview-pane) {
 :is(.markdown-live, .split-preview-pane) :is(.md-image-preview, .md-image-slot).is-broken-image {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
-  border: 1px dashed var(--line);
-  border-radius: 4px;
-  background: var(--soft);
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
   vertical-align: middle;
-  margin: 2px 0;
+  margin: 0;
 }
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) .md-math-output { display: block; box-sizing: border-box; max-width: 100%; padding: 12px; margin: 1.1em 0; overflow: auto; text-align: center; white-space: normal; }
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) .md-math-output .katex-display { margin: 0 auto; min-width: max-content; width: fit-content; }
@@ -424,7 +424,7 @@ body.light :is(.markdown-live, .split-preview-pane) {
   box-sizing: border-box;
   max-width: 100%;
   line-height: 0;
-  /* Same alignment as the source strip, so selecting never adds a line box. */
+  /* Source widgets are siblings in normal paragraph flow. */
   vertical-align: middle;
   background: transparent;
   border: 0;
@@ -436,152 +436,20 @@ body.light :is(.markdown-live, .split-preview-pane) {
   padding: 0;
 }
 
-/* 局部源码：与图片同一行，就地编辑，不产生新的块 */
-.md-image-source {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0;
-  max-width: 100%;
-  margin-right: 4px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  box-sizing: border-box;
-  vertical-align: baseline;
-  font: 13px/1.5 var(--font-mono, ui-monospace, monospace);
-  color: var(--ink);
-}
-.md-image-source[hidden] { display: none; }
-/* Typora shows plain text: no focus box around the whole source. */
-.md-image-source:focus-within { background: transparent; }
-.md-image-source-token { color: var(--muted); white-space: pre; }
-.md-image-alt,
-.md-image-src {
-  min-width: 2ch;
-  height: auto;
-  padding: 0;
-  border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  border-radius: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  line-height: inherit;
-  user-select: text;
-  field-sizing: content;
-}
-.md-image-alt:focus,
-.md-image-src:focus { outline: none; border-bottom-color: var(--accent); }
-.md-image-alt::placeholder,
-.md-image-src::placeholder { color: var(--muted); font-style: italic; }
+/* 空路径仅保留一个紧凑文件选择入口。完整源码由正文内 Widget 编辑。 */
 .md-image-browse {
-  flex: none;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   margin-left: 2px;
   padding: 0;
   border: 0;
-  border-radius: 3px;
   background: transparent;
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1;
-  align-self: center;
+  font: 12px/1 var(--font-sans);
+  vertical-align: baseline;
   cursor: pointer;
 }
-.md-image-browse:hover { background: var(--hover); }
-
-/* 尺寸角标：贴在图片右上角，绝对定位，不参与排版 */
-.md-image-width {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  z-index: 3;
-  height: 16px;
-  min-width: 0;
-  padding: 0 3px;
-  border: 0;
-  border-radius: 2px;
-  background: color-mix(in srgb, #000 45%, transparent);
-  color: #fff;
-  font: 500 10px/16px var(--font-sans);
-  letter-spacing: .02em;
-  opacity: .75;
-  cursor: pointer;
-}
-
-.md-image-width {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 3;
-  height: 18px;
-  min-width: 2.2rem;
-  padding: 0 4px;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
-  color: var(--accent);
-  font: 500 11px/1.2 var(--font-sans);
-  line-height: 16px;
-  opacity: .9;
-  cursor: pointer;
-}
-.md-image-width[hidden] {
-  display: none;
-}
-.md-image-width:hover {
-  opacity: 1;
-  background: color-mix(in srgb, #000 65%, transparent);
-}
-
-.md-image-width-popover {
-  position: absolute;
-  top: 26px;
-  right: 4px;
-  z-index: 4;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding: 4px 5px;
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  box-shadow: var(--shadow);
-  white-space: nowrap;
-}
-.md-image-width-popover[hidden] {
-  display: none;
-}
-.md-image-width-input {
-  width: 2.6rem;
-  height: 20px;
-  padding: 0 4px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--editor);
-  color: var(--ink);
-  font: 12px/1.2 var(--font-sans);
-  text-align: right;
-}
-.md-image-width-suffix {
-  color: var(--muted);
-  font-size: 11px;
-}
-.md-image-width-choice {
-  height: 20px;
-  padding: 0 5px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--soft);
-  color: var(--ink);
-  font: 11px/1.2 var(--font-sans);
-  cursor: pointer;
-}
-.md-image-width-choice:hover {
-  background: var(--hover);
-}
-
+.md-image-browse[hidden] { display: none; }
 /* Front Matter 可视化卡片样式 */
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) .md-frontmatter-card {
   margin: 0 0 1.6em 0;

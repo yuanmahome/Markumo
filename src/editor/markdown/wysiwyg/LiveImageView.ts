@@ -7,11 +7,10 @@ import { mountMarkdownImage, type MarkdownResources } from '../images'
 export class LiveImageView implements NodeView {
   readonly dom = document.createElement('span')
   private media = document.createElement('span')
-  private size = document.createElement('select')
+  private source = document.createElement('span')
   private browse = document.createElement('button')
   private mounted?: ReturnType<typeof mountMarkdownImage>
   private disposed = false
-  private selected = false
   private resourceIdentity: string
 
   constructor(
@@ -22,23 +21,18 @@ export class LiveImageView implements NodeView {
     private onEdit: (pos: number, selectAll: boolean) => void,
     private onBrowse: (commit: (src: string | null) => void) => void,
     private onUpdate: (pos: number, attrs: Record<string, unknown>) => void,
+    private rawSource: (pos: number) => string,
   ) {
     this.resourceIdentity = resources.identity()
     this.dom.className = 'md-image-preview md-live-image'
     this.dom.contentEditable = 'false'
     this.dom.title = '单击编辑图片源码，双击选择整段源码，右键更多操作'
     this.media.className = 'md-image-media'
-    this.size.className = 'md-image-width'
-    this.size.setAttribute('aria-label', '图片缩放百分比')
-    this.size.setAttribute('data-image-width', '')
-    for (const percent of [25, 33, 50, 67, 80, 100, 150, 200]) this.size.add(new Option(`${percent}%`, String(percent)))
-    this.size.onchange = () => {
-      const pos = this.getPos()
-      if (pos !== undefined) this.onUpdate(pos, { zoom: Number(this.size.value) })
-    }
+    this.source.className = 'md-image-compact-source'
     this.browse.type = 'button'
     this.browse.className = 'md-image-browse'
     this.browse.setAttribute('aria-label', '选择图片文件')
+    this.browse.title = '选择图片文件，或直接输入图片路径'
     this.browse.textContent = '📁'
     this.browse.onclick = event => {
       event.preventDefault(); event.stopPropagation()
@@ -48,7 +42,7 @@ export class LiveImageView implements NodeView {
         if (src && !this.disposed && pos !== undefined && this.view.state.doc.nodeAt(pos) === expected) this.onUpdate(pos, { src })
       })
     }
-    this.dom.append(this.media, this.size, this.browse)
+    this.dom.append(this.media, this.source, this.browse)
     // Source gestures belong to the separate raw text widget, never this atom.
     this.dom.onmousedown = event => {
       if (event.button !== 0 || (event.target as Element).closest('select,button')) return
@@ -59,8 +53,10 @@ export class LiveImageView implements NodeView {
       event.preventDefault(); event.stopPropagation(); this.edit(false)
     }
     this.dom.ondblclick = event => {
-      if ((event.target as Element).closest('select,button')) return
-      event.preventDefault(); event.stopPropagation(); this.edit(true)
+      const target = event.target as Element
+      if (target.closest('select,button')) return
+      event.preventDefault(); event.stopPropagation()
+      this.edit(true)
     }
     this.loadImage()
     queueMicrotask(() => { if (!this.disposed) this.refreshLayout() })
@@ -87,6 +83,7 @@ export class LiveImageView implements NodeView {
     const identity = this.resources.identity()
     if (identity !== this.resourceIdentity) { this.resourceIdentity = identity; this.loadImage() }
   }
+  retry() { this.mounted?.retry() }
 
   refreshLayout() {
     const pos = this.getPos()
@@ -94,24 +91,28 @@ export class LiveImageView implements NodeView {
     const parent = this.view.state.doc.resolve(pos).parent
     const standalone = parent.type.name === 'paragraph' && parent.childCount === 1
     const width = this.node.attrs.width === 'auto' ? null : this.node.attrs.width
+    const zoom = Number(this.node.attrs.zoom ?? 100) / 100
     const align = this.node.attrs.align
     this.dom.classList.toggle('md-image-standalone', standalone)
     this.dom.classList.toggle('md-image-sized', !!width)
-    this.dom.style.width = width ? /(?:%|px)$/.test(String(width)) ? String(width) : `${width}px` : standalone && align ? 'fit-content' : ''
+    this.dom.style.width = width ? `${parseFloat(String(width)) * zoom}${String(width).endsWith('%') ? '%' : 'px'}` : standalone && align ? 'fit-content' : ''
     this.dom.style.display = standalone && align ? 'block' : ''
     this.dom.style.margin = standalone && align ? align === 'center' ? '0 auto' : align === 'right' ? '0 0 0 auto' : '0 auto 0 0' : ''
     this.dom.style.textAlign = standalone ? align ?? '' : ''
     this.dom.dataset.imageAlign = standalone ? align ?? '' : ''
     const image = this.media.querySelector('img')
-    if (image) image.style.setProperty('zoom', this.node.attrs.zoom ? `${this.node.attrs.zoom}%` : '')
-    const zoom = String(this.node.attrs.zoom ?? 100)
-    for (const option of Array.from(this.size.options)) if ('custom' in option.dataset) option.remove()
-    if (!Array.from(this.size.options).some(option => option.value === zoom)) {
-      const option = new Option(`${zoom}%`, zoom); option.dataset.custom = ''; this.size.add(option)
+    if (image) {
+      // Size from the original dimensions before applying the paragraph clamp.
+      // CSS zoom scales an already-clamped large image and can overflow at 200%.
+      image.style.removeProperty('zoom')
+      image.style.width = width ? '100%' : this.node.attrs.zoom && image.naturalWidth ? `${image.naturalWidth * zoom}px` : ''
+      image.style.minWidth = image.style.minHeight = '0'
     }
-    this.size.value = zoom
-    this.size.hidden = !this.selected || !this.view.editable || !image
-    this.browse.hidden = !this.selected || !this.view.editable || !!this.node.attrs.src
+    const compact = this.media.classList.contains('is-broken-image') || this.media.classList.contains('is-pending-image') || !this.node.attrs.src
+    this.dom.classList.toggle('md-image-compact', compact)
+    this.source.hidden = !compact
+    if (compact) this.source.textContent = this.rawSource(pos)
+    this.browse.hidden = !this.view.editable || !!this.node.attrs.src || !!this.node.attrs.unresolvedReference
   }
 
   update(node: PMNode): boolean {
@@ -123,8 +124,8 @@ export class LiveImageView implements NodeView {
     return true
   }
 
-  selectNode() { this.selected = true; this.dom.classList.add('md-image-selected'); this.refreshLayout() }
-  deselectNode() { this.selected = false; this.dom.classList.remove('md-image-selected'); this.refreshLayout() }
+  selectNode() { this.dom.classList.add('md-image-selected'); this.refreshLayout() }
+  deselectNode() { this.dom.classList.remove('md-image-selected'); this.refreshLayout() }
   stopEvent(event: Event) {
     if (event.type === 'contextmenu') return false
     return !(event instanceof KeyboardEvent) || (event.target instanceof Element && !!event.target.closest('select,button'))
@@ -134,7 +135,6 @@ export class LiveImageView implements NodeView {
     this.disposed = true
     this.mounted?.destroy()
     this.dom.onclick = this.dom.ondblclick = this.dom.onmousedown = null
-    this.size.onchange = null
     this.browse.onclick = null
   }
 }

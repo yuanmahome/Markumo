@@ -103,7 +103,7 @@ export class ImageImporter {
       const references: string[] = []
       for (const source of sources) {
         const native = 'token' in source
-        if (!native && source.size > 4 * 1024 * 1024) throw new Error('图片超过 4 MiB。')
+        if (!native && source.size > 100 * 1024 * 1024) throw new Error('图片超过 100 MiB 上限。')
         const directory = imageDirectory(rules,doc.name,!native)
         const input = { token:doc.fileToken, name:source.name, directory, ...(native ? {sourceToken:source.token} : {bytes:Array.from(new Uint8Array(await source.arrayBuffer()))}) }
         let result: ImportResult
@@ -133,7 +133,7 @@ export class ImageImporter {
   }
 }
 
-export const isImageFile = (name: string) => /\.(png|jpe?g|gif|webp)$/i.test(name)
+export const isImageFile = (name: string) => /\.(png|jpe?g|gif|webp|svg)$/i.test(name)
 
 /** CF_HDROP has priority over a thumbnail bitmap on Windows. */
 export async function clipboardImages(): Promise<ImageSource[]> {
@@ -153,13 +153,13 @@ export async function clipboardImages(): Promise<ImageSource[]> {
   }
   try {
     const {width,height} = await image.size()
-    if (!width || !height || width > 16384 || height > 16384 || width * height > 16_000_000) throw new Error('剪贴板图片尺寸超过安全范围。')
+    if (!width || !height || width > 65535 || height > 65535 || width * height > 150_000_000) throw new Error('剪贴板图片尺寸超过安全范围。')
     const rgba = await image.rgba()
     const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height
     try {
       canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba),width,height),0,0)
       const blob = await new Promise<Blob>((resolve,reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('截图编码失败。')),'image/png'))
-      if (blob.size > 4 * 1024 * 1024) throw new Error('剪贴板图片超过 4 MiB。')
+      if (blob.size > 50 * 1024 * 1024) throw new Error('剪贴板图片超过 50 MiB 上限。')
       return [new File([blob],`image-${Date.now()}.png`,{type:'image/png'})]
     } finally { canvas.width = canvas.height = 0 }
   } finally { await image.close() }

@@ -179,7 +179,7 @@
 .md-image-preview { box-sizing:border-box;max-width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:var(--soft);color:var(--sub);font:12px/1.6 var(--font-sans);white-space:normal }
 .cm-md-image-block { display:block;padding:12px 18px;min-height:64px }
 .cm-md-image-inline { display:inline-block;vertical-align:middle;max-width:320px }
-.md-image-preview img { display:block;min-width:24px;min-height:24px;max-width:100%;max-height:220px;object-fit:contain;cursor:text }
+.md-image-preview img { display:block;min-width:24px;min-height:24px;max-width:100%;max-height:none;height:auto;object-fit:contain;cursor:text }
 .cm-md-image-inline img { max-height:80px }
 .md-image-status { display:block;overflow-wrap:anywhere }
 .md-image-preview.is-broken-image {

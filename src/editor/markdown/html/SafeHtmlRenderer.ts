@@ -179,6 +179,17 @@ export function mountHtmlImages(
   const imgElements = Array.from(container.querySelectorAll<HTMLImageElement>('img'))
 
   for (const img of imgElements) {
+    const zoom = Number.parseFloat(img.style.getPropertyValue('zoom'))
+    if (Number.isFinite(zoom)) {
+      const width = img.getAttribute('width') || img.style.width
+      img.style.removeProperty('zoom')
+      img.addEventListener('load', () => {
+        if (disposed) return
+        const base = width && /^\d+(?:\.\d+)?(?:px|%)?$/.test(width) ? parseFloat(width) : img.naturalWidth
+        img.style.width = `${base * zoom / 100}${width?.endsWith('%') ? '%' : 'px'}`
+        img.style.maxWidth = '100%'
+      }, { once: true })
+    }
     const rawSrc = img.getAttribute('data-md-safe-src') ?? img.getAttribute('src') ?? ''
     img.removeAttribute('data-md-safe-src')
     img.removeAttribute('src')

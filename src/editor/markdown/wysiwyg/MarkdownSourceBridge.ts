@@ -1,8 +1,8 @@
-import { Fragment, type Node } from 'prosemirror-model'
+import { Fragment, Slice, type Node } from 'prosemirror-model'
 import { parseMarkdown, type SourceBlock } from './MarkdownParser'
 import { patchTable, serializeBlock } from './MarkdownSerializer'
 import { isTrailingParagraph, withoutTrailingParagraph } from './TrailingParagraph'
-export interface SourcePatch { from:number;to:number;insert:string;blockId?:string;htmlOrdinal?:number }
+export interface SourcePatch { from:number;to:number;insert:string;blockId?:string;htmlOrdinal?:number;imageDraft?:{from:number;to:number} }
 export function textPatch(before:string,after:string):SourcePatch|null {
   if(before===after)return null
   let from=0,to=before.length,end=after.length
@@ -48,6 +48,16 @@ export class MarkdownSourceBridge {
           }
           if(replace(old.node).eq(node)&&found)inlineRaw=candidate
         }
+        if (inlineRaw === undefined && inlinePatch.imageDraft) {
+          const { from, to } = inlinePatch.imageDraft
+          // Accept only the exact image/text atom being edited, with all other
+          // content unchanged. Incomplete syntax is real canonical source too.
+          const previous = old.node.slice(from, to).content
+          if (previous.childCount === 1 && ['image', 'image_source'].includes(previous.firstChild!.type.name)) {
+            const draft = node.type.schema.nodes.image_source.create({ source: inlinePatch.insert }, null, previous.firstChild!.marks)
+            if (old.node.replace(from, to, new Slice(Fragment.from(draft), 0, 0)).eq(node)) inlineRaw = candidate
+          }
+        }
         if(inlineRaw===undefined)throw new Error('局部源码与文档节点不一致，拒绝修改。')
         inlineApplied=true
       }
@@ -90,6 +100,10 @@ function inlineSourcePosition(node:Node,raw:string,position:number){
   let cursor=0,result:number|undefined
   node.descendants((child,pos)=>{
     if(result!==undefined)return false
+    if (child.type.name === 'image_source') {
+      const start = raw.indexOf(child.attrs.source, cursor)
+      if (start >= 0) { if (position >= pos && position <= pos + 1) result = start; cursor = start + child.attrs.source.length }
+    }
     if(child.isText){
       const text=child.text!,start=raw.indexOf(text,cursor)
       if(start>=0){if(position>=pos&&position<=pos+text.length)result=start+position-pos;cursor=start+text.length}

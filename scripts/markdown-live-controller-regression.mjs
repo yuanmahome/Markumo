@@ -571,7 +571,7 @@ try {
       await page.locator('.md-context-menu').waitFor({ state: 'visible' })
       await page.keyboard.press('Escape')
     })
-    await test('image paste and properties: relative source location and isolated attribute undo', async () => {
+    await test('image paste and complete source: relative destination and shared document undo', async () => {
       await reset('Intro\n\nTail\n')
       const before = await source()
       await historyRoundTrip(before, async () => {
@@ -582,17 +582,12 @@ try {
       })
       await page.locator('.md-live-image img').waitFor()
       await page.locator('.md-live-image img').click()
-      await page.locator('.md-image-toolbar:not([hidden]) .md-img-tool-edit').click()
       await page.getByRole('textbox', { name: '图片局部源码', exact: true }).waitFor()
       const selected = await page.evaluate(() => window.f.manager.getState(window.f.id).selection.main.head)
       assert(selected >= (await source()).indexOf('![pasted]'))
-      await page.getByRole('textbox', { name: '图片局部源码', exact: true }).press('Escape')
-      // Right click is the existing public image-properties interaction.
-      await page.locator('.md-live-image img').click({ button: 'right' })
       const initial = await source()
       await historyRoundTrip(initial, async () => {
-        await page.getByRole('textbox', { name: '图片替代文字', exact: true }).fill('changed alt')
-        await page.getByRole('button', { name: '应用图片', exact: true }).click()
+        await page.getByRole('textbox', { name: '图片局部源码', exact: true }).fill('![changed alt](./assets/pixel.png)')
       })
       assert((await source()).includes('./assets/pixel.png'))
     })

@@ -98,6 +98,7 @@ export const markdownSerializer = new MarkdownSerializer({ ...defaultMarkdownSer
     state.closeBlock(node)
   },
   image(state, node) {
+    if (node.attrs.unresolvedReference) { state.write(node.attrs.unresolvedReference); return }
     const original = node.attrs.htmlSource && parseControlledImageHtml(node.attrs.htmlSource)
     if (original && ['src', 'alt', 'title', 'width', 'align', 'zoom'].every(key => (original[key as keyof typeof original] ?? null) === (node.attrs[key] ?? null))) {
       state.write(node.attrs.htmlSource)
@@ -122,6 +123,7 @@ export const markdownSerializer = new MarkdownSerializer({ ...defaultMarkdownSer
                   (node.attrs.title ? ' "' + String(node.attrs.title).replace(/"/g, '\\"') + '"' : "") + ")")
     }
   },
+  image_source(state, node) { state.write(node.attrs.source) },
   list_item(state,node){if(node.attrs.checked!==null)state.write(node.attrs.checked?'[x] ':'[ ] ');state.renderContent(node)},
   code_block(state,node){
     const char=node.attrs.fence?.[0]==='~'||String(node.attrs.params).includes('`')?'~':'`'

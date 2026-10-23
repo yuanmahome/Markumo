@@ -8,7 +8,7 @@ export function isTrailingParagraph(node: Node) {
 
 function needsTrailingParagraph(node: Node) {
   return ['code_block', 'table', 'horizontal_rule', 'html_block', 'protected_source'].includes(node.type.name) ||
-    node.type === schema.nodes.paragraph && node.childCount === 1 && node.firstChild?.type === schema.nodes.image
+    node.type === schema.nodes.paragraph && node.childCount === 1 && ['image', 'image_source'].includes(node.firstChild?.type.name ?? '')
 }
 
 function placeholder() {

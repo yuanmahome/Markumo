@@ -440,6 +440,7 @@ pub async fn read_markdown_image(
     workspace: State<'_, crate::commands::workspace::WorkspaceStore>,
     token: String,
     relative: String,
+    full: Option<bool>,
 ) -> Result<tauri::ipc::Response> {
     let owner = window.label().to_owned();
     let workspace = workspace
@@ -455,8 +456,64 @@ pub async fn read_markdown_image(
     .map_err(|error| FileError::new("task", &error.to_string()))??;
     operate(store.inner().clone(), owner, move |service| {
         service
-            .markdown_image(&token, &relative, &roots)
+            .markdown_image(&token, &relative, &roots, full.unwrap_or(false))
             .map(tauri::ipc::Response::new)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn reveal_markdown_image(
+    window: Window,
+    store: State<'_, FileStore>,
+    workspace: State<'_, crate::commands::workspace::WorkspaceStore>,
+    token: String,
+    relative: String,
+) -> Result<()> {
+    let owner = window.label().to_owned();
+    let workspace = workspace
+        .for_window(window.label())
+        .map_err(|e| FileError::new("state", &e))?;
+    let _roots = tauri::async_runtime::spawn_blocking(move || {
+        workspace
+            .lock()
+            .map(|service| service.roots())
+            .map_err(|_| FileError::new("state", "工作区授权不可用。"))
+    })
+    .await
+    .map_err(|error| FileError::new("task", &error.to_string()))??;
+    operate(store.inner().clone(), owner, move |service| {
+        let path = service.resolve_image(&token, &relative)?;
+        crate::commands::workspace::reveal_path(&path).map_err(|e| FileError::new("reveal", &e))
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn open_markdown_image_default(
+    window: Window,
+    store: State<'_, FileStore>,
+    token: String,
+    relative: String,
+) -> Result<()> {
+    let owner = window.label().to_owned();
+    operate(store.inner().clone(), owner, move |service| {
+        let path = service.resolve_image(&token, &relative)?;
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::ffi::OsStrExt;
+            use windows_sys::Win32::UI::Shell::ShellExecuteW;
+            let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+            wide.push(0);
+            unsafe {
+                ShellExecuteW(std::ptr::null_mut(), std::ptr::null(), wide.as_ptr(), std::ptr::null(), std::ptr::null(), 1);
+            }
+        }
+        #[cfg(target_os = "macos")]
+        let _ = std::process::Command::new("open").arg(&path).spawn();
+        #[cfg(all(unix, not(target_os = "macos")))]
+        let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+        Ok(())
     })
     .await
 }

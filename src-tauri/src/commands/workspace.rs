@@ -606,7 +606,7 @@ pub async fn reveal_workspace_node(
     .await
     .map_err(|error| error.to_string())?
 }
-fn reveal_path(p: &std::path::Path) -> Result<(), String> {
+pub(crate) fn reveal_path(p: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use windows_sys::Win32::{

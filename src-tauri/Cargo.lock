@@ -1944,6 +1944,8 @@ dependencies = [
  "num-traits",
  "png 0.18.1",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -2287,6 +2289,7 @@ dependencies = [
  "encoding_rs",
  "getrandom 0.4.3",
  "ignore",
+ "image",
  "notify",
  "regex",
  "reqwest",

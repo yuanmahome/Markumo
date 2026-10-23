@@ -297,6 +297,8 @@ pub fn run() {
             commands::files::read_media_chunk,
             commands::files::open_media_default,
             commands::files::read_markdown_image,
+            commands::files::reveal_markdown_image,
+            commands::files::open_markdown_image_default,
             commands::files::choose_markdown_images,commands::files::import_markdown_image,
             commands::files::authorize_markdown_image_directory,commands::files::release_image_inputs,
             commands::files::authorize_markdown_image_read,

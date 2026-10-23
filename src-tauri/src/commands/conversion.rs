@@ -241,7 +241,7 @@ pub async fn pandoc_export_docx(
             let mut files = files.lock().map_err(|e| e.to_string())?;
             files.set_owner(&owner);
             files
-                .markdown_image(token, relative, &roots)
+                .markdown_image(token, relative, &roots, true)
                 .map_err(|e| e.to_string())
         })
     })

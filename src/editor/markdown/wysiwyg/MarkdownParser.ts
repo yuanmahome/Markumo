@@ -53,6 +53,20 @@ tokenizer.inline.ruler.before('escape','markumo_footnotes',(state,silent)=>{
   if(!silent){const token=state.push('footnote_reference','sup',0);token.content=note[1]}
   state.pos+=note[0].length;return true
 })
+// Keep unresolved full/collapsed image references repairable without inventing
+// an inline destination. Resolved references still use markdown-it's grammar.
+tokenizer.inline.ruler.before('image', 'markumo_missing_image_reference', (state, silent) => {
+  const match = /^!\[((?:\\.|[^\]\\\n])*)\]\[([^\]\n]*)\]/.exec(state.src.slice(state.pos))
+  if (!match) return false
+  const label = (match[2] || match[1]).trim().replace(/\s+/g, ' ').toUpperCase()
+  if (state.env.references?.[label]) return false
+  if (!silent) {
+    const token = state.push('controlled_image', 'img', 0)
+    token.meta = { src: '', alt: match[1], unresolvedReference: match[0] }
+  }
+  state.pos += match[0].length
+  return true
+})
 // Task syntax becomes a real list-item attribute. No checkbox state lives only in DOM.
 tokenizer.core.ruler.after('inline','markumo_tasks', state => {
   const stack: typeof state.tokens = []

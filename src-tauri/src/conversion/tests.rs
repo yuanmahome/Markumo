@@ -700,7 +700,7 @@ fn word_local_images_require_the_real_document_scope() {
         &NativeRunner,
         |relative| {
             files
-                .markdown_image(&token, relative, &[])
+                .markdown_image(&token, relative, &[], true)
                 .map_err(|e| e.to_string())
         },
     )
@@ -708,7 +708,7 @@ fn word_local_images_require_the_real_document_scope() {
     assert!(error.contains("授权") || error.contains("范围"));
     assert!(!target.exists());
     files.set_owner("b");
-    assert!(files.markdown_image(&token, "local.png", &[]).is_err());
+    assert!(files.markdown_image(&token, "local.png", &[], true).is_err());
 }
 
 #[test]

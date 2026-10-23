@@ -564,9 +564,6 @@ try {
         assert.ok((await source()).includes('T'))
       } else {
         await page.locator('.md-live-image img').click()
-        await page.locator('.md-image-toolbar:not([hidden])').waitFor()
-        await page.waitForFunction(() => document.querySelector('.md-math-source')?.hidden)
-        await page.locator('.md-img-tool-edit').click()
         await page.locator('.md-inline-source-input').waitFor({ state: 'visible' })
         assert.equal(await page.locator('.md-inline-source-input').evaluate(el => document.activeElement === el), true)
       }

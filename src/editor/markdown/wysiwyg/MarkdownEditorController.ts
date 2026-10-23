@@ -515,6 +515,7 @@ export class MarkdownEditorController implements LiveEditor {
             (pos, selectAll) => this.openInlineAt(pos, 'image', selectAll),
             commit => this.pickImageFile(commit),
             (pos, attrs) => this.updateImageAt(pos, attrs),
+            pos => inlineSourceRange(this.bridge, view.state.doc, pos, pos + 1, 'image')?.raw ?? '',
           )
           this.liveImages.add(imgView)
           const destroy = imgView.destroy.bind(imgView)
@@ -523,6 +524,17 @@ export class MarkdownEditorController implements LiveEditor {
             destroy()
           }
           return imgView
+        },
+        image_source: (node, _view, getPos) => {
+          const dom = document.createElement('span')
+          dom.className = 'md-image-draft'
+          dom.contentEditable = 'false'
+          dom.textContent = node.attrs.source
+          dom.onclick = () => { const pos = getPos(); if (pos !== undefined) this.openInlineAt(pos, 'image') }
+          return { dom, update: next => {
+            if (next.type !== s.nodes.image_source) return false
+            dom.textContent = next.attrs.source; return true
+          }, ignoreMutation: () => true }
         },
         math_inline: (node, view, getPos) => this.mathView(node, view, getPos),
         footnote_reference: (node, view) => {
@@ -1237,11 +1249,11 @@ export class MarkdownEditorController implements LiveEditor {
       this.view.dispatch(this.view.state.tr.replaceSelectionWith(s.nodes.image.create({ src: '', alt: '' })).setMeta('isolated', true))
       // The toolbar restores editor focus after format(). Open the form after
       // that handoff so the first keystroke belongs to the path input.
-      queueMicrotask(() => {
+      setTimeout(() => {
         if (this.disposed) return
         const pos = this.view.state.doc.nodeAt(at)?.type === s.nodes.image ? at : this.view.state.selection.from - 1
         if (this.view.state.doc.nodeAt(pos)?.type === s.nodes.image) this.openInlineAt(pos, 'image')
-      })
+      }, 60)
       return true
     }
     return false
@@ -1490,20 +1502,39 @@ export class MarkdownEditorController implements LiveEditor {
       for (let i=at-1;i>=0 && runs[i].to===from;i--) from=runs[i].from
       for (let i=at+1;i<runs.length && runs[i].from===to;i++) to=runs[i].to
     }
-    const range = inlineSourceRange(this.bridge, doc, from, to, kind)
+    let range = inlineSourceRange(this.bridge, doc, from, to, kind)
+    if (kind === 'image' && doc.nodeAt(from)?.type === s.nodes.image_source) {
+      let base = 0
+      for (const block of this.bridge.blocks) {
+        if (from < base + block.node.nodeSize) {
+          const sourceFrom = this.bridge.sourcePosition(from)
+          range = { raw: doc.nodeAt(from)!.attrs.source, sourceFrom, sourceTo: sourceFrom + doc.nodeAt(from)!.attrs.source.length, inherited: doc.nodeAt(from)!.marks, blockId: block.id }
+          break
+        }
+        base += block.node.nodeSize
+      }
+    }
     if (!range) return
     const editor = new InlineSourceView(from,to,range.sourceFrom,range.sourceTo,kind,range.raw,range.inherited,doc.slice(from,to).content,()=>this.bridge.environment,range.blockId,
       (editor, raw, content) => {
         if (this.disposed || this.inlineSource !== editor || this.options.readOnly?.()) return false
         const patch: SourcePatch = { from:editor.sourceFrom, to:editor.sourceTo, insert:raw,blockId:editor.blockId }
+        if (kind === 'image' && content.firstChild?.type === s.nodes.image_source) {
+          let base = 0
+          for (const block of this.bridge.blocks) {
+            if (block.id === editor.blockId) { patch.imageDraft = { from: editor.from - base - 1, to: editor.to - base - 1 }; break }
+            base += block.node.nodeSize
+          }
+        }
         this.properties.hidden = true
         const tr = this.view.state.tr.replaceWith(editor.from,editor.to,content)
           .setMeta('inlineSourcePatch',patch).setMeta('inlineSourceEditor',editor)
         const oldTo=editor.to,oldSourceTo=editor.sourceTo
-        editor.acceptRange(editor.from+content.size,editor.sourceFrom+raw.length)
+        const oldExpected = this.view.state.doc.slice(editor.from, editor.to).content
+        editor.acceptRange(editor.from+content.size,editor.sourceFrom+raw.length,content)
         this.view.dispatch(tr)
         const accepted=this.bridge.source.slice(patch.from,patch.from+raw.length)===raw
-        if(!accepted)editor.acceptRange(oldTo,oldSourceTo)
+        if(!accepted)editor.acceptRange(oldTo,oldSourceTo,oldExpected)
         return accepted
       }, (focus, position) => { if (this.inlineSource === editor) this.closeInline(focus, position) }, forward => this.options.history(forward), (command, selection) => {
         if (this.disposed) return
@@ -1524,10 +1555,6 @@ export class MarkdownEditorController implements LiveEditor {
           else this.format(command)
         }
       })
-    if (kind === 'image') editor.attachImageOverlay(this.view.dom.closest<HTMLElement>('.markdown-live') ?? this.view.dom, () => {
-      const anchor = this.view.nodeDOM(editor.from)
-      return anchor instanceof HTMLElement ? anchor.querySelector<HTMLElement>('.md-image-media') ?? anchor : null
-    })
     this.inlineSource = editor; this.dismissedInline = null
     this.focusEpoch++
     this.view.updateState(this.view.state)
@@ -2313,19 +2340,24 @@ export class MarkdownEditorController implements LiveEditor {
         'separator', { label: '段落（上方）', run: () => this.insertParagraph(false) }, { label: '段落（下方）', run: () => this.insertParagraph(true) },
       ] },
     ]
-    const image = target.closest('.md-live-image'), link = target.closest('a')
+    const sourceImage = target.closest('.md-source-image') && this.inlineSource?.kind === 'image' ? this.view.nodeDOM(this.inlineSource.from) : null
+    const image = target.closest('.md-live-image') ?? (sourceImage instanceof Element ? sourceImage : null), link = target.closest('a')
     if (image) {
       const pos = this.view.posAtDOM(image, 0), node = this.view.state.doc.nodeAt(pos)
       if (node?.type === s.nodes.image) {
         // Secondary image actions live here so nothing but the picture itself is
         // visible in the document until the user asks for it.
-        entries.push('separator',
+        entries.unshift(
+          { label: image.classList.contains('is-broken-image') ? '重新加载 / 授权图片' : '加载图片', disabled: !node.attrs.src, run: () => {
+            for (const live of this.liveImages) if (live.getPos() === pos) live.retry()
+          } },
           // Typora keeps resizing here instead of a floating control on the image.
-          { label: '缩放图片', disabled: !editable, children: [25, 33, 50, 67, 80, 100, 150, 200].map(zoom => ({
+          { label: '缩放图片', disabled: !editable, children: [25, 33, 50, 67, 80, 100, 150, 200].flatMap(zoom => [
+            ...(zoom === 100 || zoom === 150 ? ['separator' as const] : []), {
             label: `${zoom}%`,
             checked: Number(node.attrs.zoom ?? 100) === zoom,
             run: () => this.updateImageAt(pos, { zoom }),
-          })) },
+          }]) },
           { label: '图片对齐', disabled: !editable, children: [
             ['left', '左对齐'], ['center', '居中'], ['right', '右对齐'], [null, '默认'],
           ].map(([align, label]) => ({
@@ -2339,11 +2371,23 @@ export class MarkdownEditorController implements LiveEditor {
           ] },
           { label: '放大预览', disabled: !node.attrs.src, run: () => this.previewImageAt(pos) },
           { label: '复制图片路径', disabled: !node.attrs.src, run: () => { void navigator.clipboard?.writeText(String(node.attrs.src)) } },
+          { label: '跳转到图片引用定义', disabled: !/!\[[\s\S]*\]\[[^\]]*\]/.test(inlineSourceRange(this.bridge, this.view.state.doc, pos, pos + 1, 'image')?.raw ?? ''), run: () => {
+            const raw = inlineSourceRange(this.bridge, this.view.state.doc, pos, pos + 1, 'image')?.raw ?? ''
+            const match = /^!\[([\s\S]*)\]\[([^\]]*)\]$/.exec(raw)
+            const label = (match?.[2] || match?.[1] || '').trim().replace(/\s+/g, ' ').toUpperCase()
+            const definition = this.bridge.blocks.find(block => {
+              const name = /^\s*\[([^\]]+)\]:/.exec(block.raw)?.[1]
+              return name?.trim().replace(/\s+/g, ' ').toUpperCase() === label
+            })
+            if (definition) { this.closeInline(); queueMicrotask(() => this.reveal(definition.from)) }
+            else notice('找不到图片引用定义。')
+          } },
           { label: '删除图片', disabled: !editable, run: () => this.deleteImageAt(pos) },
           'separator',
           { label: '图像属性…', disabled: !editable, run: () => {
             this.closeInline(); this.imageProperties(image as HTMLElement, node, pos)
           } },
+          'separator',
         )
         return entries
       }
