@@ -217,6 +217,49 @@ try {
     assert.equal(info.commits, 1)
   })
 
+  // Test 6: Untitled drafts without disk path preserve text and unsaved state
+  await test('6. untitled draft without path preserves text and unsaved state', async () => {
+    const info = await page.evaluate(async () => {
+      const { buildDetachPayload } = await import('/src/features/windows/tabDetach.ts')
+      const f = window.f
+      f.reset('', false)
+      const m = f.manager
+      const untitledId = m.createUntitled('md')
+      m.dispatch(untitledId, { changes: { from: 0, insert: '# 草稿未保存' } })
+      const payload = buildDetachPayload(m, untitledId, 'main', true)
+      return {
+        hasPayload: !!payload,
+        path: payload?.path,
+        fileToken: payload?.fileToken,
+        text: payload?.text,
+        dirty: payload?.dirty,
+        name: payload?.name,
+      }
+    })
+    assert.equal(info.hasPayload, true)
+    assert.equal(info.path, null)
+    assert.equal(info.fileToken, null)
+    assert.equal(info.text, '# 草稿未保存')
+    assert.equal(info.dirty, true)
+    assert.ok(info.name.startsWith('Untitled'))
+  })
+
+  // Test 7: defaultDetachDropPoint produces sensible viewport coordinates
+  await test('7. defaultDetachDropPoint produces valid coordinates', async () => {
+    const info = await page.evaluate(async () => {
+      const { defaultDetachDropPoint } = await import('/src/features/windows/tabDetach.ts')
+      const pt = defaultDetachDropPoint()
+      return {
+        x: pt.x,
+        y: pt.y,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      }
+    })
+    assert.ok(info.x > 0 && info.x < info.width)
+    assert.ok(info.y > 0 && info.y < info.height)
+  })
+
   console.log(`========================================`)
   console.log(`All ${results.length} window detach tests passed successfully!`)
   console.log(`========================================`)

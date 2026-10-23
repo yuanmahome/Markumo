@@ -79,7 +79,7 @@ export function buildDetachPayload(
     path: doc.path || null,
     fileToken: doc.fileToken || null,
     text,
-    version: (doc as { version?: string | null }).version ?? null,
+    version: doc.lastDiskVersion ?? (doc as { version?: string | null }).version ?? null,
     encoding: doc.encoding || 'UTF-8',
     bom: !!doc.bom,
     eol: doc.eol || 'LF',
@@ -168,7 +168,8 @@ export async function detachDocumentToWindow(
   drop: DetachDropPoint,
   notify: (message: string) => void,
 ): Promise<boolean> {
-  const payload = buildDetachPayload(manager, documentId, paneId, true)
+  const isPinned = manager.paneGroup(paneId)?.tabs.find(t => t.documentId === documentId)?.pinned ?? true
+  const payload = buildDetachPayload(manager, documentId, paneId, isPinned)
   if (!payload) {
     notify('无法移动该标签：文档尚未准备好。')
     return false

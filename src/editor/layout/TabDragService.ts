@@ -162,6 +162,12 @@ export class TabDragService {
     window.addEventListener('keydown', this.handleKey, true)
     window.addEventListener('keyup', this.handleKey, true)
     document.addEventListener('visibilitychange', this.handleVisibility)
+    const onLostCapture = () => {
+      if (this.isDragging.value) {
+        this.cancelDrag()
+      }
+    }
+    this.captureEl?.addEventListener('lostpointercapture', onLostCapture, { once: true })
   }
 
   private startDrag(event: PointerEvent) {
@@ -197,7 +203,7 @@ export class TabDragService {
       }
       return
     }
-    const body = pane.querySelector<HTMLElement>('.pane-body') || pane
+    const body = pane.querySelector<HTMLElement>('.pane-document-shell') || pane.querySelector<HTMLElement>('.pane-document') || pane
     this.activePaneDrop.value = { paneId, zone: resolvePaneDropZone(body.getBoundingClientRect(), x, y) }
   }
 

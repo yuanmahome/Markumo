@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities for Markumo",
-  "windows": ["main", "file-*", "app-*"],
+  "windows": ["main", "file-*", "app-*", "detached-*"],
   "permissions": [
     "core:default",
     "updater:default",
