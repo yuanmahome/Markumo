@@ -99,12 +99,12 @@ export function createMarkdownRenderer(onLanguageReady: () => void = () => {}, p
     const id = previewSlot(env, 'task', checked ? 'x' : ' ')
     return `<span class="md-task-slot" data-md-render="${id}"></span>`
   }
-  md.renderer.rules.image=(tokens,index,_options,env = {})=> {
-    const token=tokens[index],source=String(token.attrGet('src')||''),alt=token.content
-    if(token.meta?.inTable||typeof token.meta?.from!=='number')return md.utils.escapeHtml(`![${alt}](${source})`)
+  md.renderer.rules.image = (tokens, index, _options, env = {}) => {
+    const token = tokens[index], source = String(token.attrGet('src') || ''), alt = token.content
     const id = previewSlot(env, 'image', source)
     const slot = (env as PreviewEnvironment).slots!.at(-1)!
-    slot.alt = alt; slot.from = token.meta.from
+    slot.alt = alt
+    slot.from = typeof token.meta?.from === 'number' ? token.meta.from : 0
     return `<span class="md-image-slot" data-md-render="${id}"></span>`
   }
   if (preview) {

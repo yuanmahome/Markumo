@@ -1,5 +1,5 @@
 <template>
-  <div class="split-preview-pane" :style="markdownTypographyStyle(settings)" :data-code-numbers="settings.codeLineNumbers" :data-code-wrap="settings.codeWrap" :data-image-border="(imageBorder ?? settings.imageBorder) !== false">
+  <div class="split-preview-pane" :style="markdownTypographyStyle(settings, true)" :data-code-numbers="settings.codeLineNumbers" :data-code-wrap="settings.codeWrap" :data-image-border="(imageBorder ?? settings.imageBorder) !== false">
     <div
       ref="contentRef"
       class="split-preview-content markdown-body"
@@ -180,7 +180,11 @@ watch([renderedHtml, () => props.resources, () => props.resourceKey], async () =
     if (slot?.kind !== 'image') continue
     const source = slot.source
     const from = slot.from || 0
-    host.classList.toggle('md-image-standalone', host.parentElement?.tagName === 'P' && [...host.parentElement.childNodes].every(node => node === host || !node.textContent?.trim()))
+    const parentP = host.parentElement?.tagName === 'P' ? host.parentElement : null
+    const isStandalone = !!parentP
+      && parentP.querySelectorAll('.md-image-slot').length === 1
+      && [...parentP.childNodes].every(node => node === host || !node.textContent?.trim())
+    host.classList.toggle('md-image-standalone', isStandalone)
     mountedImages.push(
       mountMarkdownImage(
         host,
@@ -374,40 +378,4 @@ defineExpose({ syncScroll })
   color: var(--bright);
   background: var(--hover);
 }
-
-/* 图片样式：自适应、无厚重灰框 */
-:deep(.md-image-slot) {
-  display: inline-block;
-  max-width: 100%;
-}
-
-:deep(.md-image-preview) {
-  display: inline-block;
-  max-width: 100%;
-  background: transparent;
-  border: none;
-  padding: 0;
-}
-
-:deep(.md-image-preview.is-broken-image) {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
-  border: 1px dashed var(--line);
-  border-radius: 6px;
-  background: var(--soft);
-  color: var(--muted);
-  margin: 4px 0;
-}
-
-:deep(.md-image-preview img) {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  border-radius: 4px;
-  object-fit: contain;
-  cursor: pointer;
-}
-
 </style>

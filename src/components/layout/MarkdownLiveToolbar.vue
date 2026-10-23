@@ -251,7 +251,7 @@
                 <MarkdownToolbarIcon name="outline" :size="16" /><span>{{ outlineVisible ? '隐藏大纲' : '显示大纲' }}</span>
               </button>
             </div>
-            <div class="md-more-widths">
+            <div v-if="mode !== 'split'" class="md-more-widths">
               <button v-for="preset in widthPresets" :key="preset" type="button" :class="{ active: markdownWidth === preset }" :disabled="state.composing" @mousedown.prevent @click="setWidthPreset(preset)">{{ preset }}</button>
             </div>
           </div>
@@ -265,7 +265,7 @@
         <button type="button" class="md-toolbar-btn md-toolbar-search" data-priority="3" :disabled="state.composing" aria-label="搜索与替换" title="搜索与替换 (Mod+F)" @mousedown.prevent @click="openSearch">
           <MarkdownToolbarIcon name="search" :size="18" />
         </button>
-        <div class="md-toolbar-anchor md-toolbar-width" data-priority="3">
+        <div v-if="mode !== 'split'" class="md-toolbar-anchor md-toolbar-width" data-priority="3">
           <button
             ref="widthButton"
             type="button"
@@ -497,6 +497,12 @@ function onWidthInput(event: Event) {
   if (!widthFrame) widthFrame = requestAnimationFrame(flushWidth)
 }
 
+watch(() => props.mode, mode => {
+  if (mode === 'split') {
+    closePopovers(true)
+  }
+})
+
 function flushWidth() {
   if (widthFrame) cancelAnimationFrame(widthFrame)
   widthFrame = 0
@@ -504,11 +510,11 @@ function flushWidth() {
   const width = pendingWidth
   pendingWidth = null
   // App preferences own the single manager update and serialized persistence.
-  if (width !== props.markdownWidth) emit('update:markdown-width', width)
+  if (props.mode !== 'split' && width !== props.markdownWidth) emit('update:markdown-width', width)
 }
 
 function setWidthPreset(value: number) {
-  if (state.value?.composing) return
+  if (props.mode === 'split' || state.value?.composing) return
   pendingWidth = markdownWidth.value = value
   closePopovers()
   focusEditor()
@@ -557,6 +563,7 @@ function toggleMore() {
 }
 
 function toggleWidth() {
+  if (props.mode === 'split') return
   if (widthOpen.value) return closePopovers(true)
   openAt(widthButton.value, () => { widthOpen.value = true })
 }

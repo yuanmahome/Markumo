@@ -53,6 +53,7 @@ const SMOKE_TESTS = [
   'scripts/repair04-outline-regression.mjs',
   'scripts/autolink-regression.mjs',
   'scripts/workspace-dnd-regression.mjs',
+  'scripts/live-split-layout-regression.mjs',
   'scripts/slash-commands-regression.mjs',
   'scripts/math-editor-regression.mjs',
   'scripts/typewriter-focus-regression.mjs',

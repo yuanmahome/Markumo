@@ -797,65 +797,7 @@ body.light .file-icon-gray { color: #6c7c92; }
   display: none !important;
 }
 
-/* Image Display - Clean Typora presentation */
-.markdown-live .md-prose p:has(> .md-image-preview:only-child) {
-  text-align: center;
-}
-
-.markdown-live .md-image-preview {
-  display: inline-block;
-  max-width: 100%;
-  vertical-align: middle;
-  position: relative;
-  margin: 0;
-  white-space: normal;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  font: inherit;
-  outline: none;
-}
-.markdown-live .md-prose p:has(> .md-image-standalone) { line-height: 0; }
-
-.markdown-live .md-image-preview.is-broken-image {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
-  border: 1px dashed var(--line);
-  border-radius: 6px;
-  background: var(--soft);
-  color: var(--muted);
-  max-width: 100%;
-  margin: 4px 0;
-}
-.markdown-live .md-image-preview img {
-  display: block;
-  max-width: 100%;
-  max-height: min(600px, 70vh);
-  min-width: 0;
-  min-height: 0;
-  height: auto;
-  border-radius: 4px;
-  margin: 0 auto;
-  cursor: pointer;
-  transition: outline 0.15s ease;
-}
-
-.markdown-live .md-image-preview.md-image-standalone { display: block; }
-.markdown-live .md-image-media { display: inline-block; max-width: 100%; vertical-align: middle; line-height: 1.6; }
-.markdown-live .md-image-standalone:not(.is-broken-image) > .md-image-media { display: block; }
-.markdown-live .md-image-standalone[data-image-align="left"] > .md-image-media img { margin-left: 0; margin-right: auto; }
-.markdown-live .md-image-standalone[data-image-align="right"] > .md-image-media img { margin-left: auto; margin-right: 0; }
-.markdown-live .md-image-sized > .md-image-media { width: 100%; }
-.markdown-live .md-image-sized > .md-image-media img { width: 100%; object-fit: contain; }
-.markdown-live .md-image-media.is-broken-image { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.markdown-live .md-image-media button { font: var(--ui-small-font-size)/1.6 var(--font-sans); white-space: normal; overflow-wrap: anywhere; }
-.markdown-live .md-image-media .md-image-path { text-align: left; }
-.markdown-live .md-image-preview.md-image-standalone.is-broken-image { display: inline-flex; line-height: 1.6; }
-.markdown-live .md-image-preview .md-image-toolbar button { white-space: nowrap; }
-
+/* Image Display - Editor specific interactions */
 .markdown-live .md-image-preview.md-image-selected img {
   outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
   outline-offset: 2px;
