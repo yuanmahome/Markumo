@@ -19,6 +19,7 @@
       :aria-expanded="node.isDirectory ? isExpanded : undefined"
       :draggable="!node.isDirectory"
       @dragstart="handleDragStart"
+      @dragend="handleDragEnd"
       :tabindex="tabStop ? 0 : -1"
       @focus.self="emit('locate-node', node)"
       @click="handleClick"
@@ -179,13 +180,29 @@ function isSegmentSelected(path: string) {
 
 const isNodeActive = computed(() => !props.node.isDirectory && !!props.activeFilePath && displayPathKey(props.activeFilePath) === displayPathKey(props.node.path))
 
+let dragOccurred = false
+
 function handleDragStart(event: DragEvent) {
-  if (props.node.isDirectory) return
+  if (props.node.isDirectory) {
+    event.preventDefault()
+    return
+  }
+  dragOccurred = true
   event.dataTransfer?.setData('application/x-markumo-file', JSON.stringify({ path: props.node.path, name: props.node.name }))
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copyMove'
 }
 
+function handleDragEnd() {
+  setTimeout(() => {
+    dragOccurred = false
+  }, 100)
+}
+
 function handleClick(event: MouseEvent) {
+  if (dragOccurred) {
+    dragOccurred = false
+    return
+  }
   if (isCompact.value) {
     const segElement = (event.target as HTMLElement).closest<HTMLElement>('[data-segment-path]')
     if (segElement) return
@@ -208,6 +225,10 @@ function handleClick(event: MouseEvent) {
 }
 
 function handleDblClick(event: MouseEvent) {
+  if (dragOccurred) {
+    dragOccurred = false
+    return
+  }
   if (isCompact.value) {
     const segElement = (event.target as HTMLElement).closest<HTMLElement>('[data-segment-path]')
     if (segElement) return

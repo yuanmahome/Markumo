@@ -67,6 +67,7 @@ try {
       async cancelSearch() {},
     }
 
+    window.releasedTokens = []
     const mockFileController = {
       workspaceBusy: false,
       accept(file, preview, paneId) {
@@ -75,7 +76,9 @@ try {
         return true
       },
       gateway: {
-        async release() {}
+        async release(token) {
+          window.releasedTokens.push(token)
+        }
       }
     }
 
@@ -274,6 +277,133 @@ try {
       return { before, after: m.layout.getAllLeafIds().length }
     })
     assert.equal(info.after, info.before)
+  })
+
+  // Test 7: Dragging a directory does not open as a file
+  await test('7. dragging directory does not open as file', async () => {
+    const info = await page.evaluate(async () => {
+      window.f.reset('# reset\n', false)
+      const ws = window.makeWs()
+      // Setup mock folder in workspace
+      ws.roots = [{
+        rootPath: 'C:/workspace',
+        entries: [
+          { name: 'my-folder', path: 'C:/workspace/my-folder', isDirectory: true, children: [] }
+        ]
+      }]
+      const m = window.f.manager
+      const before = m.layout.getAllLeafIds().length
+      const res = await ws.openWorkspaceFileInPane({
+        path: 'C:/workspace/my-folder',
+        name: 'my-folder',
+        paneId: 'main',
+        zone: 'right',
+        pin: true,
+      })
+      return {
+        success: res.success,
+        before,
+        after: m.layout.getAllLeafIds().length,
+        tabCount: m.paneGroup('main').tabs.length,
+      }
+    })
+    assert.equal(info.success, false)
+    assert.equal(info.after, info.before)
+  })
+
+  // Test 8: Cancellation token / signal cleans up and aborts before pane split
+  await test('8. cancellation token aborts drop and cleans up file token', async () => {
+    const info = await page.evaluate(async () => {
+      window.f.reset('# reset\n', false)
+      const ws = window.makeWs()
+      window.releasedTokens = []
+      const m = window.f.manager
+      const before = m.layout.getAllLeafIds().length
+      const cancelSource = { isCancelled: true }
+      const res = await ws.openWorkspaceFileInPane({
+        path: 'C:/workspace/doc1.md',
+        name: 'doc1.md',
+        paneId: 'main',
+        zone: 'right',
+        pin: true,
+        cancellationToken: cancelSource,
+      })
+      return {
+        success: res.success,
+        before,
+        after: m.layout.getAllLeafIds().length,
+      }
+    })
+    assert.equal(info.success, false)
+    assert.equal(info.after, info.before)
+  })
+
+  // Test 9: Rapid sequential drops to different panes do not crosstalk
+  await test('9. rapid sequential drops do not crosstalk panes', async () => {
+    const info = await page.evaluate(async () => {
+      window.f.reset('# reset\n', false)
+      const ws = window.makeWs()
+      const m = window.f.manager
+      // Split to have main and secondary
+      await ws.openWorkspaceFileInPane({
+        path: 'C:/workspace/doc1.md',
+        name: 'doc1.md',
+        paneId: 'main',
+        zone: 'right',
+        pin: true,
+      })
+      const leaves = m.layout.getAllLeafIds()
+      const secondaryId = leaves.find(id => id !== 'main')
+
+      // Rapidly drop doc2 to main and doc3 to secondary in parallel
+      await Promise.all([
+        ws.openWorkspaceFileInPane({
+          path: 'C:/workspace/doc2.md',
+          name: 'doc2.md',
+          paneId: 'main',
+          zone: 'center',
+          pin: true,
+        }),
+        ws.openWorkspaceFileInPane({
+          path: 'C:/workspace/doc3.md',
+          name: 'doc3.md',
+          paneId: secondaryId,
+          zone: 'center',
+          pin: true,
+        })
+      ])
+
+      const mainTabs = m.paneGroup('main').tabs.map(t => m.metadata(t.documentId)?.name)
+      const secTabs = m.paneGroup(secondaryId).tabs.map(t => m.metadata(t.documentId)?.name)
+      return { mainTabs, secTabs }
+    })
+    assert.ok(info.mainTabs.includes('doc2.md'), 'main pane got doc2.md')
+    assert.ok(!info.mainTabs.includes('doc3.md'), 'main pane does not have doc3.md')
+    assert.ok(info.secTabs.includes('doc3.md'), 'secondary pane got doc3.md')
+    assert.ok(!info.secTabs.includes('doc2.md'), 'secondary pane does not have doc2.md')
+  })
+
+  // Test 10: Dropping on closed/invalid paneId falls back safely to activePane
+  await test('10. dropping on invalid pane falls back to active pane', async () => {
+    const info = await page.evaluate(async () => {
+      window.f.reset('# reset\n', false)
+      const ws = window.makeWs()
+      const m = window.f.manager
+      const res = await ws.openWorkspaceFileInPane({
+        path: 'C:/workspace/doc1.md',
+        name: 'doc1.md',
+        paneId: 'non-existent-pane-id',
+        zone: 'center',
+        pin: true,
+      })
+      const activeTabs = m.paneGroup(m.activePane).tabs.map(t => m.metadata(t.documentId)?.name)
+      return {
+        success: res.success,
+        activeTabs,
+      }
+    })
+    assert.equal(info.success, true)
+    assert.ok(info.activeTabs.includes('doc1.md'))
   })
 
   console.log(`========================================`)

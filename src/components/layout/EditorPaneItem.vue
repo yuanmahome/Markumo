@@ -78,7 +78,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import TabBar from './TabBar.vue'
 import ExternalFileBanner from './ExternalFileBanner.vue'
 import EditorPane from './EditorPane.vue'
@@ -236,6 +236,38 @@ function handleClosePane() {
 }
 
 // 4-direction Drop Targets: left, right, top, bottom, center
+function getDropTargetBody(): HTMLElement | null {
+  if (!paneContainer.value) return null
+  return (
+    paneContainer.value.querySelector<HTMLElement>('.pane-document-shell') ||
+    paneContainer.value.querySelector<HTMLElement>('.pane-document') ||
+    paneContainer.value
+  )
+}
+
+function handleDragEndOrCancel() {
+  isDraggingOver.value = false
+  dragZone.value = null
+}
+
+function onWindowKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    handleDragEndOrCancel()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('dragend', handleDragEndOrCancel)
+  window.addEventListener('drop', handleDragEndOrCancel)
+  window.addEventListener('keydown', onWindowKeyDown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('dragend', handleDragEndOrCancel)
+  window.removeEventListener('drop', handleDragEndOrCancel)
+  window.removeEventListener('keydown', onWindowKeyDown)
+})
+
 function handleDragOver(event: DragEvent) {
   const types = event.dataTransfer?.types || []
   if (!types.includes('application/x-markumo-tab') && !types.includes('application/x-markumo-file')) {
@@ -243,7 +275,7 @@ function handleDragOver(event: DragEvent) {
   }
   event.preventDefault()
   if (!paneContainer.value) return
-  const body = paneContainer.value.querySelector<HTMLElement>('.pane-body') || paneContainer.value
+  const body = getDropTargetBody() || paneContainer.value
   const rect = body.getBoundingClientRect()
   if (!rect.width || !rect.height) return
 
@@ -269,7 +301,7 @@ function handleDrop(event: DragEvent) {
   }
   event.preventDefault()
   event.stopPropagation()
-  const body = paneContainer.value?.querySelector<HTMLElement>('.pane-body') || paneContainer.value
+  const body = getDropTargetBody() || paneContainer.value
   const zone = (event.target as Element).closest('.tabs') || !body
     ? 'center' : resolvePaneDropZone(body.getBoundingClientRect(), event.clientX, event.clientY)
   isDraggingOver.value = false

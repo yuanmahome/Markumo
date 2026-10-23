@@ -20,6 +20,17 @@ export interface FileSearchGroup {
   isExpanded: boolean
 }
 
+export interface OpenWorkspaceFileInPaneOptions {
+  path: string
+  name?: string
+  paneId: string
+  zone?: 'center' | 'left' | 'right' | 'top' | 'bottom'
+  pin?: boolean
+  version?: number
+  cancellationToken?: { isCancelled: boolean }
+  signal?: AbortSignal
+}
+
 export class WorkspaceController {
   rootPath: string | null = null
   rootName = ''
@@ -587,15 +598,22 @@ export class WorkspaceController {
     return request.promise
   }
 
-  async openWorkspaceFileInPane(options: {
-    path: string
-    name?: string
-    paneId: string
-    zone?: 'center' | 'left' | 'right' | 'top' | 'bottom'
-    pin?: boolean
-  }): Promise<void> {
-    if (this.disposed || this.operationBusy || this.documentManager.isComposing) return
+  async openWorkspaceFileInPane(options: OpenWorkspaceFileInPaneOptions): Promise<{ success: boolean; paneId?: string; docId?: string }> {
+    if (this.disposed || this.operationBusy || this.documentManager.isComposing) {
+      return { success: false }
+    }
+    if (options.cancellationToken?.isCancelled || options.signal?.aborted) {
+      return { success: false }
+    }
     const targetPath = options.path
+    if (!targetPath) return { success: false }
+
+    // Do not open directories as regular files
+    const knownNode = this.findNodeByPath(this.roots.flatMap(r => r.entries), targetPath)
+    if (knownNode?.isDirectory) {
+      return { success: false }
+    }
+
     const targetPane = options.paneId
     const zone = options.zone || 'center'
     const pin = options.pin ?? true
@@ -606,17 +624,23 @@ export class WorkspaceController {
     // navigation cannot silently replace what the user just dropped.
     const preview = !pin
 
+    // Ensure targetPane exists; if not, fallback to activePane
+    const effectivePane = manager.layout.getPane(targetPane) ? targetPane : manager.activePane
+
     const existingDoc = manager.openedDocuments.find(
       doc => doc.path && displayPathKey(doc.path) === key
     )
     if (existingDoc) {
+      if (options.cancellationToken?.isCancelled || options.signal?.aborted) {
+        return { success: false }
+      }
       const pane = zone === 'center'
-        ? targetPane
-        : manager.splitPane(zone as SplitDirection, targetPane, existingDoc.id)
+        ? effectivePane
+        : manager.splitPane(zone as SplitDirection, effectivePane, existingDoc.id)
       manager.open(existingDoc.id, preview, pane, false)
       if (pin) manager.pin(existingDoc.id, pane)
       manager.focusPane(pane, true)
-      return
+      return { success: true, paneId: pane, docId: existingDoc.id }
     }
 
     // Load first: a failed or cancelled read must not leave a stray empty pane.
@@ -624,26 +648,36 @@ export class WorkspaceController {
     try {
       file = await this.gateway.openWorkspaceFile(targetPath)
     } catch (e) {
-      this.notify(`打开工作区文件失败: ${e}`)
-      return
+      if (!options.cancellationToken?.isCancelled && !options.signal?.aborted) {
+        this.notify(`打开工作区文件失败: ${e}`)
+      }
+      return { success: false }
     }
-    if (this.disposed) {
+    if (this.disposed || options.cancellationToken?.isCancelled || options.signal?.aborted) {
       void this.fileController.gateway.release(file.token).catch(() => {})
-      return
+      return { success: false }
     }
+
+    const validTargetPane = manager.layout.getPane(effectivePane) ? effectivePane : manager.activePane
 
     // `cloneActive: false` keeps the new pane empty until this file is adopted,
     // so no temporary duplicate of the source document is ever left behind.
     const pane = zone === 'center'
-      ? targetPane
-      : manager.splitPane(zone as SplitDirection, targetPane, undefined, targetPane, false)
+      ? validTargetPane
+      : manager.splitPane(zone as SplitDirection, validTargetPane, undefined, validTargetPane, false)
 
-    if (!this.fileController.accept(file, preview, pane, false)) return
+    if (!this.fileController.accept(file, preview, pane, false)) {
+      if (zone !== 'center') {
+        manager.closePane(pane)
+      }
+      return { success: false }
+    }
     const opened = manager.openedDocuments.find(
       doc => doc.fileToken === file.token || (doc.path && displayPathKey(doc.path) === key)
     )
     if (opened && pin) manager.pin(opened.id, pane)
     manager.focusPane(pane, true)
+    return { success: true, paneId: pane, docId: opened?.id }
   }
 
   async createFile(parentDir: string, name: string) {
