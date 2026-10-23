@@ -51,7 +51,7 @@ export function keybindingContext(target: EventTarget | null, markdown: boolean)
   if (!(target instanceof Element)) return 'shell'
   if (target.closest('[role=dialog],.settingsoverlay,.workspace-operation-dialog')) return 'dialog'
   if (target.closest('.cm-search,.md-search,.md-live-search,.fleet-search')) return 'search'
-  if (target.closest('input,textarea,select')) return 'input'
+  if (target.closest('input,textarea,select,.md-inline-source-input')) return 'input'
   if (target.closest('.markdown-live .cm-editor,.md-code-block .cm-editor,.md-html-block-view .cm-editor,.md-html-inline-view .cm-editor')) return 'code-block'
   if (target.closest('.cm-content')) return markdown ? 'source' : 'text'
   if (target.closest('.md-prose')) return 'live'

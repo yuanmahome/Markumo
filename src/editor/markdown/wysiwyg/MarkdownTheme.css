@@ -104,17 +104,22 @@ body.light .markdown-live { --text: #333; --bright: #333; --muted: #777; --line:
   overflow-wrap: anywhere;
   user-select: text;
   cursor: text;
+  vertical-align: top;
 }
 .markdown-live .md-source-image .md-inline-source-input {
-  display: inline;
+  display: inline-block;
   min-width: 1ch;
+  max-width: 100%;
+  vertical-align: top;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
   -webkit-user-select: text;
 }
-.markdown-live .md-prose p:has(> .md-image-standalone) > .md-source-image { display: block; line-height: 1.65; text-align: left; }
+.markdown-live .md-prose p:has(> .md-image-standalone:not(.md-image-compact)) > .md-source-image { display: block; line-height: 1.65; text-align: left; }
 .markdown-live .md-image-draft-covered { display: none !important; }
+.markdown-live .md-image-empty-path::before { content: '输入图片路径'; color: var(--muted); opacity: .7; font: inherit; user-select: none; pointer-events: none; }
+.markdown-live .md-prose .md-image-standalone.md-image-sized:not([data-image-align="left"]):not([data-image-align="right"]) { margin-left: auto; margin-right: auto; }
 .markdown-live .md-image-source-open > .md-image-compact-source { display: none; }
 .markdown-live .md-image-compact-source, .markdown-live .md-image-draft {
   font: 13px/1.65 var(--font-mono);

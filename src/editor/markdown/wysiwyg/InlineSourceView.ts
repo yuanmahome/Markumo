@@ -4,8 +4,10 @@ import { Decoration, DecorationSet } from 'prosemirror-view'
 import { parser } from '@lezer/markdown'
 import { markdownSyntaxExtensions } from '../semantics'
 import { markdownParser } from './MarkdownParser'
-import { parseControlledImageHtml } from './imageHtml'
+import { parseControlledImageHtml, imagePathPlaceholderOffset } from './imageHtml'
 import type { MarkdownSourceBridge, SourcePatch } from './MarkdownSourceBridge'
+import { textClipboard } from '../../../features/shell/clipboard'
+import type { LiveClipboardOperation } from './LiveClipboard'
 
 const syntax = parser.configure(markdownSyntaxExtensions)
 const syntaxNames: Record<string, string> = { link: 'Link', image: 'Image', strong: 'StrongEmphasis', em: 'Emphasis', strike: 'Strikethrough', code: 'InlineCode' }
@@ -104,6 +106,7 @@ export class InlineSourceView {
   private pointerDown=false
   private blurPending=false
   private blurTimer:ReturnType<typeof setTimeout>|undefined
+  private insertText: (text: string) => void = () => {}
   private onPointerDown=()=>{this.pointerDown=true}
   private onPointerUp=()=>{
     this.pointerDown=false
@@ -166,6 +169,15 @@ export class InlineSourceView {
       if (selection) this.select(selection.anchor, selection.head)
     }
     this.input.oninput = accept
+    this.insertText = text => {
+      const selection = this.selection()
+      if (!selection || this.dead || this.composing) return
+      const start = Math.min(selection.anchor, selection.head), end = Math.max(selection.anchor, selection.head)
+      this.draft = this.draft.slice(0, start) + text + this.draft.slice(end)
+      this.input.textContent = this.draft
+      this.select(start + text.length, start + text.length)
+      accept()
+    }
     this.input.addEventListener('compositionstart', () => { this.composingInput = true })
     this.input.addEventListener('compositionend', () => { this.composingInput = false; accept() })
     this.input.onbeforeinput = event => {
@@ -249,6 +261,20 @@ export class InlineSourceView {
   }
   get pending() { return this.draft !== this.accepted }
   get composing() { return this.composingInput }
+  async clipboard(operation: LiveClipboardOperation) {
+    const selection = this.selection(), draft = this.draft
+    if (!selection || this.dead || this.composing) return
+    if (operation === 'select-all') { this.select(0, draft.length); return }
+    const text = draft.slice(Math.min(selection.anchor, selection.head), Math.max(selection.anchor, selection.head))
+    const paste = operation === 'paste' || operation === 'paste-plain'
+    const inserted = paste ? (await textClipboard.readText()).replace(/\r\n?/g, '\n') : ''
+    if (!paste) await textClipboard.writeText(text)
+    if (paste || operation === 'cut') {
+      const current = this.selection()
+      if (this.dead || this.composing || this.draft !== draft || !current || current.anchor !== selection.anchor || current.head !== selection.head) return
+      this.insertText(inserted)
+    }
+  }
   selection() {
     const selection = document.getSelection()
     if (!selection?.anchorNode || !selection.focusNode || !this.input.contains(selection.anchorNode) || !this.input.contains(selection.focusNode)) return null
@@ -277,10 +303,14 @@ export class InlineSourceView {
       const name = /Mark$/.test(node.name) ? 'delimiter' : classes[node.name]
       if (name) ranges.push({from:node.from,to:node.to,name})
     } })
-    const cuts = [...new Set([0,this.draft.length,...ranges.flatMap(r=>[r.from,r.to])])].sort((a,b)=>a-b)
+    const placeholder = this.kind === 'image' ? imagePathPlaceholderOffset(this.draft) : null
+    const cuts = [...new Set([0,this.draft.length,...(placeholder === null ? [] : [placeholder]),...ranges.flatMap(r=>[r.from,r.to])])].sort((a,b)=>a-b)
     const fragment = document.createDocumentFragment()
     for (let i=1;i<cuts.length;i++) {
       const span = document.createElement('span'), from=cuts[i-1], to=cuts[i]
+      if (from === placeholder) {
+        const hint = document.createElement('span'); hint.className = 'md-image-empty-path'; hint.setAttribute('aria-hidden', 'true'); fragment.append(hint)
+      }
       span.className = ranges.filter(r=>r.from<=from && r.to>=to).map(r=>`md-raw-${r.name}`).join(' ')
       span.textContent = this.draft.slice(from,to); fragment.append(span)
     }

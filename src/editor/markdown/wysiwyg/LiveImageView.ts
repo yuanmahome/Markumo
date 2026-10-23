@@ -2,6 +2,7 @@ import type { Node as PMNode } from 'prosemirror-model'
 import { NodeSelection } from 'prosemirror-state'
 import type { EditorView, NodeView } from 'prosemirror-view'
 import { mountMarkdownImage, type MarkdownResources } from '../images'
+import { imagePathPlaceholderOffset } from './imageHtml'
 
 /** The picture stays mounted while the controller edits its complete source. */
 export class LiveImageView implements NodeView {
@@ -111,7 +112,14 @@ export class LiveImageView implements NodeView {
     const compact = this.media.classList.contains('is-broken-image') || this.media.classList.contains('is-pending-image') || !this.node.attrs.src
     this.dom.classList.toggle('md-image-compact', compact)
     this.source.hidden = !compact
-    if (compact) this.source.textContent = this.rawSource(pos)
+    if (compact) {
+      const raw = this.rawSource(pos), offset = imagePathPlaceholderOffset(raw)
+      if (offset === null) this.source.textContent = raw
+      else {
+        const hint = document.createElement('span'); hint.className = 'md-image-empty-path'; hint.setAttribute('aria-hidden', 'true')
+        this.source.replaceChildren(document.createTextNode(raw.slice(0, offset)), hint, document.createTextNode(raw.slice(offset)))
+      }
+    }
     this.browse.hidden = !this.view.editable || !!this.node.attrs.src || !!this.node.attrs.unresolvedReference
   }
 

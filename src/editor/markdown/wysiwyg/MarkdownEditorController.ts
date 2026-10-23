@@ -1536,7 +1536,17 @@ export class MarkdownEditorController implements LiveEditor {
         const accepted=this.bridge.source.slice(patch.from,patch.from+raw.length)===raw
         if(!accepted)editor.acceptRange(oldTo,oldSourceTo,oldExpected)
         return accepted
-      }, (focus, position) => { if (this.inlineSource === editor) this.closeInline(focus, position) }, forward => this.options.history(forward), (command, selection) => {
+      }, (focus, position) => { if (this.inlineSource === editor) this.closeInline(focus, position) }, forward => {
+        const focused = !!editor.selection()
+        this.options.history(forward)
+        queueMicrotask(() => {
+          const active = document.activeElement
+          if (!focused || this.disposed || active !== document.body && active !== editor.input && !this.view.dom.contains(active)) return
+          if (this.inlineSource) this.inlineSource.input.focus({ preventScroll: true })
+          else if (editor.kind === 'image' && ['image', 'image_source'].includes(this.view.state.doc.nodeAt(editor.from)?.type.name ?? '')) this.openInlineAt(editor.from, 'image')
+          else this.view.focus()
+        })
+      }, (command, selection) => {
         if (this.disposed) return
         if (command === 'select-all') { this.view.dispatch(this.view.state.tr.setSelection(new AllSelection(this.view.state.doc))); this.view.focus() }
         else if (command === 'find' || command === 'replace') this.find(command === 'replace')
@@ -2238,14 +2248,16 @@ export class MarkdownEditorController implements LiveEditor {
     }
   }
 
-  clipboard(operation: LiveClipboardOperation) { return this.liveClipboard.run(operation) }
+  clipboard(operation: LiveClipboardOperation) {
+    return this.inlineSource?.selection() ? this.inlineSource.clipboard(operation) : this.liveClipboard.run(operation)
+  }
   clipboardSettings(settings: MarkdownClipboardSettings) { this.copySettings = { ...settings } }
 
   /** Also called by the shell's capture handler before global shortcuts (Mod+0
    * otherwise resets font size). Never handles source editors or search inputs. */
   shortcut(event: KeyboardEvent): boolean {
     if (event.defaultPrevented || event.isComposing || this.composing || !(event.ctrlKey || event.metaKey) || event.altKey) return false
-    if (!(event.target instanceof Element) || event.target.closest('input,textarea,.cm-editor')) return false
+    if (!(event.target instanceof Element) || event.target.closest('input,textarea,.cm-editor,.md-inline-source-input')) return false
     const inMenu = this.contextMenu.owns(event.target)
     if (!inMenu && !this.view.dom.contains(event.target)) return false
     const key = event.key.toLowerCase()

@@ -1,0 +1,20 @@
+{
+  "automatedBrowser": [
+    "Standalone widget precedes its image in flow; headings move and source stays unchanged",
+    "Mixed prose and image retain one paragraph, real text order, and narrow line boxes",
+    "Only the current consecutive image has a widget; other decoded images are reused",
+    "Full syntax selection, Chinese input, delete, immediate typing and canonical undo/redo",
+    "Incomplete Markdown and HTML publish exact source, remain editable, repair and survive history/mode changes",
+    "Original HTML spelling is untouched; width/title/zoom edits are reparsed and undoable",
+    "Reference labels survive source edits and definition changes; unresolved refs stay compact",
+    "Only empty paths have a folder, and both file selection and direct typing modify the canonical document",
+    "Missing/corrupt/scope/budget/unknown errors are compact, preserve diagnostics, and repair immediately",
+    "Remote loading requires explicit consent and failed requests remain compact",
+    "Eight natural-size percentages, Markdown/HTML conversion and reopen remain editable and undoable",
+    "Large-image scaling clamps after natural sizing; list, quote and table edits keep structure",
+    "Long paths wrap in dual narrow panes without overlay or duplicate widgets",
+    "Link editing, synthetic composition, read-only protection and HTML security stay intact"
+  ],
+  "nativeGUI": "Reported separately in docs/typora-image-parity-report.md",
+  "errors": []
+}

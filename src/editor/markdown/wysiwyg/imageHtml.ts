@@ -25,6 +25,13 @@ const WIDTH_PATTERN = /^(?:auto|\d{1,4}%|\d{1,5}(?:px)?)$/
 const IMAGE_PATTERN = /^<img((?:\s+[a-zA-Z][\w-]*\s*=\s*(?:"[^"<>]*"|'[^'<>]*'))*)\s*\/?>$/i
 const ATTRIBUTE_PATTERN = /([a-zA-Z][\w-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
 
+/** A visual hint occupies no source characters and is never copied/saved. */
+export function imagePathPlaceholderOffset(raw: string): number | null {
+  if (/^!\[(?:\\.|[^\]\\])*\]\(\s*\)$/.test(raw)) return raw.lastIndexOf('(') + 1
+  const src = /\bsrc\s*=\s*(["'])\1/.exec(raw)
+  return /^\s*<img\b/i.test(raw) && src ? src.index + src[0].length - 1 : null
+}
+
 /** Percentage of the natural (or explicitly sized) image, as used by Typora. */
 export function normalizeImageZoom(value: unknown): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 1 || value > 1000) return null
