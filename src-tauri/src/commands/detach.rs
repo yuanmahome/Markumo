@@ -66,8 +66,52 @@ pub async fn detach_tab_to_window(
     drop_y: f64,
 ) -> Result<DetachStarted, String> {
     let source = window.label().to_owned();
-    let window_count = window.app_handle().webview_windows().len();
     let app = window.app_handle().clone();
+    let (physical_x, physical_y) = drop_point_physical(&window, drop_x, drop_y);
+
+    // 1. Check if the drop lands within an existing visible window (drag-back or cross-window move)
+    let mut existing_target: Option<(WebviewWindow, f64, f64)> = None;
+    for (label, w) in app.webview_windows() {
+        if label == source || !w.is_visible().unwrap_or(false) {
+            continue;
+        }
+        if let (Ok(pos), Ok(size)) = (w.outer_position(), w.outer_size()) {
+            let px = pos.x as f64;
+            let py = pos.y as f64;
+            let pw = size.width as f64;
+            let ph = size.height as f64;
+            if physical_x >= px && physical_x <= px + pw && physical_y >= py && physical_y <= py + ph {
+                let scale = w.scale_factor().unwrap_or(1.0);
+                let css_x = (physical_x - px) / scale;
+                let css_y = (physical_y - py) / scale;
+                existing_target = Some((w, css_x, css_y));
+                break;
+            }
+        }
+    }
+
+    if let Some((target_win, target_x, target_y)) = existing_target {
+        let handoff_id = {
+            let mut registry = store.lock().map_err(|e| e.to_string())?;
+            registry.begin_for_target(&source, target_win.label(), payload, Instant::now())?
+        };
+        let _ = target_win.set_focus();
+        let _ = target_win.emit(
+            "markumo:incoming-tab",
+            serde_json::json!({
+                "handoffId": handoff_id,
+                "x": target_x,
+                "y": target_y,
+            }),
+        );
+        return Ok(DetachStarted {
+            handoff_id,
+            label: target_win.label().to_string(),
+        });
+    }
+
+    // 2. Otherwise create a new detached window
+    let window_count = window.app_handle().webview_windows().len();
 
     // Prepare: nothing about the source document changes here.
     let (label, handoff_id) = {

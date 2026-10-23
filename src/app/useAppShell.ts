@@ -26,6 +26,8 @@ import {
   setDetachRequestHandler,
   takeDetachedDocument,
 } from '../features/windows/tabDetach'
+import { resolvePaneDropZone } from '../editor/layout/TabDragService'
+import type { SplitDirection } from '../editor/layout/types'
 import type { EditorDocument } from '../types'
 import { RecoveryController } from '../features/recovery/RecoveryController'
 import { tauriRecovery } from '../features/recovery/tauriRecovery'
@@ -1177,54 +1179,106 @@ export function useAppShell() {
 
   // --- Global Lifecycle (Mount / Unmount) ---
 
+  let currentLaunchKind: 'app' | 'detached' | 'file' = 'app'
+
   /**
    * Target side of a tab handoff. The body already exists in this process, so
    * nothing is read from disk: unsaved text, encoding, mode, caret and scroll all
    * come from the source window. Only after this window really mounted the
    * document does it tell the source to release its tab.
    */
-  async function adoptDetachedDocument(): Promise<EditorDocument | null> {
+  async function adoptIncomingDocument(x?: number, y?: number): Promise<EditorDocument | null> {
     const adopted = await takeDetachedDocument().catch(() => null)
     if (!adopted) return null
     const { handoffId, payload } = adopted
     try {
-      const accepted = files.accept(
-        {
-          token: payload.fileToken || `detached-${payload.documentId}`,
-          path: payload.path || '',
+      let targetPane = manager.activePane
+      let targetZone: 'center' | 'left' | 'right' | 'top' | 'bottom' = 'center'
+      if (typeof x === 'number' && typeof y === 'number') {
+        const under = document.elementFromPoint(x, y)
+        const paneEl = under?.closest<HTMLElement>('.pane[data-pane-id]')
+        if (paneEl?.dataset.paneId && manager.layout.getPane(paneEl.dataset.paneId)) {
+          targetPane = paneEl.dataset.paneId
+          const body = paneEl.querySelector<HTMLElement>('.pane-document-shell')
+            || paneEl.querySelector<HTMLElement>('.pane-document')
+            || paneEl
+          const rect = body.getBoundingClientRect()
+          if (rect.width > 0 && rect.height > 0) {
+            targetZone = resolvePaneDropZone(rect, x, y)
+          }
+        }
+      }
+
+      const pane = targetZone === 'center'
+        ? targetPane
+        : manager.splitPane(targetZone as SplitDirection, targetPane, undefined, targetPane, false)
+
+      let docId: string | null = null
+      if (!payload.fileToken && !payload.path) {
+        docId = manager.createRecoveredDocument({
+          id: `untitled-${payload.documentId}`,
           name: payload.name,
           text: payload.text,
-          encoding: payload.encoding as unknown as Encoding,
+          encoding: payload.encoding,
           bom: payload.bom,
           eol: payload.eol as EditorDocument['eol'],
-          readOnly: payload.readOnly,
-          version: payload.version || '',
-        },
-        false,
-        'main',
-        false,
-      )
-      if (!accepted) return null
-      const doc =
-        manager.openedDocuments.find(item => item.fileToken === payload.fileToken && payload.fileToken) ||
-        manager.openedDocuments.find(item => item.name === payload.name)
-      if (!doc) return null
+          mode: payload.markdownMode as MarkdownMode | undefined,
+        })
+      } else {
+        const accepted = files.accept(
+          {
+            token: payload.fileToken || `detached-${payload.documentId}`,
+            path: payload.path || '',
+            name: payload.name,
+            text: payload.text,
+            encoding: payload.encoding as unknown as Encoding,
+            bom: payload.bom,
+            eol: payload.eol as EditorDocument['eol'],
+            readOnly: payload.readOnly,
+            version: payload.version || '',
+          },
+          false,
+          pane,
+          false,
+        )
+        if (!accepted) {
+          if (targetZone !== 'center') manager.closePane(pane)
+          await cancelDetach(handoffId).catch(() => {})
+          return null
+        }
+        const doc =
+          manager.openedDocuments.find(item => item.fileToken === payload.fileToken && payload.fileToken) ||
+          manager.openedDocuments.find(item => item.name === payload.name)
+        docId = doc?.id ?? null
+      }
+
+      if (!docId) {
+        if (targetZone !== 'center') manager.closePane(pane)
+        await cancelDetach(handoffId).catch(() => {})
+        return null
+      }
+
       // `restoreRecoveredText` applies the transferred body without adding an
       // undo step and marks the document dirty, which is exactly the state the
       // source had (its undo history stays behind by design).
-      if (payload.dirty) manager.restoreRecoveredText(doc.id, payload.text)
+      if (payload.dirty) manager.restoreRecoveredText(docId, payload.text)
       if (payload.markdownMode) {
-        manager.setMarkdownMode(doc.id, payload.markdownMode as MarkdownMode, 'main')
+        manager.setMarkdownMode(docId, payload.markdownMode as MarkdownMode, pane)
       }
-      manager.pin(doc.id)
-      manager.setSelectionOffsets(doc.id, payload.anchor, payload.head)
-      manager.restoreScroll(doc.id, payload.scrollTop, payload.scrollLeft)
+      if (payload.pinned) manager.pin(docId, pane)
+      manager.setSelectionOffsets(docId, payload.anchor, payload.head, pane)
+      manager.restoreScroll(docId, payload.scrollTop, payload.scrollLeft, pane)
+      manager.focusPane(pane, true)
       await commitDetach(handoffId).catch(() => {})
-      return manager.metadata(doc.id)
+      return manager.metadata(docId)
     } catch (error) {
       await cancelDetach(handoffId).catch(() => {})
       throw error
     }
+  }
+
+  async function adoptDetachedDocument(): Promise<EditorDocument | null> {
+    return adoptIncomingDocument()
   }
 
   const startup = new DesktopStartup({
@@ -1237,6 +1291,7 @@ export function useAppShell() {
     loadPreferences: current => preferences.loadPreferences(current),
     initialize: initializeLaunch,
     adopt: async (launch, current) => {
+      currentLaunchKind = launch.kind
       if (launch.kind === 'app' && !launch.ownsSession) throw Error('主会话所有权未确认，已停止恢复。')
       workspace.restoreSession(launch.roots)
       // A detached window boots with nothing restored: its body arrives through
@@ -1309,15 +1364,22 @@ export function useAppShell() {
           void nativeFileDrop(event.payload).catch(error => toast(fileError(error)))
         }))
         if (!alive || !launchReady) return
+        await startup.listeners.register('incoming-tab', async () => (await import('@tauri-apps/api/window')).getCurrentWindow().listen<{ handoffId: string; x?: number; y?: number }>('markumo:incoming-tab', event => {
+          void adoptIncomingDocument(event.payload.x, event.payload.y).catch(error => toast(`接收标签失败：${fileError(error)}`))
+        }))
+        if (!alive || !launchReady) return
         await startup.listeners.register('detach', async () => listenDetachCommitted(({ documentId }) => {
           // The target window adopted the body: only now may the source drop
           // its tab. Nothing is discarded if this event never arrives.
           const panes = manager.layout.getAllLeafIds()
           for (const pane of panes) {
-            if (manager.paneGroup(pane).tabs.some(tab => tab.documentId === documentId)) {
-              manager.close(documentId, true, pane)
-              break
-            }
+            manager.close(documentId, true, pane)
+          }
+          if (currentLaunchKind === 'detached' && manager.openedDocuments.length === 0) {
+            void (async () => {
+              const win = (await import('@tauri-apps/api/window')).getCurrentWindow()
+              await win.close()
+            })()
           }
         }))
         if (!alive || !launchReady) return

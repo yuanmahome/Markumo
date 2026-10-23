@@ -260,6 +260,94 @@ try {
     assert.ok(info.y > 0 && info.y < info.height)
   })
 
+  // Test 8: Cross-window tab handoff into split pane
+  await test('8. cross-window adopt with split direction creates new pane', async () => {
+    const info = await page.evaluate(async () => {
+      const f = window.f
+      f.reset('主文档\n', false)
+      const m = f.manager
+      const incomingPayload = {
+        documentId: 'doc-drag-back',
+        name: 'drag-back.md',
+        path: 'C:/workspace/drag-back.md',
+        fileToken: 'tok-drag-back',
+        text: '# 拖回的内容\n',
+        version: 'v1',
+        encoding: 'UTF-8',
+        bom: false,
+        eol: 'LF',
+        readOnly: false,
+        dirty: true,
+        markdownMode: 'live',
+        anchor: 2,
+        head: 2,
+        scrollTop: 0,
+        scrollLeft: 0,
+        pinned: true,
+        external: null,
+      }
+      const beforePanes = m.layout.getAllLeafIds().length
+      // Split pane on adopt
+      const newPaneId = m.splitPane('right', 'main', undefined, 'main', false)
+      const adoptedDocId = m.openFile({
+        token: incomingPayload.fileToken,
+        path: incomingPayload.path,
+        name: incomingPayload.name,
+        text: incomingPayload.text,
+        encoding: 'UTF-8',
+        bom: false,
+        eol: 'LF',
+        readOnly: false,
+        version: 'v1',
+      }, false, newPaneId, false)
+
+      if (incomingPayload.dirty) m.restoreRecoveredText(adoptedDocId, incomingPayload.text)
+      m.pin(adoptedDocId, newPaneId)
+
+      return {
+        beforePanes,
+        afterPanes: m.layout.getAllLeafIds().length,
+        newPaneActive: m.paneGroup(newPaneId).activeId,
+        adoptedDocId,
+        text: m.getText(adoptedDocId),
+      }
+    })
+    assert.equal(info.afterPanes, info.beforePanes + 1)
+    assert.equal(info.newPaneActive, info.adoptedDocId)
+    assert.equal(info.text, '# 拖回的内容\n')
+  })
+
+  // Test 9: Source window drops document from all panes upon commit
+  await test('9. source window closes document from all split panes upon commit', async () => {
+    const info = await page.evaluate(async () => {
+      const f = window.f
+      f.reset('多分栏文档\n', false)
+      const m = f.manager
+      const docId = m.activeId
+      // Open in secondary pane too
+      const secPane = m.splitPane('right', 'main', docId)
+      const panesWithDocBefore = m.layout.getAllLeafIds().filter(p =>
+        m.paneGroup(p).tabs.some(t => t.documentId === docId)
+      )
+
+      // Simulate commit in target: close docId across all panes
+      const panes = m.layout.getAllLeafIds()
+      for (const p of panes) {
+        m.close(docId, true, p)
+      }
+
+      const panesWithDocAfter = m.layout.getAllLeafIds().filter(p =>
+        m.paneGroup(p).tabs.some(t => t.documentId === docId)
+      )
+      return {
+        beforeCount: panesWithDocBefore.length,
+        afterCount: panesWithDocAfter.length,
+      }
+    })
+    assert.equal(info.beforeCount, 2)
+    assert.equal(info.afterCount, 0)
+  })
+
   console.log(`========================================`)
   console.log(`All ${results.length} window detach tests passed successfully!`)
   console.log(`========================================`)

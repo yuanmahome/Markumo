@@ -170,6 +170,38 @@ impl DetachRegistry {
         Ok(label)
     }
 
+    pub fn begin_for_target(
+        &mut self,
+        source: &str,
+        target: &str,
+        payload: DetachPayload,
+        now: Instant,
+    ) -> Result<String, String> {
+        payload.validate()?;
+        self.purge(now);
+        if self.handoffs.len() >= MAX_HANDOFFS {
+            return Err("待接收的窗口过多，请稍后再试。".into());
+        }
+        if self
+            .handoffs
+            .iter()
+            .any(|handoff| handoff.payload.document_id == payload.document_id)
+        {
+            return Err("该文档正在移动到另一个窗口".into());
+        }
+        self.seq += 1;
+        let id = format!("handoff-{}", self.seq);
+        self.handoffs.push(Handoff {
+            id: id.clone(),
+            label: target.into(),
+            source: source.into(),
+            payload,
+            created: now,
+            adopted: false,
+        });
+        Ok(id)
+    }
+
     pub fn payload_for_label(&self, label: &str) -> Option<&DetachPayload> {
         self.handoffs
             .iter()
@@ -329,6 +361,23 @@ mod tests {
         assert!(registry.adopt(&label).is_err());
         // The body is kept until the source is told to release its tab.
         assert!(!registry.is_empty());
+    }
+
+    #[test]
+    fn begin_for_target_registers_handoff_and_adopt_retrieves_it() {
+        let mut registry = registry();
+        let now = Instant::now();
+        let id = registry
+            .begin_for_target("detached-1", "main", payload("doc-1"), now)
+            .unwrap();
+        assert_eq!(id, "handoff-1");
+        let adopted = registry.adopt("main").unwrap();
+        assert_eq!(adopted.document_id, "doc-1");
+        assert_eq!(adopted.text, "hello");
+        assert_eq!(
+            registry.commit(&id),
+            Some(("detached-1".to_string(), "doc-1".to_string()))
+        );
     }
 
     #[test]
