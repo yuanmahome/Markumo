@@ -16,7 +16,8 @@ export async function openMarkdownLink(raw: string) {
 /** Resolve only a relative Markdown destination. Native workspace authorization
  * still decides whether this exact target may be opened. */
 export function relativeMarkdownLink(base:string,href:string){
-  const [raw,fragment='']=href.split('#',2)
+  const [destination,fragment='']=href.split('#',2)
+  const raw=destination.split('?',1)[0]
   let path:string,anchor:string
   try{path=decodeURIComponent(raw);anchor=decodeURIComponent(fragment)}catch{return null}
   if(!path||/^[/\\]|:|[\0\r\n]/.test(path))return null

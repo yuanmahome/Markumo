@@ -15,6 +15,7 @@ import { MarkdownSourceBridge, textPatch, type SourcePatch } from './MarkdownSou
 import { mathBlockParts, mapMathSelection, mergeMathComposition, type MathSelection } from './MathSource'
 import { markdownTypographyStyle } from '../typography'
 import { InlineSourceView, inlineSourceRange } from './InlineSourceView'
+import { ModifiedLinkGesture } from './ModifiedLinkGesture'
 import { Decoration, DecorationSet } from 'prosemirror-view'
 import { CodeBlockView } from './CodeBlockView'
 import { CalloutNodeView } from './CalloutNodeView'
@@ -120,6 +121,8 @@ export class MarkdownEditorController implements LiveEditor {
   private inlineSource: InlineSourceView | null = null
   private pendingInline: { pos:number; kind:string } | null = null
   private dismissedInline: { from:number; to:number } | null = null
+  private linkGesture?: ModifiedLinkGesture
+  private inlineEntryEpoch = 0
   private onCanvasPointerDown = (event: PointerEvent) => {
     if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || this.options.readOnly?.() || this.composing) return
     const target = event.target
@@ -396,6 +399,13 @@ export class MarkdownEditorController implements LiveEditor {
               },
               handleDOMEvents: {
                 focus: () => { options.focus(); return false },
+                mousedown: (_view, event) => {
+                  if (event.button !== 2 || !(event.target as Element).closest('a[data-href]')) return false
+                  // The contextmenu handler positions its own selection. A
+                  // preliminary PM mousedown must not turn the link into source.
+                  event.preventDefault()
+                  return true
+                },
                 copy: (_view, event) => this.liveClipboard.event(event, false),
                 cut: (_view, event) => this.liveClipboard.event(event, true),
                 beforeinput: (_view, event) => {
@@ -420,6 +430,7 @@ export class MarkdownEditorController implements LiveEditor {
                   this.slashController?.close()
                   const caret = keyboard ? view.coordsAtPos(view.state.selection.from) : null
                   this.contextMenu.open(caret?.left ?? event.clientX, caret?.bottom ?? event.clientY, this.contextEntries(event.target as Element), keyboard)
+                  this.inlineEntryEpoch++
                   return true
                 },
               },
@@ -563,6 +574,13 @@ export class MarkdownEditorController implements LiveEditor {
       editable: () => !options.readOnly?.(),
       dispatchTransaction: tr => this.dispatch(tr),
     })
+
+    this.linkGesture = new ModifiedLinkGesture(this.dom, event => {
+      const element = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[data-href]') : null
+      if (!element || !this.view.dom.contains(element) || this.disposed || this.composing) return null
+      const doc = this.view.state.doc, href = element.getAttribute('data-href') || ''
+      return { element, href, valid: () => !this.disposed && !this.composing && this.view.state.doc === doc && element.getAttribute('data-href') === href }
+    }, () => { this.inlineEntryEpoch++ }, href => this.openLink(href))
 
     this.liveClipboard = new LiveClipboard(this.view, () => this.copySettings, () => this.bridge,
       () => !this.options.readOnly?.() && !this.composing, () => !this.disposed)
@@ -1436,8 +1454,9 @@ export class MarkdownEditorController implements LiveEditor {
     const a=(event.target as Element).closest('a')
     if(!a)return false
     event.preventDefault()
-    if(event.ctrlKey||event.metaKey)this.openLink(a.getAttribute('data-href')||'')
-    else{
+    // Modified clicks belong exclusively to the capture-phase gesture owner.
+    // PM click handlers must never provide a second navigation path.
+    if(!event.ctrlKey&&!event.metaKey){
       const start=view.posAtDOM(a,0)
       const at=view.posAtCoords({left:event.clientX,top:event.clientY})?.pos ?? start
       view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc,at)))
@@ -1457,8 +1476,9 @@ export class MarkdownEditorController implements LiveEditor {
   }
 
   private scheduleInlineEntry() {
+    const epoch = this.inlineEntryEpoch
     queueMicrotask(() => {
-      if (this.disposed || this.inlineSource || this.composing || !this.view.hasFocus() || !this.view.state.selection.empty) return
+      if (epoch !== this.inlineEntryEpoch || this.linkGesture?.active || this.disposed || this.inlineSource || this.composing || !this.view.hasFocus() || !this.view.state.selection.empty) return
       const pos = this.view.state.selection.from
       if (this.dismissedInline && pos >= this.dismissedInline.from && pos <= this.dismissedInline.to) return
       this.dismissedInline = null
@@ -1481,6 +1501,7 @@ export class MarkdownEditorController implements LiveEditor {
   }
 
   private openInlineAt(pos: number, kind: string, selectAll = false) {
+    if (this.linkGesture?.active) return
     this.pendingInline = null
     if (kind === 'image' && this.inlineSource?.kind === kind && this.inlineSource.from === pos) {
       this.inlineSource.focus(undefined, selectAll)
@@ -1846,7 +1867,8 @@ export class MarkdownEditorController implements LiveEditor {
       void openMarkdownLink(href)
       return
     }
-    if (!/^[/\\]|:|[\0\r\n]/.test(href)) {
+    const destination = href.split(/[?#]/, 1)[0]
+    if (!/^[/\\]|:/.test(destination) && !/[\0\r\n]/.test(href)) {
       this.options.openRelative?.(href)
       return
     }
@@ -2456,6 +2478,7 @@ export class MarkdownEditorController implements LiveEditor {
   }
 
   destroy() {
+    this.linkGesture?.destroy()
     this.propertyObserver?.disconnect()
     window.removeEventListener('resize', this.repositionProperties)
     cancelAnimationFrame(this.typewriterAlignFrame)

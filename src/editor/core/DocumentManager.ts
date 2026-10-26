@@ -747,7 +747,7 @@ export class DocumentManager {
           selected:(anchor,head)=>{const selection=EditorSelection.single(Math.min(anchor,record.state.doc.length),Math.min(head,record.state.doc.length));record.panes[resolved].selection=selection;if(this.activePane===resolved)record.state=record.state.update({selection,annotations:Transaction.addToHistory.of(false)}).state;this.notify()},
           history:forward=>{this.focusPane(resolved,false);this.historyCommand(forward)},focus:()=>this.focusPane(resolved,false),
           compositionChanged:()=>{if(!this.disposed)this.notify()},
-          openRelative:href=>window.dispatchEvent(new CustomEvent('markdown-open-relative',{detail:{id:record.meta.id,href}})),
+          openRelative:href=>window.dispatchEvent(new CustomEvent('markdown-open-relative',{detail:{id:record.meta.id,href,pane:resolved}})),
           readOnly:()=>record.state.readOnly||record.meta.readOnly,
         },sibling instanceof MarkdownEditorController?sibling.bridge:undefined)
         this.liveViews.set(resolved,{id:record.meta.id,editor})

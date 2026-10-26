@@ -224,7 +224,7 @@ export function useAppShell() {
 
   // --- File Links, Paste & Drag/Drop ---
   async function openRelativeLink(event: Event) {
-    const detail = (event as CustomEvent<{ id: string; href: string }>).detail
+    const detail = (event as CustomEvent<{ id: string; href: string; pane?: string }>).detail
     const doc = detail && manager.metadata(detail.id)
     if (!desktop || !doc?.fileToken || fileBusy.value || manager.isComposing) return
     const target = relativeMarkdownLink(doc.path, detail.href)
@@ -235,7 +235,7 @@ export function useAppShell() {
     fileBusy.value = true
     try {
       const file = await tauriWorkspace.openWorkspaceFile(target.path)
-      files.accept(file, false)
+      if (!files.accept(file, false, detail.pane ?? manager.activePane)) return
       const id = manager.openedDocuments.find(item => sameFilePath(item.path, file.path))?.id
       if (id && target.anchor) {
         const source = manager.getText(id) || ''
