@@ -53,7 +53,6 @@ export class ImportController {
           changes: { from: 0, insert: result.markdown },
         })
         this.manager.select(docId)
-        this.notify(`已成功导入 HTML 文档「${result.title}」为 Markdown`)
         return docId
       }
       return null
@@ -104,8 +103,6 @@ export class ImportController {
         this.manager.select(docId)
       }
 
-      const targetFileName = target.path.split(/[/\\]/).pop()
-      this.notify(`已成功将 Word 文档导入为 ${targetFileName}`)
       return target.path
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error)

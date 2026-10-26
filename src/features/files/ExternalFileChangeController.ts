@@ -232,7 +232,7 @@ export class ExternalFileChangeController {
         if (revision !== b.state.localRevision || this.manager.metadata(id)?.dirty) { b.autoReloadRevision = undefined; b.state.phase = this.restingPhase(b); return }
         if (!this.autoReload || b.state.hidden) { b.autoReloadRevision = undefined; return }
         if (this.busy(id)) { b.state.phase = 'changed-clean'; this.queue(id); return }
-        if (this.manager.reloadFile(id, file)) { this.resolved(b, file); this.publish(); this.notify('文件已从磁盘重新加载') }
+        if (this.manager.reloadFile(id, file)) { this.resolved(b, file); this.publish() }
       }
     } catch (e) {
       if (this.current(id,b,sequence)) this.failed(b, e)

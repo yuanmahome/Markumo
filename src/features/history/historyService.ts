@@ -144,7 +144,6 @@ export async function migrateLegacyHistory(
     const remaining = Object.keys(localStorage).some(key => key.startsWith(LEGACY_PREFIX))
     if (!remaining && failed === 0) localStorage.setItem(MIGRATION_FLAG, 'done')
   } catch { failed++ }
-  if (migrated > 0) notify(`已迁移 ${migrated} 个历史版本到新的本地存储`)
   if (failed > 0) notify(`历史迁移尚未完成（${failed} 项失败或超出配额）；旧来源保留，下次启动会重试，已迁移正文不会重复创建。`)
   return migrated
 }

@@ -89,11 +89,9 @@ export class ExportController {
         timestamp: Date.now(),
       })
 
-      const displayTarget = targetPath.split(/[/\\]/).pop() || targetPath
-      this.notify(`已成功导出 ${displayTarget}`)
       return targetPath
     } catch (error) {
-      if(cancellation?.signal.aborted){this.notify('Word 导出已取消，未写入输出文件。');return null}
+      if(cancellation?.signal.aborted)return null
       const msg = error instanceof Error ? error.message : String(error)
       this.notify(`导出失败：${msg}`)
       throw error

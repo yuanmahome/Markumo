@@ -1731,9 +1731,7 @@ export class MarkdownEditorController implements LiveEditor {
 
     this.propertyButton('打开链接', () => this.openLink(urlInput.value))
     this.propertyButton('复制链接', () => {
-      void textClipboard.writeText(urlInput.value).then(() => {
-        notice('链接已复制到剪贴板')
-      })
+      void textClipboard.writeText(urlInput.value).catch(error => notice(`复制链接失败：${String(error)}`))
     })
     this.propertyButton('移除链接', () => {
       if (current()) {

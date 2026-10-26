@@ -687,7 +687,6 @@ export class WorkspaceController {
       const newNode = await this.gateway.createFile(parentDir, name)
       await this.insertNode(parentDir, newNode)
       created = newNode
-      this.notify(`已创建文件: ${name}`)
     } catch (e) {
       this.notify(`创建文件失败: ${e}`)
     } finally { this.operationBusy = false; this.fileController.workspaceBusy = false }
@@ -699,7 +698,6 @@ export class WorkspaceController {
     try {
       const newNode = await this.gateway.createDirectory(parentDir, name)
       await this.insertNode(parentDir, newNode)
-      this.notify(`已创建文件夹: ${name}`)
     } catch (e) {
       this.notify(`创建文件夹失败: ${e}`)
     } finally { this.operationBusy = false; this.fileController.workspaceBusy = false }
@@ -727,7 +725,6 @@ export class WorkspaceController {
     try {
       const [oldRel, newRel] = await this.gateway.renameNode(oldPath, newName)
       this.relocate(oldRel, newRel, this.rootForPath(oldPath) || this.rootPath!)
-      this.notify(`已重命名: ${oldRel} → ${newRel}`)
       this.emit()
     } catch (e) {
       this.notify(`重命名失败: ${e}`)
@@ -812,7 +809,6 @@ export class WorkspaceController {
         parent.hasChildren = true
       }
       await this.refreshDirectory()
-      this.notify(`已移动: ${oldRelative} → ${newRelative}`)
     } catch (e) { this.notify(`移动失败: ${e}`) }
     finally { this.operationBusy = false; this.fileController.workspaceBusy = false }
   }
@@ -823,7 +819,7 @@ export class WorkspaceController {
     }
     if (!this.beginMutation()) return
     try {
-      const rel = await this.gateway.deleteNode(node.path)
+      await this.gateway.deleteNode(node.path)
       this.cancelOpens(); this.cancelReveal()
       if (this.selectedTreePath && this.isWithin(this.selectedTreePath, node.path)) this.selectedTreePath = null
       for (const root of this.roots) this.removeNodeFromTree(root.entries, node.path)
@@ -831,7 +827,6 @@ export class WorkspaceController {
       this.searchResults = []; this.searchTotal = 0; this.searchQuery = ''
       this.quickGeneration++; this.quickFiles = []
       this.invalidateFileIndex()
-      this.notify(`已删除: ${rel}`)
       this.emit()
     } catch (e) {
       this.notify(`删除失败: ${e}`)

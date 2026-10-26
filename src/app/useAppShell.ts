@@ -545,7 +545,6 @@ export function useAppShell() {
       const result = await files.saveDetailed(id, saveAs, encoding)
       await refreshRecent()
       if (result.code === 'saved') {
-        toast('文件已成功保存')
         return true
       }
       if (result.code === 'changed') {
@@ -553,7 +552,6 @@ export function useAppShell() {
         return true
       }
       if (result.code === 'cancelled') {
-        toast('已取消保存，未保存修改仍保留')
         return false
       }
       if (result.code === 'conflict') {
@@ -697,7 +695,6 @@ export function useAppShell() {
     try {
       const saved = await files.save(doc.id, false, payload.encoding, payload.bom)
       if (saved) {
-        toast(`已将文件编码转换为 ${payload.encoding}${payload.bom ? ' (BOM)' : ''} 并保存`)
         await refreshRecent()
       }
     } finally {
@@ -801,7 +798,6 @@ export function useAppShell() {
       focusMode.value = false
       if (savedSidebarVisible.value !== null) sidebarVisible.value = savedSidebarVisible.value
       savedSidebarVisible.value = null
-      toast('已退出专注模式')
     })
   }
 
@@ -811,13 +807,11 @@ export function useAppShell() {
       savedSidebarVisible.value = sidebarVisible.value
       sidebarVisible.value = false
       focusMode.value = true
-      toast('专注模式 · Esc 退出')
     })
   }
 
   function toggleTypewriter() {
     preferences.typewriterMode.value = !preferences.typewriterMode.value
-    toast(preferences.typewriterMode.value ? '打字机模式 · 已开启' : '已退出打字机模式')
   }
 
   function openSettings(section?: string) {
@@ -1414,7 +1408,6 @@ export function useAppShell() {
         if (!alive) return
         if (confirmation?.confirmed) {
           updateStatus.confirmedVersion = runtime.version
-          toast('Markumo 已更新至 v' + runtime.version)
         } else if (confirmation) {
           toast('上次更新尚未确认，当前运行版本为 v' + runtime.version + '，可重新检查更新。')
         }
