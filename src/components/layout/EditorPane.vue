@@ -32,7 +32,7 @@ function newDocument() { props.manager.focusPane(props.pane, false); props.manag
 function quickOpen() { props.manager.focusPane(props.pane, false); emit('quick-open') }
 
 const host = ref<HTMLElement | null>(null), preview = ref<InstanceType<typeof SplitPreview> | null>(null)
-let previousText: Text | undefined, serialized = ''
+let previousText: Text | undefined, serialized = '', disposed = false
 
 const currentMode = computed(() => {
   return props.doc && props.manager ? props.manager.getMarkdownMode(props.doc.id, props.pane) : null
@@ -120,19 +120,28 @@ function onPreviewScroll(lineNumber: number) {
 watch([currentMode, preview], async () => {
   expectedTop = null
   await nextTick()
+  if (disposed) return
   const view = currentView()
   if (currentMode.value === 'split' && view) onEditorScroll({ target: view.scrollDOM } as unknown as Event)
 }, { flush: 'post' })
 
-onMounted(() => { if (host.value) props.manager.mountPane(host.value, props.pane) })
+onMounted(() => { if (!disposed && host.value) props.manager.mountPane(host.value, props.pane) })
 watch(() => props.pane, (pane, previous) => {
+  if (disposed) return
   props.manager.unmount(previous, host.value)
   if (host.value) props.manager.mountPane(host.value, pane)
 }, { flush: 'post' })
 watch(() => !!props.doc, (present, previous) => {
+  if (disposed) return
   if (present && !previous && props.manager.activePane === props.pane) props.manager.focusPane(props.pane)
 }, { flush: 'post' })
-onBeforeUnmount(() => { stopSplitResize?.(); props.manager.unmount(props.pane, host.value, true) })
+onBeforeUnmount(() => {
+  disposed = true
+  stopSplitResize?.()
+  previousText = undefined
+  serialized = ''
+  props.manager.unmount(props.pane, host.value, true)
+})
 </script>
 <style scoped>
 .pane-body { flex: 1; display: flex; min-width: 0; min-height: 0; position: relative; overflow: hidden }

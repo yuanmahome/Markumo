@@ -539,6 +539,7 @@ export class DocumentManager {
     const id = `untitled-${count}`
     this.seeds.set(id, { id, name: `Untitled-${count}.${extension}`, path: '', text: '' })
     this.open(id, false)
+    if (this.records.has(id)) this.seeds.delete(id)
     this.paneView(this.activePane)?.focus()
     return id
   }
@@ -550,6 +551,7 @@ export class DocumentManager {
     this.seeds.set(seed.id, { id: seed.id, name: seed.name, path: '', text: seed.text, encoding: seed.encoding, bom: seed.bom, eol: seed.eol, mode: seed.mode })
     this.open(seed.id, false)
     const record = this.records.get(seed.id)
+    this.seeds.delete(seed.id)
     if (!record) return null
     record.meta.encoding = seed.encoding || 'UTF-8'
     record.meta.bom = seed.bom ?? false
@@ -603,12 +605,23 @@ export class DocumentManager {
     if (res.paneRemoved) {
       this.destroyView(targetPane)
       this.hosts.delete(targetPane)
+      this.purgeRemovedPaneState(targetPane)
       if (wasActivePane) this.showActive(this.layout.activePaneId)
     } else if (wasActive) {
       this.showActive(targetPane)
     }
     this.notify()
     return 'closed'
+  }
+
+  private purgeRemovedPaneState(paneId: string) {
+    if (this.layout.getPane(paneId)) return
+    this.media.deletePane(paneId)
+    this.paneNavigation.delete(paneId)
+    this.rehosting.delete(paneId)
+    for (const record of this.records.values()) {
+      if (paneId !== 'main') delete record.panes[paneId]
+    }
   }
 
   private release(id: string) {
@@ -791,7 +804,7 @@ export class DocumentManager {
         // Finish the height-map measure before turning those pixels into CM's
         // own scroll target; a raw write during measurement is anchored again.
         queueMicrotask(() => {
-          if (this.paneView(resolved) !== shownView || this.paneGroup(resolved).activeId !== targetId || shownView.state.doc !== shownDocument || this.navigationRevision(resolved) !== shownNavigation || !shownView.state.selection.eq(saved.selection)) return
+          if (this.disposed || this.paneView(resolved) !== shownView || this.paneGroup(resolved).activeId !== targetId || shownView.state.doc !== shownDocument || this.navigationRevision(resolved) !== shownNavigation || !shownView.state.selection.eq(saved.selection)) return
           shownView.scrollDOM.scrollTop = saved.top
           shownView.scrollDOM.scrollLeft = saved.left
           shownView.dispatch({effects:shownView.scrollSnapshot(),annotations:Transaction.addToHistory.of(false)})
@@ -907,7 +920,7 @@ export class DocumentManager {
     const closed = this.layout.closePane(resolved)
     if (closed) {
       for (const tab of pane?.group.tabs || []) this.release(tab.documentId)
-      this.media.deletePane(resolved)
+      this.purgeRemovedPaneState(resolved)
       this.showActive(this.layout.activePaneId)
       this.notify()
     }
@@ -917,25 +930,25 @@ export class DocumentManager {
   mergeAllPanes(): boolean {
     if (this.isComposing) return false
     const primaryId = this.layout.getPrimaryPane().id
+    const secondaryIds = this.layout.getAllLeafIds().filter(paneId => paneId !== primaryId)
 
-    for (const paneId of this.layout.getAllLeafIds()) {
-      if (paneId !== primaryId) {
-        this.captureScroll(paneId)
-        const pane = this.layout.getPane(paneId)
-        if (pane) {
-          for (const tab of pane.group.tabs) {
-            this.copyMediaViewState(tab.documentId, paneId, primaryId)
-            const record = this.records.get(tab.documentId)
-            if (record && !record.panes[primaryId]) {
-              record.panes[primaryId] = { ...record.panes[paneId] }
-            }
+    for (const paneId of secondaryIds) {
+      this.captureScroll(paneId)
+      const pane = this.layout.getPane(paneId)
+      if (pane) {
+        for (const tab of pane.group.tabs) {
+          this.copyMediaViewState(tab.documentId, paneId, primaryId)
+          const record = this.records.get(tab.documentId)
+          if (record && !record.panes[primaryId]) {
+            record.panes[primaryId] = { ...record.panes[paneId] }
           }
         }
-        this.destroyView(paneId)
-        this.hosts.delete(paneId)
       }
+      this.destroyView(paneId)
+      this.hosts.delete(paneId)
     }
     this.layout.mergeAllPanes()
+    for (const paneId of secondaryIds) this.purgeRemovedPaneState(paneId)
     this.activePane = primaryId
     this.showActive(primaryId)
     this.notify()
@@ -959,6 +972,7 @@ export class DocumentManager {
     } else {
       this.destroyView(resolvedFrom)
       this.hosts.delete(resolvedFrom)
+      this.purgeRemovedPaneState(resolvedFrom)
     }
     this.showActive(resolvedTo)
     this.notify()
@@ -1287,6 +1301,13 @@ export class DocumentManager {
     if (docChanged) {
       record.meta.dirty = !state.doc.eq(record.baseline) || !record.endings.equal(state, record.baselineEndings)
       record.meta.charCount = state.doc.length
+      // Drop stale scroll snapshotText references to superseded document versions
+      for (const paneState of Object.values(record.panes)) {
+        if (paneState.snapshotText && paneState.snapshotText !== state.doc) {
+          paneState.snapshot = undefined
+          paneState.snapshotText = undefined
+        }
+      }
       this.pin(record.meta.id)
     }
     const position = state.selection.main.head
