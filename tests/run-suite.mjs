@@ -7,6 +7,7 @@ const smokeScripts = [
   'tests/markdown-links/regression.mjs',
   'tests/phase042/code-block-browser.mjs',
   'tests/phase042/code-block-layout.mjs',
+  'tests/phase042/slash-table-browser.mjs',
   'tests/phase042/render-tasks-phase2.mjs',
   'tests/phase042/pane-tab-lifecycle-phase4.mjs',
 ]

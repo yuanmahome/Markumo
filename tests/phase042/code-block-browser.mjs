@@ -20,6 +20,53 @@ try {
   await page.goto('http://127.0.0.1:1476/tests/markdown-links/fixture.html')
   await page.waitForFunction(() => !!window.f)
 
+  // Fence completion must create a focused, editable block in the same action.
+  for (const scenario of [
+    { opening: '```java', language: 'java' },
+    { opening: '```', language: '' },
+    { opening: '~~~java', language: 'java' },
+    { opening: '```js', language: 'js' },
+    { opening: '```customlang', language: 'customlang', hidden: true },
+    { opening: '```jav', language: 'java', action: 'Tab' },
+    { opening: '```jav', language: 'java', action: 'ArrowDown' },
+    { opening: '```jav', language: 'java', action: 'click' },
+    { opening: '```java', language: 'java', action: 'Escape' },
+  ]) {
+    await page.evaluate(() => window.f.reset('Before.\n\nStart\n\nAfter.\n'))
+    await page.waitForFunction(() => window.f.ready())
+    await page.evaluate(() => window.f.caret('Start'))
+    await page.keyboard.press('Shift+End')
+    await page.keyboard.type(scenario.opening)
+    const popup = page.locator('.md-fence-autocomplete')
+    if (scenario.hidden) await popup.waitFor({ state: 'hidden' })
+    else await popup.waitFor({ state: 'visible' })
+    if (scenario.action === 'click') {
+      await popup.getByRole('option', { name: 'Java', exact: true }).click()
+    } else {
+      if (scenario.action) await page.keyboard.press(scenario.action)
+      if (scenario.action === 'Tab') {
+        assert.equal(await page.locator('.md-code-block').count(), 0, 'Tab only completes the language')
+        assert.equal(await page.locator('.md-prose > p').nth(1).innerText(), '```java')
+      }
+      await page.keyboard.press('Enter')
+    }
+    const label = `${scenario.opening} (${scenario.action || 'Enter'})`
+    await page.waitForFunction(() => !!document.querySelector('.md-code-block .cm-content:focus'), null, { timeout: 3000 })
+    assert.equal(await page.locator('.md-code-block').count(), 1, label)
+    assert.equal(await popup.isVisible(), false, label)
+    assert.deepEqual(await page.evaluate(() => {
+      const editor = window.f.live()
+      const block = editor.view.state.doc.child(1)
+      return { type: block.type.name, language: block.attrs.params, text: block.textContent }
+    }), { type: 'code_block', language: scenario.language, text: '' }, label)
+    await page.keyboard.type('hello')
+    const fence = scenario.opening.startsWith('~~~') ? '~~~' : '```'
+    assert.equal(await page.evaluate(() => window.f.manager.getText(window.f.id)),
+      `Before.\n\n${fence}${scenario.language}\nhello\n${fence}\n\nAfter.\n`, label)
+    assert.deepEqual(await page.evaluate(() => window.f.notices), [], label)
+  }
+  console.log('PASS: fence Enter, Tab, arrow selection, click, and dismissed suggestions create editable code blocks')
+
   const doc200 =
     '# 200 Blocks Browser Smoke\n\nIntro paragraph.\n\n' +
     Array.from(

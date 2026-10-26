@@ -210,28 +210,28 @@ export class SlashCommandMenu {
         event.preventDefault()
         event.stopPropagation()
         this.tableColumns = Math.min(6, this.tableColumns + 1)
-        this.renderTablePicker()
+        this.updateTableSelection()
         return true
       }
       case 'ArrowLeft': {
         event.preventDefault()
         event.stopPropagation()
         this.tableColumns = Math.max(1, this.tableColumns - 1)
-        this.renderTablePicker()
+        this.updateTableSelection()
         return true
       }
       case 'ArrowDown': {
         event.preventDefault()
         event.stopPropagation()
         this.tableRows = Math.min(6, this.tableRows + 1)
-        this.renderTablePicker()
+        this.updateTableSelection()
         return true
       }
       case 'ArrowUp': {
         event.preventDefault()
         event.stopPropagation()
         this.tableRows = Math.max(1, this.tableRows - 1)
-        this.renderTablePicker()
+        this.updateTableSelection()
         return true
       }
       case 'Enter': {
@@ -397,7 +397,7 @@ export class SlashCommandMenu {
         cell.onmouseenter = () => {
           this.tableRows = r
           this.tableColumns = c
-          this.renderTablePicker()
+          this.updateTableSelection()
         }
 
         cell.onclick = () => {
@@ -420,6 +420,17 @@ export class SlashCommandMenu {
 
     picker.append(header, grid, footer)
     this.dom.append(picker)
+  }
+
+  private updateTableSelection() {
+    const dimensions = this.dom.querySelector('.md-slash-table-header strong')
+    if (dimensions) dimensions.textContent = `${this.tableRows} × ${this.tableColumns}`
+    // Keep the hovered button mounted so it can receive the subsequent click.
+    this.dom.querySelectorAll('.md-slash-table-cell').forEach((cell, index) => {
+      const row = Math.floor(index / 6) + 1
+      const column = index % 6 + 1
+      cell.classList.toggle('is-selected', row <= this.tableRows && column <= this.tableColumns)
+    })
   }
 
   private updateActiveItem() {

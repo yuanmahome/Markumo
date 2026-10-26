@@ -803,7 +803,7 @@ export class MarkdownEditorController implements LiveEditor {
         params: language || '',
         fence: fenceMarks || '```',
       })
-      .setSelection(TextSelection.create(state.doc, pos + 1))
+    tr.setSelection(TextSelection.create(tr.doc, pos + 1))
       .setMeta('isolated', true)
       .scrollIntoView()
 
