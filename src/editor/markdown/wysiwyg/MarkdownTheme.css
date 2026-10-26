@@ -375,6 +375,19 @@ body.light .markdown-live { --text: #333; --bright: #333; --muted: #777; --line:
   overflow: hidden;
 }
 
+/* One shared paint layer keeps the divider stationary across static/CM views
+   and horizontal scrolling, without adding width to either gutter. */
+.markdown-live .md-code-block.has-code-numbers .md-code-surface::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--code-gutter-width);
+  border-left: 1px solid var(--line);
+  pointer-events: none;
+  z-index: 3;
+}
+
 .markdown-live .md-code-surface .md-code-copy {
   position: absolute;
   top: 6px;
