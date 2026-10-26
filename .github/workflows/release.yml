@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag to release (for example v1.0.6)
+        description: Existing version tag to release (for example v1.0.7)
         required: true
-        default: v1.0.6
+        default: v1.0.7
 
 permissions:
   contents: read
