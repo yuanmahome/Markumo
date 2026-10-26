@@ -15,6 +15,7 @@ export class LanguageSelector {
   private info = ''
   private originalLabel = ''
   private interacting = false
+  private listenersAttached = false
 
   private onOutside = (event: MouseEvent) => {
     const target = event.target as Node
@@ -30,7 +31,23 @@ export class LanguageSelector {
     }
   }
 
-  constructor(info: string, private change: (label: string) => void) {
+  private attachGlobalListeners() {
+    if (this.listenersAttached) return
+    this.listenersAttached = true
+    document.addEventListener('mousedown', this.onOutside)
+    document.addEventListener('scroll', this.onViewportChange, true)
+    window.addEventListener('resize', this.onViewportChange)
+  }
+
+  private detachGlobalListeners() {
+    if (!this.listenersAttached) return
+    this.listenersAttached = false
+    document.removeEventListener('mousedown', this.onOutside)
+    document.removeEventListener('scroll', this.onViewportChange, true)
+    window.removeEventListener('resize', this.onViewportChange)
+  }
+
+  constructor(info: string, private change: (label: string) => void, private onCloseInteraction?: () => void) {
     this.row.className = 'md-code-language-row'
     this.dock.className = 'md-code-language-dock md-code-lang'
 
@@ -142,10 +159,6 @@ export class LanguageSelector {
       })
     }
 
-    document.addEventListener('mousedown', this.onOutside)
-    document.addEventListener('scroll', this.onViewportChange, true)
-    window.addEventListener('resize', this.onViewportChange)
-
     this.update(info)
   }
 
@@ -173,6 +186,7 @@ export class LanguageSelector {
 
   startEditing() {
     this.interacting = true
+    this.attachGlobalListeners()
     this.button.hidden = true
     this.input.hidden = false
     this.input.value = this.originalLabel
@@ -182,14 +196,18 @@ export class LanguageSelector {
   }
 
   stopEditing() {
+    const wasActive = this.isInteracting
     this.interacting = false
     this.input.hidden = true
     this.button.hidden = false
     this.input.value = this.originalLabel
     this.close()
+    this.detachGlobalListeners()
+    if (wasActive) this.onCloseInteraction?.()
   }
 
   private open() {
+    this.attachGlobalListeners()
     this.panel.hidden = false
     this.input.setAttribute('aria-expanded', 'true')
     this.active = -1
@@ -280,9 +298,7 @@ export class LanguageSelector {
   }
 
   destroy() {
-    document.removeEventListener('mousedown', this.onOutside)
-    document.removeEventListener('scroll', this.onViewportChange, true)
-    window.removeEventListener('resize', this.onViewportChange)
+    this.detachGlobalListeners()
     this.row.remove()
   }
 }

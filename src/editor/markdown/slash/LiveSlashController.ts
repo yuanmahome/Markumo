@@ -239,6 +239,13 @@ export class LiveSlashController {
         tr.setMeta('isolated', true).scrollIntoView()
         view.dispatch(tr)
         view.focus()
+        queueMicrotask(() => {
+          const codeView = [...(this.editor['codeViews'] as Set<any>)].find(v => v.getPos() === targetPos)
+          if (codeView && typeof codeView.ensureEditor === 'function') {
+            codeView.ensureEditor().focus()
+            codeView.setSelection(0, 0)
+          }
+        })
         return
       }
 

@@ -889,6 +889,7 @@ export class MarkdownEditorController implements LiveEditor {
       const before = this.bridge.source
       if (applied.state.doc.eq(this.view.state.doc) && !tr.getMeta('inlineSourcePatch')) {
         this.view.updateState(applied.state)
+        this.releaseIdleCodeEditors()
         this.updateTools()
         const sel = this.selection
         this.options.selected(sel.anchor, sel.head)
@@ -934,6 +935,7 @@ export class MarkdownEditorController implements LiveEditor {
       for (const transaction of applied.transactions) this.inlineSource?.map(transaction)
       this.inlineSource?.mapSource(prepared.patch, tr.getMeta('inlineSourceEditor') === this.inlineSource)
       this.view.updateState(nextState)
+      this.releaseIdleCodeEditors()
       this.updateTools()
       const sel = this.selection
       this.options.selected(sel.anchor, sel.head)
@@ -991,7 +993,24 @@ export class MarkdownEditorController implements LiveEditor {
     this.updateTools()
   }
 
+  private releaseIdleCodeEditors() {
+    for (const code of this.codeViews) {
+      if (code.existingEditor) code.maybeDetachEditor()
+    }
+  }
+
   focus() {
+    const { $from, $to } = this.view.state.selection
+    if ($from.sameParent($to) && $from.parent.type === s.nodes.code_block) {
+      const pos = $from.before()
+      const code = [...this.codeViews].find(c => c.getPos() === pos)
+      if (code) {
+        const editor = code.ensureEditor()
+        editor.dispatch({ selection: { anchor: $from.parentOffset, head: $to.parentOffset } })
+        editor.focus()
+        return
+      }
+    }
     this.view.focus()
   }
 
@@ -1234,7 +1253,24 @@ export class MarkdownEditorController implements LiveEditor {
       }
       return result
     }
-    if (format === 'code-block') return this.run(setBlockType(s.nodes.code_block), true)
+    if (format === 'code-block') {
+      const ok = this.run(setBlockType(s.nodes.code_block), true)
+      if (ok) {
+        queueMicrotask(() => {
+          if (this.disposed) return
+          const { $from, $to } = this.view.state.selection
+          if ($from.sameParent($to) && $from.parent.type === s.nodes.code_block) {
+            const pos = $from.before()
+            const code = [...this.codeViews].find(c => c.getPos() === pos)
+            if (code) {
+              code.ensureEditor().focus()
+              code.setSelection($from.parentOffset, $to.parentOffset)
+            }
+          }
+        })
+      }
+      return ok
+    }
     if (format === 'table') {
       const cell = (header: boolean) => (header ? s.nodes.table_header : s.nodes.table_cell).createAndFill()!
       const table = s.nodes.table.create(null, [
