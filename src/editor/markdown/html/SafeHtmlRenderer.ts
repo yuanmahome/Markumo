@@ -1,6 +1,14 @@
 import DOMPurify from 'dompurify'
 import { safeMarkdownURL } from '../links'
-import { imageDestination, type MarkdownResources } from '../images'
+import {
+  acquireBlobUrl,
+  detectMimeType,
+  imageDestination,
+  releaseBlobUrl,
+  scopedImageBlobKey,
+  tryAcquireExistingBlobUrl,
+  type MarkdownResources,
+} from '../images'
 
 const ALLOWED_TAGS = [
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -174,8 +182,8 @@ export function mountHtmlImages(
   resources?: MarkdownResources,
   onImageClick?: (img: HTMLImageElement) => void
 ): MountedImageHandle {
-  const objectUrls: string[] = []
-  let disposed=false
+  const acquiredKeys: string[] = []
+  let disposed = false
   const imgElements = Array.from(container.querySelectorAll<HTMLImageElement>('img'))
 
   for (const img of imgElements) {
@@ -217,7 +225,7 @@ export function mountHtmlImages(
         placeholder.textContent = `点击加载网络图片 (${dest.path})`
         placeholder.onclick = (e) => {
           e.stopPropagation()
-          if(disposed||!placeholder.isConnected||!resources)return
+          if (disposed || !placeholder.isConnected || !resources) return
           resources.allowedRemote.add(dest.path)
           img.src = dest.path
           placeholder.replaceWith(img)
@@ -229,23 +237,23 @@ export function mountHtmlImages(
       continue
     }
 
-    // 本地图片资源：通过 resources.loadLocal 加载
+    // 本地图片资源：复用共享引用计数 Blob 池
     if (dest.kind === 'local' && resources) {
+      const key = scopedImageBlobKey(resources, dest.path)
+      const cachedUrl = tryAcquireExistingBlobUrl(key)
+      if (cachedUrl) {
+        acquiredKeys.push(key)
+        img.src = cachedUrl
+        img.classList.add('md-html-img-ready')
+        continue
+      }
       img.classList.add('md-html-img-loading')
       resources
         .loadLocal(dest.path)
         .then(bytes => {
           if (disposed || !img.isConnected) return
-          const type =
-            bytes[0] === 0x89
-              ? 'image/png'
-              : bytes[0] === 0xff
-              ? 'image/jpeg'
-              : bytes[0] === 0x47
-              ? 'image/gif'
-              : 'image/webp'
-          const url = URL.createObjectURL(new Blob([bytes], { type }))
-          objectUrls.push(url)
+          const url = acquireBlobUrl(key, bytes, detectMimeType(bytes))
+          acquiredKeys.push(key)
           img.src = url
           img.classList.remove('md-html-img-loading')
           img.classList.add('md-html-img-ready')
@@ -256,16 +264,23 @@ export function mountHtmlImages(
           const msg = err instanceof Error ? err.message : String(err)
           replaceWithImageError(img, rawSrc, msg.includes('系统找不到') ? '目标路径图片不存在' : msg)
         })
-    } else if(dest.kind==='local') replaceWithImageError(img,rawSrc,'本地图片需要文档授权')
+    } else if (dest.kind === 'local') {
+      replaceWithImageError(img, rawSrc, '本地图片需要文档授权')
+    }
   }
 
   return {
     destroy: () => {
-      disposed=true
-      for (const url of objectUrls) {
-        URL.revokeObjectURL(url)
+      disposed = true
+      for (const img of imgElements) {
+        img.onload = img.onerror = img.onclick = null
+        img.removeAttribute('src')
+        img.remove()
       }
-      objectUrls.length = 0
+      for (const key of acquiredKeys) {
+        releaseBlobUrl(key)
+      }
+      acquiredKeys.length = 0
     },
   }
 }

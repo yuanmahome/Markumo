@@ -1,5 +1,5 @@
-// Preview only uses the URL of an image already loaded through MarkdownResources.
-// Zoom changes this dialog's pixels, never the Markdown or a neighbouring image.
+// Preview uses the downsampled URL first for instant opening, then optionally
+// upgrades to full-resolution bytes and revokes the temporary full URL on close.
 export class ImagePreview {
   readonly dom = document.createElement('dialog')
   private image = document.createElement('img')
@@ -7,11 +7,14 @@ export class ImagePreview {
   private percent = document.createElement('output')
   private openOriginalBtn = document.createElement('button')
   private target: HTMLImageElement | null = null
+  private initialTargetSrc = ''
   private restore: HTMLElement | null = null
   private scale = 1
   private current = () => true
   private restoreFocus: (() => void) | null = null
   private fullUrl: string | null = null
+  private openSeq = 0
+  private disposed = false
   private onOpenOriginalCallback: (() => void) | null = null
 
   constructor(parent: HTMLElement) {
@@ -41,7 +44,7 @@ export class ImagePreview {
       button('适应窗口', () => this.fit()),
       button('原始大小', () => this.zoom(1)),
       this.openOriginalBtn,
-      button('关闭预览', () => this.dom.close()),
+      button('关闭预览', () => this.dom.close())
     )
     this.surface.className = 'md-image-lightbox-surface'
     this.surface.append(this.image)
@@ -58,17 +61,19 @@ export class ImagePreview {
     this.surface.onpointermove = event => {
       if (pan) this.surface.scrollTo(pan.left + pan.x - event.clientX, pan.top + pan.y - event.clientY)
     }
-    this.surface.onpointerup = this.surface.onpointercancel = () => { pan = null }
+    this.surface.onpointerup = this.surface.onpointercancel = () => {
+      pan = null
+    }
     this.dom.onclick = event => {
       if (event.target === this.dom) this.dom.close()
     }
     this.dom.onclose = () => {
+      this.openSeq++
       this.target = null
+      this.initialTargetSrc = ''
+      this.image.onload = this.image.onerror = null
       this.image.removeAttribute('src')
-      if (this.fullUrl) {
-        URL.revokeObjectURL(this.fullUrl)
-        this.fullUrl = null
-      }
+      this.revokeFullUrl()
       this.onOpenOriginalCallback = null
       this.openOriginalBtn.hidden = true
       if (this.restoreFocus) this.restoreFocus()
@@ -77,6 +82,13 @@ export class ImagePreview {
       this.restoreFocus = null
     }
     window.addEventListener('resize', this.onResize)
+  }
+
+  private revokeFullUrl() {
+    if (this.fullUrl) {
+      URL.revokeObjectURL(this.fullUrl)
+      this.fullUrl = null
+    }
   }
 
   private onResize = () => {
@@ -88,13 +100,17 @@ export class ImagePreview {
     current: () => boolean = () => true,
     restoreFocus?: () => void,
     fullLoader?: () => Promise<string | null>,
-    onOpenOriginal?: () => void,
+    onOpenOriginal?: () => void
   ) {
-    if (!image.isConnected || !image.naturalWidth) return
+    if (this.disposed || !image.isConnected || !image.naturalWidth) return
+    const seq = ++this.openSeq
+    this.revokeFullUrl()
     this.restore = document.activeElement instanceof HTMLElement ? document.activeElement : null
     this.restoreFocus = restoreFocus ?? null
     this.target = image
+    this.initialTargetSrc = image.src
     this.current = current
+    this.image.onload = this.image.onerror = null
     this.image.src = image.src
     this.image.alt = image.alt
     this.onOpenOriginalCallback = onOpenOriginal ?? null
@@ -103,15 +119,28 @@ export class ImagePreview {
     this.fit()
 
     if (fullLoader) {
-      void fullLoader().then(fullUrl => {
-        if (!this.dom.open || this.target !== image || !fullUrl) return
-        this.fullUrl = fullUrl
-        this.image.src = fullUrl
-        this.image.onload = () => {
-          if (!this.dom.open) return
-          this.fit()
-        }
-      })
+      void fullLoader()
+        .then(fullUrl => {
+          if (!fullUrl) return
+          if (this.disposed || !this.dom.open || seq !== this.openSeq || this.target !== image) {
+            URL.revokeObjectURL(fullUrl)
+            return
+          }
+          this.revokeFullUrl()
+          this.fullUrl = fullUrl
+          this.image.onload = () => {
+            if (!this.disposed && this.dom.open && seq === this.openSeq) {
+              this.fit()
+            }
+          }
+          this.image.src = fullUrl
+          if (this.image.complete && this.image.naturalWidth > 0) {
+            this.fit()
+          }
+        })
+        .catch(() => {
+          // Keep the downsampled preview visible if full-resolution read fails.
+        })
     }
   }
 
@@ -127,27 +156,29 @@ export class ImagePreview {
     if (!this.target) return
     const w = this.image.naturalWidth || this.target.naturalWidth
     const h = this.image.naturalHeight || this.target.naturalHeight
-    this.scale = Math.max(.001, Math.min(8, scale))
+    this.scale = Math.max(0.001, Math.min(8, scale))
     this.percent.value = `${Math.round(this.scale * 1000) / 10}%`
     this.image.style.width = `${w * this.scale}px`
     this.image.style.height = `${h * this.scale}px`
   }
 
   refresh() {
-    if (this.dom.open && (!this.current() || !this.target?.isConnected || this.target.src !== this.image.src)) {
+    if (this.dom.open && (!this.current() || !this.target?.isConnected || this.target.src !== this.initialTargetSrc)) {
       this.dom.close()
     }
   }
 
   destroy() {
+    this.disposed = true
+    this.openSeq++
     window.removeEventListener('resize', this.onResize)
     this.restore = null
     this.restoreFocus = null
     this.dom.onclose = null
-    if (this.fullUrl) {
-      URL.revokeObjectURL(this.fullUrl)
-      this.fullUrl = null
-    }
+    this.image.onload = this.image.onerror = null
+    this.image.removeAttribute('src')
+    this.image.remove()
+    this.revokeFullUrl()
     if (this.dom.open) this.dom.close()
     this.dom.remove()
   }

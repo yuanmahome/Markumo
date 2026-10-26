@@ -456,6 +456,13 @@ onMounted(() => {
 onBeforeUnmount(() => {
   disposed = true
   intersectionObserver?.disconnect()
+  if (thumbnailsContainer.value) {
+    for (const img of thumbnailsContainer.value.querySelectorAll('img')) {
+      img.onload = img.onerror = null
+      img.removeAttribute('src')
+      img.remove()
+    }
+  }
   clearThumbnails()
 })
 </script>

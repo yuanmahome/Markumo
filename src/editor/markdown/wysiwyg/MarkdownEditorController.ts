@@ -27,7 +27,7 @@ import { LiveImageView } from './LiveImageView'
 import { ImagePreview } from './ImagePreview'
 import { positionImageOverlay } from './imageOverlay'
 import { controlledImageHtml, normalizeImageWidth, normalizeImageAlign } from './imageHtml'
-import { markdownImageError } from '../images'
+import { detectMimeType, imageDestination, markdownImageError } from '../images'
 import { FenceAutocomplete } from './FenceAutocomplete'
 import { LiveSlashController } from '../slash/LiveSlashController'
 import { HtmlBlockView } from './HtmlBlockView'
@@ -1755,12 +1755,30 @@ export class MarkdownEditorController implements LiveEditor {
     this.view.focus()
   }
 
+  private makeFullImageLoader(rawSrc: string): (() => Promise<string | null>) | undefined {
+    const dest = imageDestination(rawSrc || '')
+    if (dest.kind !== 'local') return undefined
+    return async () => {
+      if (this.disposed) return null
+      const bytes = await this.options.resources.loadLocal(dest.path, { full: true })
+      if (this.disposed) return null
+      return URL.createObjectURL(new Blob([bytes as BlobPart], { type: detectMimeType(bytes) }))
+    }
+  }
+
   private previewImageAt(pos: number) {
     const dom = this.view.nodeDOM(pos)
     if (!(dom instanceof HTMLElement)) return
     const image = dom.querySelector('img')
     if (!image?.naturalWidth) { notice('请先填写有效图片路径并等待加载。'); return }
-    this.imagePreview.open(image, () => this.view.state.doc.nodeAt(pos) !== undefined, () => this.view.focus())
+    const node = this.view.state.doc.nodeAt(pos)
+    const rawSrc = String(node?.attrs.src || '')
+    this.imagePreview.open(
+      image,
+      () => this.view.state.doc.nodeAt(pos) !== undefined,
+      () => this.view.focus(),
+      this.makeFullImageLoader(rawSrc)
+    )
   }
 
   private imageProperties(anchorEl: HTMLElement, node: Node, pos: number) {
@@ -1794,8 +1812,15 @@ export class MarkdownEditorController implements LiveEditor {
     })
     this.propertyButton('放大预览', () => {
       const image = anchorEl.querySelector('img')
-      if (image?.naturalWidth) this.imagePreview.open(image, () => !!this.currentPropertyNode(token), () => srcInput.focus({ preventScroll: true }))
-      else feedback.textContent = '请先应用有效路径并等待图片加载。'
+      if (image?.naturalWidth) {
+        const currentNode = this.currentPropertyNode(token)?.node ?? node
+        this.imagePreview.open(
+          image,
+          () => !!this.currentPropertyNode(token),
+          () => srcInput.focus({ preventScroll: true }),
+          this.makeFullImageLoader(String(currentNode.attrs.src || ''))
+        )
+      } else feedback.textContent = '请先应用有效路径并等待图片加载。'
     })
 
     this.propertyButton('应用图片', () => {
@@ -2595,6 +2620,14 @@ export class MarkdownEditorController implements LiveEditor {
     const input = (this.view as unknown as { input?: { hideSelectionGuard?: EventListener } }).input
     if (input?.hideSelectionGuard) this.view.dom.ownerDocument.removeEventListener('selectionchange', input.hideSelectionGuard)
     this.view.destroy()
+    // Ensure no detached <img> retains this editor's DOM tree via Blink ViewportChangeListener
+    for (const img of this.dom.querySelectorAll('img')) {
+      img.onload = img.onerror = img.onclick = null
+      img.removeAttribute('src')
+      img.remove()
+    }
+    this.view.dom.replaceChildren()
+    this.dom.replaceChildren()
     this.dom.remove()
     this.codeViews.clear()
     this.liveImages.clear()

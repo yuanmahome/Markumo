@@ -18,8 +18,19 @@ export function detectMimeType(bytes: Uint8Array): string {
   if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'image/png'
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg'
   if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif'
-  if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x52 && bytes[11] === 0x50) return 'image/webp'
-  // SVG detection: check for '<svg' or '<?xml'
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x52 &&
+    bytes[11] === 0x50
+  ) {
+    return 'image/webp'
+  }
   if (bytes.length >= 4) {
     const slice = bytes.subarray(0, Math.min(bytes.length, 1024))
     const s = new TextDecoder('utf-8', { fatal: false }).decode(slice).trimStart().toLowerCase()
@@ -39,7 +50,38 @@ interface BlobRecord {
 }
 const sharedBlobCache = new Map<string, BlobRecord>()
 let totalActiveBlobBytes = 0
-const MAX_ACTIVE_BLOB_POOL_BYTES = 64 * 1024 * 1024 // 64 MiB active Blob pool
+export const MAX_ACTIVE_BLOB_POOL_BYTES = 64 * 1024 * 1024 // 64 MiB active Blob pool
+
+export function getImageBlobCacheStats() {
+  let referencedEntries = 0
+  let referencedBytes = 0
+  for (const r of sharedBlobCache.values()) {
+    if (r.refCount > 0) {
+      referencedEntries++
+      referencedBytes += r.size
+    }
+  }
+  return {
+    entries: sharedBlobCache.size,
+    totalBytes: totalActiveBlobBytes,
+    referencedEntries,
+    referencedBytes,
+    maxPoolBytes: MAX_ACTIVE_BLOB_POOL_BYTES,
+  }
+}
+
+export function scopedImageBlobKey(resources: MarkdownResources | undefined, localPath: string): string {
+  const id = resources?.identity() || ''
+  return id ? `${id}::${localPath}` : localPath
+}
+
+export function tryAcquireExistingBlobUrl(key: string): string | null {
+  const existing = sharedBlobCache.get(key)
+  if (!existing) return null
+  existing.refCount++
+  existing.lastAccessed = Date.now()
+  return existing.url
+}
 
 export function acquireBlobUrl(key: string, bytes: Uint8Array, mime: string): string {
   const existing = sharedBlobCache.get(key)
@@ -48,9 +90,9 @@ export function acquireBlobUrl(key: string, bytes: Uint8Array, mime: string): st
     existing.lastAccessed = Date.now()
     return existing.url
   }
-  if (existing) {
+  if (existing && existing.refCount <= 0) {
     URL.revokeObjectURL(existing.url)
-    totalActiveBlobBytes -= existing.size
+    totalActiveBlobBytes = Math.max(0, totalActiveBlobBytes - existing.size)
     sharedBlobCache.delete(key)
   }
   if (totalActiveBlobBytes + bytes.length > MAX_ACTIVE_BLOB_POOL_BYTES) {
@@ -75,9 +117,19 @@ export function releaseBlobUrl(key: string) {
   existing.refCount = Math.max(0, existing.refCount - 1)
   existing.lastAccessed = Date.now()
   if (existing.refCount === 0 && totalActiveBlobBytes > MAX_ACTIVE_BLOB_POOL_BYTES) {
-    URL.revokeObjectURL(existing.url)
-    totalActiveBlobBytes -= existing.size
-    sharedBlobCache.delete(key)
+    evictUnreferencedBlobs(0)
+  }
+}
+
+export function evictUnreferencedBlobsByPrefix(identityPrefix: string) {
+  if (!identityPrefix) return
+  const prefix = `${identityPrefix}::`
+  for (const [k, r] of [...sharedBlobCache.entries()]) {
+    if (r.refCount <= 0 && (k === identityPrefix || k.startsWith(prefix))) {
+      URL.revokeObjectURL(r.url)
+      totalActiveBlobBytes = Math.max(0, totalActiveBlobBytes - r.size)
+      sharedBlobCache.delete(k)
+    }
   }
 }
 
@@ -87,22 +139,25 @@ function evictUnreferencedBlobs(neededBytes = 0) {
     .sort((a, b) => a[1].lastAccessed - b[1].lastAccessed)
   for (const [k, r] of unreferenced) {
     URL.revokeObjectURL(r.url)
-    totalActiveBlobBytes -= r.size
+    totalActiveBlobBytes = Math.max(0, totalActiveBlobBytes - r.size)
     sharedBlobCache.delete(k)
     if (totalActiveBlobBytes + neededBytes <= MAX_ACTIVE_BLOB_POOL_BYTES) break
   }
 }
 
 export function clearImageBlobCache() {
-  for (const [_, r] of sharedBlobCache) {
-    URL.revokeObjectURL(r.url)
+  for (const [k, r] of [...sharedBlobCache.entries()]) {
+    if (r.refCount <= 0) {
+      URL.revokeObjectURL(r.url)
+      totalActiveBlobBytes = Math.max(0, totalActiveBlobBytes - r.size)
+      sharedBlobCache.delete(k)
+    }
   }
-  sharedBlobCache.clear()
-  totalActiveBlobBytes = 0
 }
 
 export function createMarkdownResources(token: () => string | undefined, identity: () => string = () => token() || ''): MarkdownResources {
-  const pending = new Map<string, Promise<Uint8Array<ArrayBuffer>>>()
+  // Deduplicate only in-flight IPC requests; never retain resolved Uint8Array copies in JS heap!
+  const inFlight = new Map<string, Promise<Uint8Array<ArrayBuffer>>>()
   let previousIdentity = identity()
   return {
     allowedRemote: new Set(),
@@ -114,11 +169,24 @@ export function createMarkdownResources(token: () => string | undefined, identit
       const inputs = await invoke<{ token: string; name: string }[]>('choose_markdown_images')
       try {
         if (!inputs.length || identity() !== expected) return null
-        const result = await invoke<{ path: string }>('import_markdown_image', { input: {
-          token: grant, sourceToken: inputs[0].token, name: inputs[0].name, directory: null,
-        } })
-        return identity() === expected ? result.path.replace(/\\/g, '/').split('/').map((part, index) => index === 0 && /^[a-z]:$/i.test(part) ? part : encodeURIComponent(part)).join('/') : null
-      } finally { await invoke('release_image_inputs', { tokens: inputs.map(input => input.token) }) }
+        const result = await invoke<{ path: string }>('import_markdown_image', {
+          input: {
+            token: grant,
+            sourceToken: inputs[0].token,
+            name: inputs[0].name,
+            directory: null,
+          },
+        })
+        return identity() === expected
+          ? result.path
+              .replace(/\\/g, '/')
+              .split('/')
+              .map((part, index) => (index === 0 && /^[a-z]:$/i.test(part) ? part : encodeURIComponent(part)))
+              .join('/')
+          : null
+      } finally {
+        await invoke('release_image_inputs', { tokens: inputs.map(input => input.token) })
+      }
     },
     async authorizeLocal(path) {
       const grant = token()
@@ -130,41 +198,48 @@ export function createMarkdownResources(token: () => string | undefined, identit
       if (!isTauri() || !grant) throw new Error('请先保存 Markdown 文档。')
       const current = identity()
       if (current !== previousIdentity) {
-        pending.clear()
+        inFlight.clear()
         previousIdentity = current
       }
       const cacheKey = options?.full ? `${path}::full` : path
-      const existing = pending.get(cacheKey)
+      const existing = inFlight.get(cacheKey)
       if (existing) return existing
 
       const request = invoke<ArrayBuffer>('read_markdown_image', {
         token: grant,
         relative: path,
         full: !!options?.full,
-      }).then(buffer => {
-        return new Uint8Array(buffer)
-      }).catch(error => {
-        pending.delete(cacheKey)
-        throw error
       })
-      pending.set(cacheKey, request)
+        .then(buffer => new Uint8Array(buffer))
+        .finally(() => {
+          if (inFlight.get(cacheKey) === request) {
+            inFlight.delete(cacheKey)
+          }
+        })
+      inFlight.set(cacheKey, request)
       return request
     },
   }
 }
 
-export type ImageDestination = { kind: 'remote'; path: string } | { kind: 'local'; path: string } | { kind: 'blocked'; path: string }
+export type ImageDestination =
+  | { kind: 'remote'; path: string }
+  | { kind: 'local'; path: string }
+  | { kind: 'blocked'; path: string }
 
 /** Rust IPC errors are plain {code,message} objects, not JavaScript Errors. */
 export function markdownImageError(error: unknown): { message: string; authorize: boolean } {
-  const record = error && typeof error === 'object' ? error as { code?: unknown; message?: unknown } : null
+  const record = error && typeof error === 'object' ? (error as { code?: unknown; message?: unknown }) : null
   const code = typeof record?.code === 'string' ? record.code : ''
   const detail = (typeof record?.message === 'string' ? record.message : typeof error === 'string' ? error : '')
-    .replace(/\[object Object\]/g, '').trim()
+    .replace(/\[object Object\]/g, '')
+    .trim()
   if (code === 'image_scope') return { message: '文件未授权：请授权访问或重新选择图片。', authorize: true }
   if (code === 'image_size') return { message: '图片尺寸或文件大小超出安全预算。', authorize: false }
   if (code === 'image_format') return { message: '图片格式不支持或文件已损坏。支持 PNG、JPEG、GIF、WebP、SVG。', authorize: false }
-  if (/not.?found|不存在|找不到|os error 2|os error 3|cannot find/i.test(detail)) return { message: '文件不存在：请修改路径或重新选择图片。', authorize: false }
+  if (/not.?found|不存在|找不到|os error 2|os error 3|cannot find/i.test(detail)) {
+    return { message: '文件不存在：请修改路径或重新选择图片。', authorize: false }
+  }
   return { message: detail ? `图片加载失败：${detail}` : '图片加载失败，请重试或重新选择图片。', authorize: false }
 }
 
@@ -175,9 +250,19 @@ export function imageDestination(source: string): ImageDestination {
   try {
     const path = decodeURIComponent(raw)
     const localDrive = /^[a-z]:[\/\\]/i.test(path)
-    if (!path || /^[/\\]{2}/.test(path) || /[\0\r\n]/.test(path) || (!localDrive && path.includes(':')) || (localDrive && path.slice(2).includes(':'))) return { kind: 'blocked', path }
+    if (
+      !path ||
+      /^[/\\]{2}/.test(path) ||
+      /[\0\r\n]/.test(path) ||
+      (!localDrive && path.includes(':')) ||
+      (localDrive && path.slice(2).includes(':'))
+    ) {
+      return { kind: 'blocked', path }
+    }
     return { kind: 'local', path }
-  } catch { return { kind: 'blocked', path: raw } }
+  } catch {
+    return { kind: 'blocked', path: raw }
+  }
 }
 
 /** Safe DOM only. No src is assigned to a remote image until explicit consent. */
@@ -197,8 +282,18 @@ export function mountMarkdownImage(
   let cacheKey: string | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   let generation = 0
+  let loadingActive = false
   let needsAuthorization = false
   let observer: IntersectionObserver | null = null
+
+  const detachImgElement = () => {
+    const image = host.querySelector('img')
+    if (image) {
+      image.onload = image.onerror = image.onclick = null
+      image.removeAttribute('src')
+      image.remove()
+    }
+  }
 
   const release = () => {
     if (objectURL && cacheKey) {
@@ -217,13 +312,24 @@ export function mountMarkdownImage(
   path.className = 'md-image-path'
   path.textContent = source || '选择或填写图片路径'
   path.title = '编辑图片路径'
-  path.onclick = event => { event.stopPropagation(); edit() }
+  path.onclick = event => {
+    event.stopPropagation()
+    edit()
+  }
   const action = document.createElement('button')
   action.type = 'button'
   action.className = 'md-image-action'
   host.append(status, path, action)
 
+  const setIdlePendingStatus = () => {
+    status.textContent = options.live ? '▧' : '等待滚动加载…'
+    status.title = '图片进入视口后自动加载'
+    path.hidden = !!options.live
+    action.hidden = true
+  }
+
   const failure = (reason: string) => {
+    loadingActive = false
     host.classList.add('is-broken-image')
     host.title = `${alt ? alt + ' · ' : ''}${source}\n（${reason}）`
     const tag = document.createElement('button')
@@ -231,7 +337,10 @@ export function mountMarkdownImage(
     tag.className = 'broken-image-tag'
     tag.textContent = options.live ? '▧' : alt ? `${alt} · ${reason}` : reason
     tag.title = reason
-    tag.onclick = event => { event.stopPropagation(); edit() }
+    tag.onclick = event => {
+      event.stopPropagation()
+      edit()
+    }
     status.replaceChildren(tag)
     path.hidden = options.live === true
     action.hidden = destination.kind === 'blocked'
@@ -242,9 +351,11 @@ export function mountMarkdownImage(
   }
 
   async function load() {
+    if (disposed) return
     const current = ++generation
+    loadingActive = true
     if (timer) clearTimeout(timer)
-    host.querySelector('img')?.remove()
+    detachImgElement()
     host.classList.remove('is-broken-image')
     host.classList.remove('is-pending-image')
     needsAuthorization = false
@@ -263,14 +374,28 @@ export function mountMarkdownImage(
       if (destination.kind === 'remote') {
         src = destination.path
       } else {
-        const bytes = await resources.loadLocal(destination.path)
-        if (disposed || current !== generation) return
-        const mime = detectMimeType(bytes)
-        cacheKey = destination.path
-        objectURL = acquireBlobUrl(cacheKey, bytes, mime)
-        src = objectURL
+        const key = scopedImageBlobKey(resources, destination.path)
+        const existingUrl = tryAcquireExistingBlobUrl(key)
+        if (existingUrl) {
+          cacheKey = key
+          objectURL = existingUrl
+          src = existingUrl
+        } else {
+          const bytes = await resources.loadLocal(destination.path)
+          if (disposed || current !== generation) {
+            loadingActive = false
+            return
+          }
+          const mime = detectMimeType(bytes)
+          cacheKey = key
+          objectURL = acquireBlobUrl(cacheKey, bytes, mime)
+          src = objectURL
+        }
       }
-      if (disposed || current !== generation) return
+      if (disposed || current !== generation) {
+        loadingActive = false
+        return
+      }
       const image = document.createElement('img')
       image.alt = alt
       image.referrerPolicy = 'no-referrer'
@@ -279,11 +404,11 @@ export function mountMarkdownImage(
       if (!options.live) image.onclick = edit
       image.onload = () => {
         if (disposed || current !== generation) return
+        loadingActive = false
         if (timer) clearTimeout(timer)
         const pixels = image.naturalWidth * image.naturalHeight
-        // Decompression bomb check on decoded natural size
         if (image.naturalWidth > 65535 || image.naturalHeight > 65535 || pixels > 200_000_000) {
-          image.remove()
+          detachImgElement()
           release()
           failure('图片尺寸超出安全渲染范围或可能为解压炸弹')
           return
@@ -295,16 +420,18 @@ export function mountMarkdownImage(
       }
       image.onerror = () => {
         if (!disposed && current === generation) {
+          loadingActive = false
           if (timer) clearTimeout(timer)
-          image.remove()
+          detachImgElement()
           release()
           failure('加载失败或远程服务器未允许匿名跨域访问')
         }
       }
       timer = setTimeout(() => {
         if (!disposed && current === generation) {
+          loadingActive = false
           generation++
-          image.remove()
+          detachImgElement()
           release()
           failure('加载超时')
         }
@@ -331,7 +458,7 @@ export function mountMarkdownImage(
     if (needsAuthorization) {
       action.disabled = true
       try {
-        if (!await resources.authorizeLocal?.(destination.path)) return
+        if (!(await resources.authorizeLocal?.(destination.path))) return
         needsAuthorization = false
       } catch (error) {
         if (!disposed) failure(markdownImageError(error).message)
@@ -345,7 +472,9 @@ export function mountMarkdownImage(
     void load()
   }
 
-  if (destination.kind === 'remote' && !resources.allowedRemote.has(destination.path)) {
+  if (destination.kind === 'blocked') {
+    failure(source.trim() ? '路径无效：只允许本地路径或经确认的 HTTPS 图片。' : '路径为空：点击填写或选择图片。')
+  } else if (destination.kind === 'remote' && !resources.allowedRemote.has(destination.path)) {
     host.classList.add('is-pending-image')
     host.title = `${alt}\n${source}\n网络图片尚未授权加载，可通过右键菜单加载。`
     status.textContent = options.live ? '▧' : '网络图片默认关闭'
@@ -353,37 +482,60 @@ export function mountMarkdownImage(
     action.hidden = !!options.live
     path.hidden = !!options.live
     measure()
-  } else {
+  } else if (typeof IntersectionObserver === 'undefined' || options.immediate) {
     void load()
+  } else {
+    setIdlePendingStatus()
+    measure()
   }
 
-  if (typeof IntersectionObserver !== 'undefined') {
-    observer = new IntersectionObserver(entries => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting && totalActiveBlobBytes > MAX_ACTIVE_BLOB_POOL_BYTES) {
-          release()
-        } else if (entry.isIntersecting && !host.querySelector('img') && !host.classList.contains('is-broken-image') &&
-          (destination.kind !== 'remote' || resources.allowedRemote.has(destination.path))) {
-          void load()
-        }
-      }
-    }, { rootMargin: '400px 0px' })
-    observer.observe(host)
+  if (typeof IntersectionObserver !== 'undefined' && destination.kind !== 'blocked') {
+    queueMicrotask(() => {
+      if (disposed) return
+      const scrollRoot = host.closest('.markdown-live, .split-preview-content')
+      observer = new IntersectionObserver(
+        entries => {
+          if (disposed) return
+          for (const entry of entries) {
+            if (entry.target !== host) continue
+            if (!entry.isIntersecting && totalActiveBlobBytes > MAX_ACTIVE_BLOB_POOL_BYTES) {
+              generation++
+              loadingActive = false
+              if (timer) clearTimeout(timer)
+              detachImgElement()
+              release()
+              setIdlePendingStatus()
+            } else if (
+              entry.isIntersecting &&
+              !loadingActive &&
+              !host.querySelector('img') &&
+              !host.classList.contains('is-broken-image') &&
+              (destination.kind !== 'remote' || resources.allowedRemote.has(destination.path))
+            ) {
+              void load()
+            }
+          }
+        },
+        { root: scrollRoot, rootMargin: '400px 0px 400px 0px' }
+      )
+      observer.observe(host)
+    })
   }
 
   return {
-    retry() { action.click() },
+    retry() {
+      action.click()
+    },
     destroy() {
       disposed = true
+      loadingActive = false
       generation++
       if (timer) clearTimeout(timer)
       observer?.disconnect()
       observer = null
-      const image = host.querySelector('img')
-      if (image) {
-        image.onload = image.onerror = null
-        image.removeAttribute('src')
-      }
+      detachImgElement()
+      path.onclick = action.onclick = null
+      host.replaceChildren()
       release()
     },
   }

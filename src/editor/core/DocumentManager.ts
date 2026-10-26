@@ -19,7 +19,7 @@ import { classSummary } from '../../features/files/classSummary'
 import { defaultMarkdownTypography, defaultMarkdownClipboard, type MarkdownClipboardSettings, type MarkdownTypography, type LiveEditor, type MarkdownToolbarState, type MarkdownToolbarCommand } from '../markdown/wysiwyg/contracts'
 import { markdownFormatTransaction, markdownSelectionInCodeBlock, type MarkdownFormat } from '../markdown/formatCommands'
 import { captureLineBaseline, savedLineBaseline } from './changeGutter'
-import { createMarkdownResources, markdownResources, refreshMarkdownResources } from '../markdown/images'
+import { createMarkdownResources, evictUnreferencedBlobsByPrefix, markdownResources, refreshMarkdownResources } from '../markdown/images'
 import { imageImportBookmarks } from '../markdown/imageImport'
 import { sourceSlashExtension } from '../markdown/slash/SourceSlashExtension'
 import { sameFilePath } from '../../features/files/pathKey'
@@ -613,8 +613,14 @@ export class DocumentManager {
 
   private release(id: string) {
     if (this.layout.getAllPanes().some(p => p.group.tabs.some(t => t.documentId === id))) return
-    const token = this.metadata(id)?.fileToken
+    const meta = this.metadata(id)
+    const token = meta?.fileToken
+    const resourceIdentity = `${token || ''}|${meta?.path || ''}`
     this.records.delete(id); this.media.delete(id); this.deferred.delete(id)
+    evictUnreferencedBlobsByPrefix(resourceIdentity)
+    // Views attached to the closing tab destroy synchronously right after release() in close();
+    // sweep once on the microtask turn after their LiveImageViews decrement refCounts to 0.
+    queueMicrotask(() => evictUnreferencedBlobsByPrefix(resourceIdentity))
     if (token) for (const listener of this.releaseListeners) listener(token)
   }
   paneGroup(pane: Pane) {

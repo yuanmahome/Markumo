@@ -118,7 +118,11 @@ function wheel(e:WheelEvent) {if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault(
 function keydown(e:KeyboardEvent) {if(e.ctrlKey||e.metaKey||e.altKey)return;const key=e.key.toLowerCase();if(['+','=','-','0','f','r'].includes(key))e.preventDefault();if(key==='+'||key==='=')zoom(1.25);else if(key==='-')zoom(1/1.25);else if(key==='0')reset();else if(key==='f')fit('page');else if(key==='r')rotate()}
 async function openDefault() {try{await openMediaDefault(props.doc.fileToken!)}catch(e){error.value=fileError(e)}}
 onMounted(()=>{ observer=new ResizeObserver(()=>{bounds.width=viewport.value?.clientWidth||0;bounds.height=viewport.value?.clientHeight||0;if(view.fit!=='manual')fit(view.fit)}); if(viewport.value)observer.observe(viewport.value); void load() })
-onBeforeUnmount(()=>{disposed=true;generation++;observer?.disconnect();saveScroll();release();drag.value=undefined})
+onBeforeUnmount(()=>{
+  disposed=true;generation++;observer?.disconnect();saveScroll()
+  if(stage.value){for(const img of stage.value.querySelectorAll('img')){img.onload=img.onerror=null;img.removeAttribute('src');img.remove()}}
+  release();drag.value=undefined
+})
 </script>
 <style scoped>
 .image-viewer {container-type:inline-size;--image-canvas:color-mix(in srgb,var(--editor) 84%,var(--soft))}
