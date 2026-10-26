@@ -8,7 +8,7 @@ import { markdownSemantics, markdownSyntaxExtensions } from './semantics'
 import { sanitizeHtml } from './html/SafeHtmlRenderer'
 import { installMarkdownMath, mathBlockParts } from './mathSemantics'
 import { staticCodeLines } from './staticCode'
-export interface PreviewSlot { id: string; kind: 'math-inline' | 'math-block' | 'code' | 'diagram' | 'image' | 'task'; source: string; alt?: string; from?: number }
+export interface PreviewSlot { id: string; kind: 'math-inline' | 'math-block' | 'code' | 'diagram' | 'image' | 'task'; source: string; info?: string; alt?: string; from?: number }
 export interface PreviewEnvironment extends Record<PropertyKey, unknown> { slots?: PreviewSlot[]; slotPrefix?: string }
 export function previewSlot(env: PreviewEnvironment, kind: PreviewSlot['kind'], source: string) {
   env.slots ??= []
@@ -116,15 +116,21 @@ export function createMarkdownRenderer(onLanguageReady: () => void = () => {}, p
     const environment: PreviewEnvironment = env || {}
     const diagram = /^mermaid(?:\s|$)/i.test(token.info)
     const id = previewSlot(environment, diagram ? 'diagram' : 'code', code)
+    const slot = environment.slots!.at(-1)!
+    slot.info = token.info
     const copyIcon = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M9 9h11v12H9z M5 15H3V3h12v2"/></svg>`
     const copyButton = `<button type="button" class="md-code-copy" data-md-copy title="复制代码" aria-label="复制代码">${copyIcon}</button>`
     const line = token.map ? ` data-source-line="${token.map[0] + 1}"` : ''
     if (diagram) return `<div class="md-preview-fence md-code-surface" data-md-render="${id}"${line}>${copyButton}<div class="md-diagram" role="img" aria-label="Mermaid 图表">正在渲染图表…</div></div>`
-    // Start/reuse the existing lazy language load without creating EditorViews.
-    options.highlight?.(code, token.info, '')
-    const support = languages.get(fenceLanguage(token.info))
     const visible = code.slice(0, 128 * 1024).split('\n').slice(0, 5000).join('\n')
-    const spans = support && code.length <= 64 * 1024 ? syntaxSpans(visible, support) : []
+    let spans: ReturnType<typeof syntaxSpans> = []
+    if (!preview) {
+      // Static export path: synchronously highlight using loaded language cache.
+      options.highlight?.(code, token.info, '')
+      const support = languages.get(fenceLanguage(token.info))
+      if (support && code.length <= 64 * 1024) spans = syntaxSpans(visible, support)
+    }
+    // Hydrated SplitPreview renders plain skeleton once and highlights visible fences via bounded queue.
     const rows = staticCodeLines(visible, spans, md.utils.escapeHtml)
     const warning = visible !== code ? '<small>代码预览达到 128 KiB / 5000 行预算；复制仍使用完整代码。</small>' : ''
     const languageClass = token.info.trim().split(/\s+/)[0]

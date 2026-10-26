@@ -15,14 +15,26 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
+import { LanguageSupport } from '@codemirror/language'
 import { openMarkdownLink } from './links'
-import { createMarkdownRenderer, type PreviewEnvironment } from './rendering'
+import { createMarkdownRenderer, type PreviewEnvironment, type PreviewSlot } from './rendering'
 import { renderMath, renderDiagram } from './wysiwyg/renderers'
+import { DISPLAY_HIGHLIGHT_MAX_CHARS } from './wysiwyg/CodeBlockView'
 import { defaultMarkdownTypography, type MarkdownTypography } from './wysiwyg/contracts'
 import { markdownTypographyStyle } from './typography'
 import { createMarkdownResources, mountMarkdownImage, type MarkdownResources } from './images'
 import { textClipboard } from '../../features/shell/clipboard'
 import { htmlForPreview, mountHtmlImages, type MountedImageHandle } from './html/SafeHtmlRenderer'
+import { parseFenceInfo, loadLanguage } from '../languages'
+import { syntaxSpans } from '../core/syntaxSpans'
+import { staticCodeLines } from './staticCode'
+import { createRenderTaskQueue } from './renderTaskQueue'
+import { observeRenderVisibility } from './renderVisibility'
+
+const escapePreviewCode = (value: string) =>
+  value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!))
+
+const splitHighlightQueue = createRenderTaskQueue(2, 128)
 
 const props = defineProps<{
   content: string
@@ -48,40 +60,93 @@ const md = createMarkdownRenderer(() => {
 }, true)
 const previewText = ref(props.content)
 let timer: ReturnType<typeof setTimeout> | undefined
+let deferredHiddenContent: string | null = null
 
-watch(() => props.content, content => {
-  if (timer) clearTimeout(timer)
-  timer = setTimeout(() => { previewText.value = content }, 100)
-})
+const onDocumentVisibility = () => {
+  if (disposed || typeof document === 'undefined' || document.hidden) return
+  if (deferredHiddenContent !== null) {
+    const next = deferredHiddenContent
+    deferredHiddenContent = null
+    previewText.value = next
+  }
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', onDocumentVisibility)
+}
+
+watch(
+  () => props.content,
+  content => {
+    if (timer) clearTimeout(timer)
+    if (typeof document !== 'undefined' && document.hidden) {
+      deferredHiddenContent = content
+      return
+    }
+    deferredHiddenContent = null
+    timer = setTimeout(() => {
+      if (disposed) return
+      if (typeof document !== 'undefined' && document.hidden) {
+        deferredHiddenContent = content
+        return
+      }
+      previewText.value = content
+    }, 100)
+  }
+)
 
 let mountedImages: ReturnType<typeof mountMarkdownImage>[] = []
 let mountedHtmlImages: MountedImageHandle | undefined
 let hydrateGeneration = 0
+let hydrateAbort: AbortController | null = null
+let visibilityCleanups: (() => void)[] = []
 let themeObserver: MutationObserver | undefined
 let refreshDiagrams = () => {}
+
 if (typeof document !== 'undefined') {
-  themeObserver = new MutationObserver(() => refreshDiagrams())
+  let isLight = document.body.classList.contains('light')
+  themeObserver = new MutationObserver(() => {
+    const nextLight = document.body.classList.contains('light')
+    if (nextLight === isLight) return
+    isLight = nextLight
+    refreshDiagrams()
+  })
   themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] })
 }
 
-onUnmounted(() => {
-  disposed = true
-  themeObserver?.disconnect()
-  if (timer) clearTimeout(timer)
+function teardownHydration() {
+  hydrateAbort?.abort()
+  hydrateAbort = null
+  for (const stop of visibilityCleanups) stop()
+  visibilityCleanups = []
+  refreshDiagrams = () => {}
   for (const image of mountedImages) image.destroy()
   mountedImages = []
   mountedHtmlImages?.destroy()
   mountedHtmlImages = undefined
-})
+}
 
 let lastParsedText = ''
 let lastParsedRevision = -1
-let lastRenderedResult = { html: '', slots: [] as any[] }
+let lastRenderedResult: { html: string; slots: PreviewSlot[] } = { html: '', slots: [] }
+
+onUnmounted(() => {
+  disposed = true
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', onDocumentVisibility)
+  }
+  themeObserver?.disconnect()
+  themeObserver = undefined
+  if (timer) clearTimeout(timer)
+  teardownHydration()
+  contentRef.value?.replaceChildren()
+  lastParsedText = ''
+  lastRenderedResult = { html: '', slots: [] }
+})
 
 const rendered = computed(() => {
   const rev = revision.value
   if (props.tooLarge || previewText.value.length > 1024 * 1024) {
-    return { html: '<p>文档较大，已暂停只读预览；源码仍可编辑。</p>', slots: [] }
+    return { html: '<p>文档较大，已暂停只读预览；源码仍可编辑。</p>', slots: [] as PreviewSlot[] }
   }
   const currentText = previewText.value || ''
   if (currentText === lastParsedText && rev === lastParsedRevision && lastRenderedResult.html) {
@@ -104,110 +169,293 @@ const renderedHtml = computed(() => rendered.value.html)
 
 const fallbackResources = createMarkdownResources(() => undefined)
 
-watch([renderedHtml, () => props.resources, () => props.resourceKey], async () => {
-  const generation = ++hydrateGeneration
-  const snapshot = previewText.value
-  for (const image of mountedImages) image.destroy()
-  mountedImages = []
+watch(
+  [renderedHtml, () => props.resources, () => props.resourceKey],
+  async () => {
+    const generation = ++hydrateGeneration
+    const expectedResourceKey = props.resourceKey
+    const snapshot = previewText.value
+    teardownHydration()
 
-  await nextTick()
-  if (disposed || generation !== hydrateGeneration) return
+    await nextTick()
+    if (disposed || generation !== hydrateGeneration || props.resourceKey !== expectedResourceKey) return
+    const scrollRoot = contentRef.value
+    if (!scrollRoot) return
 
-  const slots = new Map(rendered.value.slots.map(slot => [slot.id, slot]))
-  // Raw HTML tables have already been sanitized; give them the same local
-  // scroll boundary as Markdown tables without changing document source.
-  for (const table of contentRef.value?.querySelectorAll('table') || []) {
-    if (table.parentElement?.classList.contains('md-table-scroll')) continue
-    const wrapper = document.createElement('div'); wrapper.className = 'md-table-scroll'
-    table.replaceWith(wrapper); wrapper.append(table)
-  }
-  const diagrams: { host: HTMLElement; source: string }[] = []
-  for (const host of contentRef.value?.querySelectorAll<HTMLElement>('[data-md-render]') || []) {
-    const slot = slots.get(host.dataset.mdRender || '')
-    if (!slot) continue
-    if (slot.kind === 'code' || slot.kind === 'image') continue
-    if (slot.kind === 'task') {
-      const input = document.createElement('input')
-      input.type = 'checkbox'; input.disabled = true; input.checked = slot.source === 'x'; input.setAttribute('aria-label', input.checked ? '已完成任务' : '待办任务')
-      host.replaceChildren(input); continue
+    const roundController = new AbortController()
+    hydrateAbort = roundController
+
+    const slots = new Map(rendered.value.slots.map(slot => [slot.id, slot]))
+    for (const table of scrollRoot.querySelectorAll('table')) {
+      if (table.parentElement?.classList.contains('md-table-scroll')) continue
+      const wrapper = document.createElement('div')
+      wrapper.className = 'md-table-scroll'
+      table.replaceWith(wrapper)
+      wrapper.append(table)
     }
-    if (slot.kind === 'diagram') { const diagram = host.querySelector<HTMLElement>('.md-diagram'); if (diagram) diagrams.push({ host: diagram, source: slot.source }); continue }
-    const current = () => !disposed && generation === hydrateGeneration && snapshot === props.content
-    void renderMath(host, slot.source, slot.kind === 'math-block', current).catch(error => {
-      if (host.isConnected && current()) { host.classList.add('md-render-error'); host.textContent = String(error instanceof Error ? error.message : error) }
-    })
-  }
-  let diagramGeneration = 0
-  refreshDiagrams = () => {
-    const version = ++diagramGeneration
-    for (const { host, source } of diagrams.slice(0, 16)) {
-      const current = () => !disposed && generation === hydrateGeneration && version === diagramGeneration && snapshot === props.content
-      void renderDiagram(host, source, current).catch(error => {
-        if (host.isConnected && current()) { host.classList.add('md-render-error'); host.textContent = `${error instanceof Error ? error.message : error}\n${source}` }
-      })
-    }
-    for (const { host } of diagrams.slice(16)) host.textContent = '图表达到每次预览 16 个的预算。'
-  }
-  refreshDiagrams()
 
-  // 绑定代码块复制按钮
-  for (const button of Array.from(contentRef.value?.querySelectorAll<HTMLButtonElement>('[data-md-copy]') || [])) {
-    button.onmousedown = event => event.preventDefault()
-    button.onclick = async () => {
-      const fenceEl = button.closest('.md-preview-fence')
-      const code = slots.get((fenceEl as HTMLElement | null)?.dataset.mdRender || '')?.source ?? fenceEl?.querySelector('code')?.textContent ?? ''
-      try {
-        await textClipboard.writeText(code)
-        const originalHtml = button.innerHTML
-        const checkIcon = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m5 12 4 4L19 6"/></svg>`
-        button.innerHTML = checkIcon
-        button.title = '已复制'
-        setTimeout(() => {
-          if (button.isConnected) {
-            button.innerHTML = originalHtml
-            button.title = '复制代码'
-          }
-        }, 1500)
-      } catch {
-        window.dispatchEvent(new CustomEvent('editor-notice', { detail: '复制失败，请选中后复制' }))
+    const isCurrentRound = () =>
+      !disposed &&
+      !roundController.signal.aborted &&
+      generation === hydrateGeneration &&
+      props.resourceKey === expectedResourceKey &&
+      snapshot === previewText.value
+
+    const diagramEntries: { triggerThemeRefresh: () => void }[] = []
+    let diagramCount = 0
+
+    for (const host of scrollRoot.querySelectorAll<HTMLElement>('[data-md-render]')) {
+      const slot = slots.get(host.dataset.mdRender || '')
+      if (!slot || slot.kind === 'image') continue
+
+      if (slot.kind === 'task') {
+        const input = document.createElement('input')
+        input.type = 'checkbox'
+        input.disabled = true
+        input.checked = slot.source === 'x'
+        input.setAttribute('aria-label', input.checked ? '已完成任务' : '待办任务')
+        host.replaceChildren(input)
+        continue
       }
-    }
-  }
 
-  // 挂载图片
-  for (const host of Array.from(contentRef.value?.querySelectorAll<HTMLElement>('.md-image-slot') || []).slice(0, 64)) {
-    const slot = slots.get(host.dataset.mdRender || '')
-    if (slot?.kind !== 'image') continue
-    const source = slot.source
-    const from = slot.from || 0
-    const parentP = host.parentElement?.tagName === 'P' ? host.parentElement : null
-    const isStandalone = !!parentP
-      && parentP.querySelectorAll('.md-image-slot').length === 1
-      && [...parentP.childNodes].every(node => node === host || !node.textContent?.trim())
-    host.classList.toggle('md-image-standalone', isStandalone)
-    mountedImages.push(
-      mountMarkdownImage(
+      if (slot.kind === 'code') {
+        const codeEl = host.querySelector<HTMLElement>('pre > code')
+        const { language } = parseFenceInfo(slot.info || '')
+        const visibleCode = slot.source.slice(0, 128 * 1024).split('\n').slice(0, 5000).join('\n')
+        if (!codeEl || !language || visibleCode.length > DISPLAY_HIGHLIGHT_MAX_CHARS) continue
+
+        let highlighted = false
+        let itemAbort: AbortController | null = null
+        const stop = observeRenderVisibility(
+          host,
+          { root: scrollRoot, rootMargin: '400px 0px 400px 0px' },
+          state => {
+            if (!isCurrentRound()) return
+            if (state.visible) {
+              if (highlighted || itemAbort) return
+              const ctrl = new AbortController()
+              itemAbort = ctrl
+              const abortFromRound = () => ctrl.abort()
+              roundController.signal.addEventListener('abort', abortFromRound, { once: true })
+              void splitHighlightQueue(
+                async () => {
+                  const support = await loadLanguage(language.name, 'fence')
+                  if (!isCurrentRound() || ctrl.signal.aborted || !(support instanceof LanguageSupport)) return null
+                  return syntaxSpans(visibleCode, support)
+                },
+                { signal: ctrl.signal, priority: 'normal' }
+              )
+                .then(spans => {
+                  if (!spans || !isCurrentRound() || ctrl.signal.aborted || !codeEl.isConnected) return
+                  codeEl.innerHTML = staticCodeLines(visibleCode, spans, escapePreviewCode, false)
+                  highlighted = true
+                })
+                .catch(() => {})
+                .finally(() => {
+                  roundController.signal.removeEventListener('abort', abortFromRound)
+                  if (itemAbort === ctrl) itemAbort = null
+                })
+            } else {
+              itemAbort?.abort()
+              itemAbort = null
+            }
+          }
+        )
+        visibilityCleanups.push(() => {
+          itemAbort?.abort()
+          itemAbort = null
+          stop()
+        })
+        continue
+      }
+
+      if (slot.kind === 'diagram') {
+        const diagram = host.querySelector<HTMLElement>('.md-diagram')
+        if (!diagram) continue
+        diagramCount++
+        if (diagramCount > 16) {
+          diagram.textContent = '图表达到每次预览 16 个的预算。'
+          continue
+        }
+        let diagramVisible = false
+        let diagramDirty = true
+        let itemAbort: AbortController | null = null
+        const runDiagram = () => {
+          if (!isCurrentRound() || !diagramVisible || !diagramDirty) return
+          itemAbort?.abort()
+          const ctrl = new AbortController()
+          itemAbort = ctrl
+          const abortFromRound = () => ctrl.abort()
+          roundController.signal.addEventListener('abort', abortFromRound, { once: true })
+          void renderDiagram(
+            diagram,
+            slot.source,
+            () => isCurrentRound() && diagramVisible && !ctrl.signal.aborted,
+            ctrl.signal
+          )
+            .then(() => {
+              if (isCurrentRound() && !ctrl.signal.aborted && !!diagram.querySelector('svg')) {
+                diagramDirty = false
+              }
+            })
+            .catch(error => {
+              if (diagram.isConnected && isCurrentRound() && !ctrl.signal.aborted) {
+                diagram.classList.add('md-render-error')
+                diagram.textContent = `${error instanceof Error ? error.message : error}\n${slot.source}`
+                diagramDirty = false
+              }
+            })
+            .finally(() => {
+              roundController.signal.removeEventListener('abort', abortFromRound)
+              if (itemAbort === ctrl) itemAbort = null
+            })
+        }
+        const stop = observeRenderVisibility(
+          host,
+          { root: scrollRoot, rootMargin: '400px 0px 400px 0px' },
+          state => {
+            if (!isCurrentRound()) return
+            diagramVisible = state.visible
+            if (state.visible) {
+              runDiagram()
+            } else {
+              itemAbort?.abort()
+              itemAbort = null
+            }
+          }
+        )
+        diagramEntries.push({
+          triggerThemeRefresh: () => {
+            diagramDirty = true
+            if (diagramVisible) runDiagram()
+          },
+        })
+        visibilityCleanups.push(() => {
+          itemAbort?.abort()
+          itemAbort = null
+          stop()
+        })
+        continue
+      }
+
+      // Math inline / math block
+      const displayMode = slot.kind === 'math-block'
+      let mathRendered = false
+      let itemAbort: AbortController | null = null
+      host.textContent = slot.source
+      const stop = observeRenderVisibility(
         host,
-        source,
-        slot.alt || '',
-        props.resources || fallbackResources,
-        () => emit('edit-image', from, snapshot),
-        () => {
-          // 图片尺寸测量完毕后，重新校准滚动锚点
-          if (!disposed && generation === hydrateGeneration) {
-            host.classList.toggle('md-image-ready', !!host.querySelector('img')?.naturalWidth)
+        { root: scrollRoot, rootMargin: '400px 0px 400px 0px' },
+        state => {
+          if (!isCurrentRound()) return
+          if (state.visible) {
+            if (mathRendered || itemAbort) return
+            const ctrl = new AbortController()
+            itemAbort = ctrl
+            const abortFromRound = () => ctrl.abort()
+            roundController.signal.addEventListener('abort', abortFromRound, { once: true })
+            void renderMath(
+              host,
+              slot.source,
+              displayMode,
+              () => isCurrentRound() && !ctrl.signal.aborted,
+              ctrl.signal
+            )
+              .then(() => {
+                if (isCurrentRound() && !ctrl.signal.aborted && !!host.querySelector('.katex')) {
+                  mathRendered = true
+                }
+              })
+              .catch(error => {
+                if (host.isConnected && isCurrentRound() && !ctrl.signal.aborted) {
+                  host.classList.add('md-render-error')
+                  host.textContent = String(error instanceof Error ? error.message : error)
+                  mathRendered = true
+                }
+              })
+              .finally(() => {
+                roundController.signal.removeEventListener('abort', abortFromRound)
+                if (itemAbort === ctrl) itemAbort = null
+              })
+          } else {
+            itemAbort?.abort()
+            itemAbort = null
           }
         }
       )
-    )
-  }
+      visibilityCleanups.push(() => {
+        itemAbort?.abort()
+        itemAbort = null
+        stop()
+      })
+    }
 
-  // 挂载 HTML 内嵌图片 (如 <img src="...">)
-  mountedHtmlImages?.destroy()
-  if (contentRef.value) {
-    mountedHtmlImages = mountHtmlImages(contentRef.value, props.resources || fallbackResources)
-  }
-}, { immediate: true, flush: 'post' })
+    refreshDiagrams = () => {
+      for (const entry of diagramEntries) entry.triggerThemeRefresh()
+    }
+
+    // 绑定代码块复制按钮
+    for (const button of Array.from(scrollRoot.querySelectorAll<HTMLButtonElement>('[data-md-copy]'))) {
+      button.onmousedown = event => event.preventDefault()
+      button.onclick = async () => {
+        const fenceEl = button.closest('.md-preview-fence')
+        const code =
+          slots.get((fenceEl as HTMLElement | null)?.dataset.mdRender || '')?.source ??
+          fenceEl?.querySelector('code')?.textContent ??
+          ''
+        try {
+          await textClipboard.writeText(code)
+          const originalHtml = button.innerHTML
+          const checkIcon = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m5 12 4 4L19 6"/></svg>`
+          button.innerHTML = checkIcon
+          button.title = '已复制'
+          setTimeout(() => {
+            if (button.isConnected) {
+              button.innerHTML = originalHtml
+              button.title = '复制代码'
+            }
+          }, 1500)
+        } catch {
+          window.dispatchEvent(new CustomEvent('editor-notice', { detail: '复制失败，请选中后复制' }))
+        }
+      }
+    }
+
+    // 挂载图片（使用真实预览容器作为视口观察 root）
+    for (const host of Array.from(scrollRoot.querySelectorAll<HTMLElement>('.md-image-slot')).slice(0, 64)) {
+      const slot = slots.get(host.dataset.mdRender || '')
+      if (slot?.kind !== 'image') continue
+      const source = slot.source
+      const from = slot.from || 0
+      const parentP = host.parentElement?.tagName === 'P' ? host.parentElement : null
+      const isStandalone =
+        !!parentP &&
+        parentP.querySelectorAll('.md-image-slot').length === 1 &&
+        [...parentP.childNodes].every(node => node === host || !node.textContent?.trim())
+      host.classList.toggle('md-image-standalone', isStandalone)
+      mountedImages.push(
+        mountMarkdownImage(
+          host,
+          source,
+          slot.alt || '',
+          props.resources || fallbackResources,
+          () => emit('edit-image', from, snapshot),
+          () => {
+            if (!disposed && generation === hydrateGeneration) {
+              host.classList.toggle('md-image-ready', !!host.querySelector('img')?.naturalWidth)
+            }
+          }
+        )
+      )
+    }
+
+    // 挂载 HTML 内嵌图片 (如 <img src="...">)
+    if (contentRef.value) {
+      mountedHtmlImages = mountHtmlImages(contentRef.value, props.resources || fallbackResources)
+    }
+  },
+  { immediate: true, flush: 'post' }
+)
 
 function onContentClick(event: MouseEvent) {
   const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>('a')
@@ -239,9 +487,10 @@ function onScroll() {
   const start = items[index]
   const end = items[index + 1]
   if (start) {
-    const line = end && end.top > start.top
-      ? start.line + (end.line - start.line) * Math.max(0, (y - start.top) / (end.top - start.top))
-      : start.line
+    const line =
+      end && end.top > start.top
+        ? start.line + (end.line - start.line) * Math.max(0, (y - start.top) / (end.top - start.top))
+        : start.line
     emit('scroll-line', line)
   }
 }
@@ -266,12 +515,16 @@ function syncScroll(line: number) {
   while (index + 1 < items.length && items[index + 1].line <= line) index++
   const start = items[index]
   const end = items[index + 1]
-  const next = start.top + (end && end.line > start.line ? (end.top - start.top) * Math.max(0, (line - start.line) / (end.line - start.line)) : 0)
+  const next =
+    start.top +
+    (end && end.line > start.line ? (end.top - start.top) * Math.max(0, (line - start.line) / (end.line - start.line)) : 0)
   if (Math.abs(element.scrollTop - next) > 2) {
     isScrolling = true
     element.scrollTop = next
     expectedTop = next
-    setTimeout(() => { isScrolling = false }, 50)
+    setTimeout(() => {
+      isScrolling = false
+    }, 50)
   }
 }
 

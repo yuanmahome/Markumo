@@ -18,6 +18,7 @@ import { InlineSourceView, inlineSourceRange } from './InlineSourceView'
 import { ModifiedLinkGesture } from './ModifiedLinkGesture'
 import { Decoration, DecorationSet } from 'prosemirror-view'
 import { CodeBlockView } from './CodeBlockView'
+import { observeRenderVisibility } from '../renderVisibility'
 import { CalloutNodeView } from './CalloutNodeView'
 import { TocNodeView } from './TocNodeView'
 import { FootnoteDefNodeView } from './FootnoteDefNodeView'
@@ -2068,6 +2069,10 @@ export class MarkdownEditorController implements LiveEditor {
     let endingComposition = false
     let compositionBase = ''
     let settlingComposition = false
+    let mathVisible = false
+    let mathDirty = true
+    let mathAbort: AbortController | null = null
+    let stopMathVisibility: () => void = () => {}
 
     const latex = () => {
       if (!display) return node.attrs.latex || ''
@@ -2076,11 +2081,60 @@ export class MarkdownEditorController implements LiveEditor {
     }
 
     const render = () => {
+      const src = latex()
+      if (!mathVisible && !isEditing) {
+        mathDirty = true
+        if (!preview.childNodes.length) preview.textContent = src
+        return
+      }
+      mathAbort?.abort()
+      const controller = new AbortController()
+      mathAbort = controller
       const request = ++generation
-      void import('./renderers').then(renderer => renderer.renderMath(preview, latex(), display, () => !dead && request === generation))
-        .catch(error => { if (!dead && request === generation) preview.textContent = `公式无法渲染：${String(error)}` })
+      mathDirty = false
+      void import('./renderers')
+        .then(renderer =>
+          renderer.renderMath(
+            preview,
+            src,
+            display,
+            () => !dead && !controller.signal.aborted && request === generation && (mathVisible || isEditing),
+            controller.signal
+          )
+        )
+        .then(() => {
+          if (!dead && request === generation && !preview.querySelector('.katex') && !preview.classList.contains('md-render-error')) {
+            mathDirty = true
+          }
+        })
+        .catch(error => {
+          if (!dead && !controller.signal.aborted && request === generation) {
+            preview.textContent = `公式无法渲染：${String(error)}`
+          }
+        })
+        .finally(() => {
+          if (mathAbort === controller) mathAbort = null
+        })
     }
-    render()
+
+    preview.textContent = latex()
+    queueMicrotask(() => {
+      if (dead) return
+      stopMathVisibility = observeRenderVisibility(
+        dom,
+        { root: this.dom, rootMargin: '400px 0px 400px 0px' },
+        state => {
+          if (dead) return
+          mathVisible = state.visible
+          if (state.visible) {
+            if (mathDirty) render()
+          } else if (!isEditing) {
+            mathAbort?.abort()
+            mathAbort = null
+          }
+        }
+      )
+    })
 
     const finish = () => {
       if (dead) return
@@ -2231,6 +2285,9 @@ export class MarkdownEditorController implements LiveEditor {
         if (!this.disposed && isEditing && (composing || settlingComposition) && input.value !== latex()) notice(`正在输入的公式已被删除或替换，未提交的源码：${input.value}`)
         const interrupted = composing
         dead = true
+        stopMathVisibility()
+        mathAbort?.abort()
+        mathAbort = null
         isEditing = composing = endingComposition = false
         generation++
         dom.onclick = null

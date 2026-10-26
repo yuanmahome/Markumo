@@ -153,6 +153,7 @@ export class CodeBlockView implements NodeView {
   private isMermaid = false
   private isEditingMermaid = false
   private diagramDirty = true
+  private diagramAbort: AbortController | null = null
   private renderGeneration = 0
   private themeObserver?: MutationObserver
   private renderTimer?: ReturnType<typeof setTimeout>
@@ -349,6 +350,10 @@ export class CodeBlockView implements NodeView {
           } else {
             this.highlightAbort?.abort()
             this.highlightAbort = null
+            if (!this.isEditingMermaid) {
+              this.diagramAbort?.abort()
+              this.diagramAbort = null
+            }
             if (!this.isMermaid && !this.cmInstance && this.displayHighlighted) {
               this.trackOffscreenHighlight()
             }
@@ -868,6 +873,9 @@ export class CodeBlockView implements NodeView {
       this.diagramDirty = true
       return
     }
+    this.diagramAbort?.abort()
+    const controller = new AbortController()
+    this.diagramAbort = controller
     const generation = ++this.renderGeneration
     this.renderButton.disabled = true
     if (!this.diagram.querySelector('svg')) this.diagram.textContent = '图表加载中…'
@@ -876,17 +884,30 @@ export class CodeBlockView implements NodeView {
       await renderDiagram(
         this.diagram,
         this.node.textContent,
-        () => !this.dead && generation === this.renderGeneration && this.isMermaid && (this.renderVisible || this.isEditingMermaid)
+        () =>
+          !this.dead &&
+          !controller.signal.aborted &&
+          generation === this.renderGeneration &&
+          this.isMermaid &&
+          (this.renderVisible || this.isEditingMermaid),
+        controller.signal
       )
-      if (!this.dead && generation === this.renderGeneration && (this.renderVisible || this.isEditingMermaid)) {
+      if (
+        !this.dead &&
+        !controller.signal.aborted &&
+        generation === this.renderGeneration &&
+        (this.renderVisible || this.isEditingMermaid) &&
+        !!this.diagram.querySelector('svg')
+      ) {
         this.diagramDirty = false
       }
     } catch (error) {
-      if (!this.dead && generation === this.renderGeneration) {
+      if (!this.dead && !controller.signal.aborted && generation === this.renderGeneration) {
         this.diagram.textContent = `图表无法渲染：${String(error)}`
         this.diagramDirty = false
       }
     } finally {
+      if (this.diagramAbort === controller) this.diagramAbort = null
       if (!this.dead && generation === this.renderGeneration) {
         this.renderButton.disabled = false
         this.cmInstance?.requestMeasure()
@@ -1153,6 +1174,8 @@ export class CodeBlockView implements NodeView {
     this.stopVisibility()
     this.highlightAbort?.abort()
     this.highlightAbort = null
+    this.diagramAbort?.abort()
+    this.diagramAbort = null
     offscreenHighlightedViews.delete(this)
     window.removeEventListener('pointerup', this.releasePointer)
     window.removeEventListener('pointercancel', this.releasePointer)
