@@ -7,6 +7,7 @@ import { inputRules, textblockTypeInputRule, wrappingInputRule, InputRule } from
 import { wrapInList, splitListItem, sinkListItem, liftListItem } from 'prosemirror-schema-list'
 import { addColumnAfter, addColumnBefore, addRowAfter, addRowBefore, deleteColumn, deleteRow, deleteTable, goToNextCell, isInTable, selectedRect } from 'prosemirror-tables'
 import { tableEditingWithDragGuard } from './tableTextSelection'
+import { tableBackspace } from './tableBackspace'
 import { TableView } from 'prosemirror-tables'
 import { gapCursor } from 'prosemirror-gapcursor'
 import { LiveTableToolbar, type TableToolbarCommand } from './LiveTableToolbar'
@@ -126,6 +127,7 @@ export class MarkdownEditorController implements LiveEditor {
   private inlineEntryEpoch = 0
   private onCanvasPointerDown = (event: PointerEvent) => {
     if (event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || this.options.readOnly?.() || this.composing) return
+    if (this.imageTailPointerDown(event)) return
     const target = event.target
     const last = this.view.state.doc.lastChild
     if (last?.type !== s.nodes.paragraph || last.content.size) return
@@ -311,7 +313,8 @@ export class MarkdownEditorController implements LiveEditor {
             'Mod-i': toggleMark(s.marks.em),
             'Mod-Shift-x': toggleMark(s.marks.strike),
             'Mod-`': toggleMark(s.marks.code),
-            'Backspace': (state, dispatch) => {
+            'Backspace': (state, dispatch, view) => {
+              if (tableBackspace(state, dispatch, view)) return true
               const {empty,$from}=state.selection
               if (empty && $from.parent.type === s.nodes.paragraph && $from.parent.content.size === 0) {
                 if ($from.pos === 1 && state.doc.childCount > 1) {
@@ -1537,6 +1540,28 @@ export class MarkdownEditorController implements LiveEditor {
     })
   }
 
+  private imageTailPointerDown(event: PointerEvent): boolean {
+    const target = event.target instanceof Element ? event.target : null
+    const paragraph = target?.closest('p')
+    if (!paragraph || !this.view.dom.contains(paragraph) || target?.closest('button,input,select,.md-inline-source-input,.md-live-image,.md-image-draft')) return false
+    const pos = this.view.posAtDOM(paragraph, 0), $pos = this.view.state.doc.resolve(pos)
+    const image = $pos.parent.lastChild
+    if (!image || !['image', 'image_source'].includes(image.type.name)) return false
+    const source = paragraph.querySelector('.md-source-image .md-inline-source-input, .md-image-compact-source, .md-image-draft')
+    if (!source) return false
+    const range = document.createRange()
+    range.selectNodeContents(source)
+    // A collapsed range at an element boundary can return (0, 0). Use the
+    // final text fragment, including the last visual line of wrapped source.
+    const end = [...range.getClientRects()].filter(rect => rect.height && rect.width).pop()
+    if (!end || event.clientX <= end.right || event.clientY < end.top || event.clientY > end.bottom) return false
+    event.preventDefault()
+    this.openInlineAt($pos.end() - image.nodeSize, 'image')
+    const editor = this.inlineSource
+    if (editor?.kind === 'image') editor.focus(editor.sourceTo - editor.sourceFrom)
+    return true
+  }
+
   private openInlineAt(pos: number, kind: string, selectAll = false) {
     if (this.linkGesture?.active) return
     this.pendingInline = null
@@ -1617,7 +1642,14 @@ export class MarkdownEditorController implements LiveEditor {
             }
             return Math.min(result,this.view.state.doc.content.size)
           }
-          if(selection)this.view.dispatch(this.view.state.tr.setSelection(TextSelection.create(this.view.state.doc,nearest(selection.anchor),nearest(selection.head))))
+          if(selection) {
+            // The image source is an editing widget for one atom. Its final
+            // character corresponds to the position after that atom, even
+            // when the bridge maps interior source characters to its start.
+            const imageEnd = editor.kind === 'image' && selection.anchor === selection.head && selection.head === editor.sourceTo - editor.sourceFrom
+            this.view.dispatch(this.view.state.tr.setSelection(TextSelection.create(this.view.state.doc,
+              imageEnd ? editor.to : nearest(selection.anchor), imageEnd ? editor.to : nearest(selection.head))))
+          }
           if(command === 'enter') this.run(chainCommands(splitListItem(s.nodes.list_item,{checked:null}),liftEmptyBlock,baseKeymap.Enter),true)
           else if(command === 'hard-break') { this.view.dispatch(this.view.state.tr.replaceSelectionWith(s.nodes.hard_break.create()).setMeta('isolated',true));this.view.focus() }
           else this.format(command)

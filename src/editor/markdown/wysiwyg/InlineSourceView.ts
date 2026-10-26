@@ -220,9 +220,13 @@ export class InlineSourceView {
       }
       if (event.key === 'Enter') {
         if (this.kind === 'image') {
-          event.preventDefault()
           const selection = this.selection()
           if (!selection) return
+          if (selection.anchor === this.draft.length && selection.head === this.draft.length) {
+            command(event.shiftKey ? 'hard-break' : 'enter')
+            return
+          }
+          event.preventDefault()
           const start = Math.min(selection.anchor, selection.head), end = Math.max(selection.anchor, selection.head)
           this.draft = this.draft.slice(0, start) + '\n' + this.draft.slice(end)
           this.input.textContent = this.draft
