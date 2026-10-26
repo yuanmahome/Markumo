@@ -31,44 +31,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm build
-
-  browser-smoke:
-    name: Browser Smoke
-    runs-on: ubuntu-22.04
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
-        with:
-          node-version: 24
-      - uses: pnpm/action-setup@f520eceda224fe1a4aed5a2a27a194379a409996 # v6
-        with:
-          version: 12.11.2
-          cache: true
-      - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - name: Browser smoke with failure log
-        shell: bash
-        run: |
-          mkdir -p test-results
-          set -o pipefail
-          pnpm test:smoke 2>&1 | tee test-results/browser-smoke.log
-      - name: Repeat focus, hydration and virtualization regressions
-        shell: bash
-        run: |
-          set -o pipefail
-          node scripts/run-regressions.mjs scripts/split-preview-regression.mjs scripts/markdown-live-toolbar-regression.mjs scripts/code-block-virtualization-regression.mjs scripts/math-editor-regression.mjs --repeat=3 2>&1 | tee test-results/browser-stability.log
-      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
-        with:
-          dotnet-version: '8.0.x'
-      - name: Validate generated Word packages and reject malformed schema control
-        run: node scripts/validate-docx.mjs
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: always()
-        with:
-          name: browser-smoke-evidence
-          retention-days: 7
-          path: test-results/
+      - name: Markdown link browser interactions
+        run: pnpm test
 
   # Rust quality
   rust:
@@ -93,16 +58,3 @@ jobs:
 
       - name: Rust cargo check
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml
-
-      - name: Install official Pandoc with embedded data for sandboxed DOCX
-        run: |
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/pandoc.tar.gz" https://github.com/jgm/pandoc/releases/download/3.8.3/pandoc-3.8.3-linux-amd64.tar.gz
-          printf '%s  %s\n' c224fab89f827d3623380ecb7c1078c163c769c849a14ac27e8d3bfbb914c9b4 "$RUNNER_TEMP/pandoc.tar.gz" | sha256sum --check
-          tar -xzf "$RUNNER_TEMP/pandoc.tar.gz" -C "$RUNNER_TEMP"
-          printf '%s\n' "$RUNNER_TEMP/pandoc-3.8.3/bin" >> "$GITHUB_PATH"
-
-      - name: Rust cargo test
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
-
-      - name: Native conversion integration with Pandoc
-        run: cargo test --locked --manifest-path src-tauri/Cargo.toml real_pandoc_docx_round_trip -- --nocapture

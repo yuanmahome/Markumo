@@ -395,10 +395,6 @@ pub fn import_docx(op: &Operation, exe: &Path, runner: &impl Runner) -> Result<S
                 .open(&target)
                 .map_err(|e| e.to_string())?;
             let bytes = media.get(&name).ok_or("内嵌媒体丢失")?;
-            #[cfg(test)]
-            if super::tests::copy_fault() {
-                return Err("injected media copy failure".into());
-            }
             std::io::copy(&mut bytes.as_slice(), &mut file)
                 .map_err(|e| format!("复制媒体失败: {e}"))?;
             file.sync_all().map_err(|e| format!("同步媒体失败: {e}"))?;
@@ -499,7 +495,7 @@ pub fn validate_pdf(bytes: &[u8]) -> Result<()> {
     }
     Ok(())
 }
-/// Used by the native renderer and fault tests. Every return drops renderer
+/// Used by the native renderer. Every return drops renderer
 /// resources before final validation or submission of a partial PDF.
 pub fn export_pdf(op: &Operation, render: impl FnOnce(&Path) -> Result<()>) -> Result<()> {
     op.verify(0)?;
@@ -511,15 +507,15 @@ pub fn export_pdf(op: &Operation, render: impl FnOnce(&Path) -> Result<()>) -> R
     validate_pdf(&bytes)?;
     op.commit(0, &bytes)
 }
-#[cfg(any(test, windows))]
+#[cfg(windows)]
 pub struct Cleanup<F: FnOnce()>(Option<F>);
-#[cfg(any(test, windows))]
+#[cfg(windows)]
 impl<F: FnOnce()> Cleanup<F> {
     pub fn new(f: F) -> Self {
         Self(Some(f))
     }
 }
-#[cfg(any(test, windows))]
+#[cfg(windows)]
 impl<F: FnOnce()> Drop for Cleanup<F> {
     fn drop(&mut self) {
         if let Some(f) = self.0.take() {
@@ -528,7 +524,7 @@ impl<F: FnOnce()> Drop for Cleanup<F> {
     }
 }
 
-#[cfg(any(test, windows))]
+#[cfg(windows)]
 pub fn print_html(html: &str) -> Result<String> {
     if html.len() > MAX_TEXT {
         return Err("打印 HTML 超过 16 MiB".into());

@@ -1,4 +1,0 @@
-# Raw evidence retains command-output whitespace and exact byte hashes.
-*.txt -text -whitespace
-*.json -text -whitespace
-*.png -text

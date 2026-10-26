@@ -1,6 +1,6 @@
 [package]
 name = "markumo"
-version = "1.0.5"
+version = "1.0.6"
 description = "Lightweight text and Markdown editor"
 license = "AGPL-3.0-only"
 authors = ["Markumo Team"]
@@ -13,9 +13,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.0", features = [] }
-
-[features]
-conversion-webview-tests = []
 
 [dependencies]
 tauri = { version = "2.12.3", features = [] }

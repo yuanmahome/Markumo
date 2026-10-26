@@ -1,6 +1,6 @@
 export {UpdateManager} from './updater/UpdateManager'
 export {updateState} from './updater/UpdateState'
-export const GITHUB_URL='https://github.com/pucj0/Markumo'
+export const GITHUB_URL='https://github.com/yuanmahome/Markumo'
 export function releasePageUrl(version?:string){
   const normalized=version?.replace(/^v/,'')
   return GITHUB_URL+(normalized&&/^\d+\.\d+\.\d+$/.test(normalized)?`/releases/tag/v${normalized}`:'/releases/latest')

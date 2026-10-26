@@ -27,18 +27,9 @@ function pdfResources(): Plugin {
 
 const noDesktopReload = () => process.env.MARKUMO_DESKTOP_NO_RELOAD === '1'
 
-// Browser regressions start their own Vite servers with different dependency
-// settings. Sharing optimized modules with the desktop dev server can load two
-// CodeMirror instances and make every language extension fail to install.
-function isolatedServerCache(): Plugin {
-  return {name:'isolated-server-cache',config(config,env) {
-    if(env.command === 'serve' && !config.cacheDir) return {cacheDir:path.resolve(__dirname,`node_modules/.vite-server-${config.server?.port ?? 1420}`)}
-  }}
-}
-
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [isolatedServerCache(), vue(), pdfResources()],
+  plugins: [vue(), pdfResources()],
   optimizeDeps: { entries:['index.html'], include:['mermaid','katex','dompurify'] },
   build: {
     rollupOptions: {

@@ -130,12 +130,3 @@ export function planOutlineMove(
     newCaretPos,
   }
 }
-
-/** Applies a plan's changes to a string, for tests and previews. */
-export function applyOutlineMove(fullSource: string, plan: OutlineMovePlan): string {
-  let result = fullSource
-  // Apply back to front so earlier offsets stay valid.
-  const ordered = [...plan.changes].sort((a, b) => b.from - a.from)
-  for (const change of ordered) result = result.slice(0, change.from) + change.insert + result.slice(change.to)
-  return result
-}

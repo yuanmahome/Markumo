@@ -9,7 +9,7 @@ export interface TocHeading {
 // Selection-only transactions retain the immutable document object; content
 // edits replace it even when heading text is unchanged but positions shift.
 // Weak keys release closed documents and obsolete revisions automatically.
-let cache = new WeakMap<Node, Map<NodeType, readonly TocHeading[]>>()
+const cache = new WeakMap<Node, Map<NodeType, readonly TocHeading[]>>()
 
 export function headingsFor(doc: Node, headingType: NodeType): readonly TocHeading[] {
   let types = cache.get(doc)
@@ -23,9 +23,4 @@ export function headingsFor(doc: Node, headingType: NodeType): readonly TocHeadi
   const result = Object.freeze(headings)
   types.set(headingType, result)
   return result
-}
-
-/** Explicit reset for tests; normal lifetime follows the weak document key. */
-export function clearHeadingCache(): void {
-  cache = new WeakMap()
 }

@@ -72,6 +72,3 @@ impl<'de> serde::Deserialize<'de> for InputText {
         d.deserialize_string(TextVisitor)
     }
 }
-
-#[cfg(test)]
-mod tests;

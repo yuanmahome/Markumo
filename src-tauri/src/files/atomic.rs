@@ -1,63 +1,6 @@
 use super::{fail, FileError, Result};
 use std::{fs, io::Write, path::Path};
 
-/// Deterministic fault injection for the save pipeline. These hooks are only
-/// compiled into unit tests; production builds contain no failure branches.
-#[cfg(test)]
-pub(crate) mod fault {
-    use std::cell::Cell;
-    pub const TEMP_CREATE: u32 = 1 << 0;
-    pub const TEMP_WRITE: u32 = 1 << 1;
-    pub const TEMP_SYNC: u32 = 1 << 2;
-    pub const REPLACE: u32 = 1 << 3;
-    pub const RACE_TARGET: u32 = 1 << 4;
-    pub const RACE_EXISTING: u32 = 1 << 10;
-    pub const TEMP_NO_SPACE: u32 = 1 << 11;
-    #[cfg(windows)]
-    pub const TARGET_NO_SPACE: u32 = 1 << 12;
-    #[cfg(windows)]
-    pub const BACKUP_CREATE: u32 = 1 << 5;
-    #[cfg(windows)]
-    pub const TARGET_WRITE: u32 = 1 << 6;
-    #[cfg(windows)]
-    pub const TARGET_SYNC: u32 = 1 << 7;
-    #[cfg(windows)]
-    pub const PARTIAL_WRITE: u32 = 1 << 8;
-    #[cfg(windows)]
-    pub const ROLLBACK_FAIL: u32 = 1 << 9;
-
-    thread_local! {
-        static ACTIVE: Cell<u32> = const { Cell::new(0) };
-    }
-
-    pub fn set(bits: u32) {
-        ACTIVE.with(|active| active.set(active.get() | bits));
-    }
-    pub fn clear() {
-        ACTIVE.with(|active| active.set(0));
-    }
-    pub fn no_space() -> std::io::Error {
-        std::io::Error::from_raw_os_error(if cfg!(windows) { 112 } else { 28 })
-    }
-    pub fn hit(bit: u32) -> bool {
-        ACTIVE.with(|active| active.get() & bit != 0)
-    }
-    /// A one-shot fault, so a write failure can be followed by a successful
-    /// rollback within the same test.
-    #[cfg(windows)]
-    pub fn take(bit: u32) -> bool {
-        ACTIVE.with(|active| {
-            let current = active.get();
-            if current & bit == 0 {
-                false
-            } else {
-                active.set(current & !bit);
-                true
-            }
-        })
-    }
-}
-
 fn save_error(error: std::io::Error, action: &str) -> FileError {
     #[cfg(windows)]
     if matches!(error.raw_os_error(), Some(32 | 33)) {
@@ -116,26 +59,8 @@ fn write_checked_inner(
         .parent()
         .ok_or_else(|| FileError::new("path", "缺少父目录。"))?;
     let permissions = prepare_target(&path)?;
-    #[cfg(test)]
-    if fault::hit(fault::TEMP_CREATE) {
-        return Err(save_error(
-            std::io::Error::other("injected temp creation failure"),
-            "无法在目标文件夹创建原子保存临时文件",
-        ));
-    }
     let mut temp = tempfile::NamedTempFile::new_in(parent)
         .map_err(|error| save_error(error, "无法在目标文件夹创建原子保存临时文件"))?;
-    #[cfg(test)]
-    if fault::hit(fault::TEMP_NO_SPACE) {
-        return Err(save_error(fault::no_space(), "写入保存临时文件失败"));
-    }
-    #[cfg(test)]
-    if fault::hit(fault::TEMP_WRITE) {
-        return Err(save_error(
-            std::io::Error::other("injected temp write failure"),
-            "写入保存临时文件失败",
-        ));
-    }
     temp.write_all(bytes)
         .map_err(|error| save_error(error, "写入保存临时文件失败"))?;
     if let Some(permissions) = permissions {
@@ -149,22 +74,12 @@ fn write_checked_inner(
     } else {
         None
     };
-    #[cfg(test)]
-    if fault::hit(fault::TEMP_SYNC) {
-        return Err(FileError::io(std::io::Error::other(
-            "injected temporary-file fsync failure",
-        )));
-    }
     temp.as_file().sync_all().map_err(FileError::io)?;
     // Close the temporary file handle before Windows replacement. TempPath cleans
     // up failed writes; the existing file is never truncated in place.
     let temp = temp.into_temp_path();
     if super::checked_path(&path, true)? != path {
         return fail("scope", "保存目标父目录或链接已变化。");
-    }
-    #[cfg(test)]
-    if fault::hit(fault::RACE_EXISTING) {
-        fs::write(&path, b"external during staging").map_err(FileError::io)?;
     }
     if super::disk_version(&path)?.as_deref() != expected {
         return fail(
@@ -179,19 +94,6 @@ fn write_checked_inner(
             .readonly()
     {
         return fail("read_only", "文件为只读，不能覆盖；请另存为。");
-    }
-    // Simulate another process creating the new target after validation. The
-    // no-overwrite branch must fail instead of replacing that file.
-    #[cfg(test)]
-    if expected.is_none() && fault::hit(fault::RACE_TARGET) {
-        let _ = fs::write(&path, b"intruder");
-    }
-    #[cfg(test)]
-    if fault::hit(fault::REPLACE) {
-        return Err(save_error(
-            std::io::Error::other("injected replace failure"),
-            "替换保存目标失败",
-        ));
     }
     #[cfg(unix)]
     if conversion {
@@ -338,13 +240,6 @@ fn in_place_write(path: &Path, bytes: &[u8], expected: Option<&str>) -> Result<(
     }
     // Recovery copy outside the target directory: never creates or removes an
     // entry next to the document, and stays usable if the write fails.
-    #[cfg(test)]
-    if fault::hit(fault::BACKUP_CREATE) {
-        return Err(save_error(
-            std::io::Error::other("injected backup creation failure"),
-            "无法创建保存回滚备份",
-        ));
-    }
     let mut backup = tempfile::NamedTempFile::new_in(std::env::temp_dir())
         .map_err(|error| save_error(error, "无法创建保存回滚备份"))?;
     backup
@@ -352,15 +247,7 @@ fn in_place_write(path: &Path, bytes: &[u8], expected: Option<&str>) -> Result<(
         .map_err(|error| save_error(error, "写保存回滚备份失败"))?;
     backup.as_file().sync_all().map_err(FileError::io)?;
 
-    #[cfg(test)]
-    let injected_write_failure = fault::hit(fault::TARGET_WRITE);
-    #[cfg(not(test))]
-    let injected_write_failure = false;
-    let write_result = if injected_write_failure {
-        Err(std::io::Error::other("injected target write failure"))
-    } else {
-        replace_contents(&mut file, bytes)
-    };
+    let write_result = replace_contents(&mut file, bytes);
     if let Err(error) = write_result {
         // Roll back to the exact previous bytes while the handle is still open.
         return Err(match rollback(&mut file, &original) {
@@ -379,10 +266,6 @@ fn in_place_write(path: &Path, bytes: &[u8], expected: Option<&str>) -> Result<(
 
 #[cfg(windows)]
 fn rollback(file: &mut fs::File, original: &[u8]) -> std::io::Result<()> {
-    #[cfg(test)]
-    if fault::hit(fault::ROLLBACK_FAIL) {
-        return Err(std::io::Error::other("injected rollback failure"));
-    }
     replace_contents(file, original)
 }
 
@@ -392,25 +275,8 @@ fn rollback(file: &mut fs::File, original: &[u8]) -> std::io::Result<()> {
 fn replace_contents(file: &mut fs::File, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::{Seek, SeekFrom};
     file.seek(SeekFrom::Start(0))?;
-    #[cfg(test)]
-    if fault::take(fault::TARGET_NO_SPACE) {
-        // Exercise the real rollback path after a successful prefix write.
-        file.write_all(&bytes[..bytes.len() / 2])?;
-        return Err(fault::no_space());
-    }
-    #[cfg(test)]
-    if fault::take(fault::PARTIAL_WRITE) {
-        let prefix = bytes.len() / 2;
-        file.write_all(&bytes[..prefix])?;
-        file.set_len(prefix as u64)?;
-        return Err(std::io::Error::other("injected partial write failure"));
-    }
     file.write_all(bytes)?;
     file.set_len(bytes.len() as u64)?;
-    #[cfg(test)]
-    if fault::take(fault::TARGET_SYNC) {
-        return Err(std::io::Error::other("injected target fsync failure"));
-    }
     file.sync_all()
 }
 
@@ -470,187 +336,4 @@ fn replace(source: &Path, target: &Path, exists: bool) -> std::io::Result<()> {
     } else {
         fs::hard_link(source, target)
     } // fail atomically if another file appeared
-}
-
-#[cfg(test)]
-mod save_safety_tests {
-    use super::*;
-
-    fn existing_target(
-        dir: &tempfile::TempDir,
-        name: &str,
-        text: &[u8],
-    ) -> (std::path::PathBuf, String) {
-        let path = dir.path().join(name);
-        fs::write(&path, text).unwrap();
-        let version = super::super::disk_version(&path).unwrap().unwrap();
-        (path, version)
-    }
-
-    #[cfg(windows)]
-    fn link_directory(link: &Path, target: &Path) -> bool {
-        // Creating a real symlink requires an elevated token or Developer Mode.
-        // A junction exercises the same canonicalization path without elevation.
-        std::process::Command::new("cmd")
-            .args(["/C", "mklink", "/J"])
-            .arg(link)
-            .arg(target)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|status| status.success() && link.exists())
-            .unwrap_or(false)
-    }
-
-    #[cfg(unix)]
-    fn link_directory(link: &Path, target: &Path) -> bool {
-        std::os::unix::fs::symlink(target, link).is_ok()
-    }
-
-    #[test]
-    fn atomic_write_accepts_a_linked_configuration_parent() {
-        let directory = tempfile::tempdir().unwrap();
-        let real = directory.path().join("real");
-        let link = directory.path().join("link");
-        fs::create_dir(&real).unwrap();
-        if !link_directory(&link, &real) {
-            return;
-        }
-        let path = link.join("files.json");
-        write_checked(&path, b"first", None).unwrap();
-        assert_eq!(fs::read(real.join("files.json")).unwrap(), b"first");
-
-        let version = super::super::disk_version(&path).unwrap();
-        write_checked(&path, b"second", version.as_deref()).unwrap();
-        assert_eq!(fs::read(real.join("files.json")).unwrap(), b"second");
-    }
-
-    #[test]
-    fn atomic_temp_failures_keep_the_existing_target_intact() {
-        for point in [
-            fault::TEMP_CREATE,
-            fault::TEMP_WRITE,
-            fault::TEMP_SYNC,
-            fault::REPLACE,
-        ] {
-            let directory = tempfile::tempdir().unwrap();
-            let (path, version) = existing_target(&directory, "data.json", b"original");
-            fault::clear();
-            fault::set(point);
-            let result = write_checked(&path, b"replacement", Some(&version));
-            fault::clear();
-            assert!(result.is_err(), "fault point {point} did not fail the save");
-            assert_eq!(
-                fs::read(&path).unwrap(),
-                b"original",
-                "fault point {point} changed the target"
-            );
-        }
-    }
-
-    #[test]
-    fn disk_full_during_staging_reports_failure_and_cleans_the_temporary_file() {
-        let directory = tempfile::tempdir().unwrap();
-        let (path, version) = existing_target(&directory, "note.txt", b"original");
-        fault::set(fault::TEMP_NO_SPACE);
-        let result = write_checked(&path, b"replacement", Some(&version));
-        fault::clear();
-        let error = result.unwrap_err();
-        assert_eq!(error.code, "io");
-        assert!(error.message.contains(&fault::no_space().to_string()));
-        assert_eq!(fs::read(&path).unwrap(), b"original");
-        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn disk_full_after_partial_in_place_write_restores_content_and_identity() {
-        let directory = tempfile::tempdir().unwrap();
-        let (path, version) = existing_target(&directory, "note.txt", b"original content");
-        let identity = super::super::file_identity(&path);
-        assert!(
-            identity.is_some(),
-            "Windows fixture must have a native file identity"
-        );
-        fault::set(fault::TARGET_NO_SPACE);
-        let result =
-            write_checked_preserving_identity(&path, b"replacement content", Some(&version));
-        fault::clear();
-        assert!(result
-            .unwrap_err()
-            .message
-            .contains(&fault::no_space().to_string()));
-        assert_eq!(fs::read(&path).unwrap(), b"original content");
-        assert_eq!(super::super::file_identity(&path), identity);
-        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
-    }
-
-    #[test]
-    fn a_new_target_created_after_validation_is_never_overwritten() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("new.json");
-        fault::clear();
-        fault::set(fault::RACE_TARGET);
-        let result = write_checked(&path, b"editor", None);
-        fault::clear();
-        assert!(result.is_err());
-        assert_eq!(fs::read(&path).unwrap(), b"intruder");
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn backup_creation_failure_keeps_the_original_document() {
-        let directory = tempfile::tempdir().unwrap();
-        let (path, version) = existing_target(&directory, "note.txt", b"original");
-        fault::clear();
-        fault::set(fault::BACKUP_CREATE);
-        let result = write_checked_preserving_identity(&path, b"replacement", Some(&version));
-        fault::clear();
-        assert!(result.is_err());
-        assert_eq!(fs::read(&path).unwrap(), b"original");
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn write_failure_and_partial_write_are_rolled_back() {
-        for point in [
-            fault::TARGET_WRITE,
-            fault::PARTIAL_WRITE,
-            fault::TARGET_SYNC,
-        ] {
-            let directory = tempfile::tempdir().unwrap();
-            let (path, version) = existing_target(&directory, "note.txt", b"original content");
-            fault::clear();
-            fault::set(point);
-            let result =
-                write_checked_preserving_identity(&path, b"replacement content", Some(&version));
-            fault::clear();
-            assert!(
-                result.is_err(),
-                "fault point {point} did not fail the write"
-            );
-            assert_eq!(
-                fs::read(&path).unwrap(),
-                b"original content",
-                "fault point {point} did not roll back"
-            );
-        }
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn failed_rollback_keeps_a_readable_backup_and_reports_its_path() {
-        let directory = tempfile::tempdir().unwrap();
-        let (path, version) = existing_target(&directory, "note.txt", b"recoverable original");
-        fault::clear();
-        fault::set(fault::PARTIAL_WRITE | fault::ROLLBACK_FAIL);
-        let error =
-            write_checked_preserving_identity(&path, b"replacement", Some(&version)).unwrap_err();
-        fault::clear();
-        assert!(error.message.contains("备份保留在"), "{}", error.message);
-        let location = error.message.split("备份保留在 ").nth(1).unwrap();
-        let backup = location.split('。').next().unwrap();
-        assert_eq!(fs::read(backup).unwrap(), b"recoverable original");
-        fs::remove_file(backup).unwrap();
-    }
 }

@@ -1,97 +1,82 @@
 # Markumo
 
-轻量的桌面文本与 Markdown 编辑器。支持直接打开单个文件，也可以用文件夹工作区管理多个文档。
+**简体中文** | [English](README.en.md)
 
-提供 Windows、Linux、macOS（Apple Silicon / Intel）版本，支持签名验证的应用内更新。
+轻量的桌面文本与 Markdown 编辑器。既能随手打开单个文件，也能通过文件夹工作区管理项目，在同一个窗口中编辑文本、编写代码、整理 Markdown 和预览媒体文件。
 
-当前版本：[1.0.5](https://github.com/yuanmahome/Markumo/releases/tag/v1.0.5) · 开源协议：[AGPL-3.0-only](LICENSE)。
+[下载安装包](https://github.com/yuanmahome/Markumo/releases/latest) · [问题反馈](https://github.com/yuanmahome/Markumo/issues) · [开源协议](LICENSE)
 
 ## 功能
 
-- **媒体预览**：内置图片和 PDF 查看器，共用标签与分栏；PDF 默认连续滚动、适应页面。
-- **版本更新**：后台检查、可选自动下载、下载进度与版本日志；签名验证通过后，由用户决定安装和重启，安装前可保存全部文档。
-- **文本与代码编辑**：多语言语法高亮、行号、缩进、折叠、查找替换和正则表达式。
-- **Markdown 编辑**：即时排版、源码和双栏模式，支持表格、任务列表、图片、KaTeX 公式与 Mermaid 图表。
-- **平滑光标**：关闭、快速跟手、平滑滑动三种模式，覆盖普通文本、源码、即时排版及内嵌代码块；遵循系统减少动画偏好，组合输入期间回退原生光标。
-- **多文档与分栏**：多标签、标签拖动、上下及左右分栏，同一文档在多个窗格间同步编辑，并恢复分栏布局和各窗格的 Markdown 模式。
-- **文件与工作区**：最近文件、目录树、快速打开、工作区搜索与文件管理；支持拖入文件或文件夹，添加文件夹时保留现有工作区。
-- **文档转换**：导入 HTML、Word，导出 HTML、PDF、Word 和 PNG 长图。Word 转换需要另外安装 [Pandoc](https://pandoc.org/installing.html)。
-- **设置中心**：滚动分类自动联动、常用选项平铺，独立调整界面、编辑器与 Markdown 字体。
-- **快捷键**：Markumo、Fleet、Typora 三种方案，支持录制、清除、恢复、搜索筛选与冲突重新分配；自定义绑定按编辑焦点生效并持久保存。
-- **本地文件保护**：未保存提示、自动保存设置、编码与换行处理，以及外部修改冲突检查。
+- **文本与代码**：多语言语法高亮、行号、折叠、查找替换、正则表达式，以及编码与换行格式设置。
+- **Markdown 写作**：即时排版、源码和双栏模式，支持表格、任务列表、图片、数学公式与 Mermaid 图表。
+- **多标签与分栏**：拖动标签、上下或左右分栏，在多个窗格中同步编辑同一文档，并恢复上次的工作现场。
+- **文件与工作区**：目录树、最近文件、快速打开、工作区搜索与替换；支持拖入文件和文件夹。
+- **图片与 PDF**：内置媒体查看器，与文本文档共用标签和分栏；PDF 支持连续滚动、缩略图和大纲导航。
+- **导入与导出**：导入 HTML、Word，导出 HTML、PDF、Word 和 PNG 长图。Word 导入需要另行安装 [Pandoc](https://pandoc.org/installing.html)。
+- **个性化设置**：主题、字体、语法配色、平滑光标和专注模式；支持 Markumo、Fleet、Typora 快捷键方案与自定义绑定。
+- **文件保护**：未保存提示、自动保存、历史记录、崩溃恢复和外部修改冲突检查。
+- **应用内更新**：支持检查和下载更新，验证签名后由用户决定安装与重启。
 
 ## 安装与使用
 
-从仓库的 [Releases](https://github.com/yuanmahome/Markumo/releases/latest) 获取安装包，更新内容见 [1.0.5 更新日志](docs/releases/v1.0.5.md)，也可按下文自行构建。
+从 [Releases](https://github.com/yuanmahome/Markumo/releases/latest) 下载适合当前系统的安装包。
 
-标题栏 GitHub 图标可打开项目，更新图标提供检查、下载、完整日志和安装入口。设置 → 更新中，自动检查默认开启，自动后台下载默认关闭；后台下载期间可以继续编辑，关闭更新面板也不会中断下载。安装和重启始终由用户确认。安装前请关闭其他 Markumo 窗口；当前窗口可选择保存全部未保存文档，任何保存取消或失败都会停止安装。自动发布与签名配置见 [发布说明](docs/releasing.md)。
+| 系统 | 安装方式 |
+| --- | --- |
+| Windows | 运行 EXE 安装包 |
+| macOS | 打开 DMG，将应用拖入 Applications；支持 Apple Silicon 和 Intel |
+| Linux | 使用 AppImage，或安装 DEB 软件包 |
 
-Windows 构建产物为 `Markumo_*_x64-setup.exe`。安装后可通过菜单打开文件或文件夹，也可使用系统“打开方式”选择 Markumo。
+启动后，可通过菜单打开文件或文件夹，也可以直接拖入窗口。Windows 支持“打开方式”和“以 Markumo 打开”右键菜单；系统可能将该菜单放在“显示更多选项”中。
 
-Windows 11 可在文件右键菜单的“显示更多选项”中选择“以 Markumo 打开”。此入口使用经典文件关联，不需要安装原生扩展或导入额外证书。
+应用内更新位于标题栏和设置中的更新入口。Linux 的应用内更新适用于 AppImage，DEB 用户需下载安装包更新。
 
-Linux 的应用内更新适用于 AppImage；DEB 用户请下载安装新版 DEB。macOS 的 DMG 用于安装，`.app.tar.gz` 用于应用内更新。下载校验值见 Release 的 `SHA256SUMS`；更新签名包含在 `latest.json` 中，不单独提供 `.sig` 附件。
-
-Windows 安装包目前没有商业代码签名证书；macOS 使用 ad-hoc 签名且未公证，首次启动可能需要系统确认。应用内更新使用独立的签名验证。
+Windows 安装包尚未使用商业代码签名证书；macOS 使用 ad-hoc 签名且未公证，首次运行可能需要在系统设置中确认。应用内更新使用独立的签名验证。
 
 ## 本地开发
 
-### 环境
+### 环境准备
 
-- Node.js 20 或以上、pnpm；发布流程使用 Node.js 24 和 pnpm 12.11.2。
-- 桌面开发还需要 Rust 工具链与系统依赖。
-- Windows 需要 MSVC、Visual Studio C++ 桌面开发工具、Windows SDK 和 WebView2 Runtime。
-- macOS 需要 Xcode Command Line Tools；Linux 需要 WebKitGTK 等开发依赖。
+- Node.js LTS、pnpm 和 Rust stable 工具链。
+- Windows：MSVC、Visual Studio C++ 桌面开发工具、Windows SDK 和 WebView2 Runtime。
+- macOS：Xcode Command Line Tools。
+- Linux：WebKitGTK 等桌面开发依赖。
 
-各平台的详细环境要求见 [Tauri 官方文档](https://v2.tauri.app/start/prerequisites/)。
+系统依赖的安装步骤见 [Tauri 环境准备](https://v2.tauri.app/start/prerequisites/)。
 
 ### 获取源码
 
 ```sh
-git clone https://github.com/pucj0/Markumo.git
+git clone https://github.com/yuanmahome/Markumo.git
 cd Markumo
 pnpm install --frozen-lockfile
 ```
 
-### 启动桌面版
+### 启动开发环境
 
 ```sh
 pnpm tauri dev
 ```
 
-开发模式默认支持热更新。需要关闭自动重启时，运行 `pnpm tauri dev --no-watch`。开发数据保存在项目的 `.markumo-dev/` 中，不影响正式版配置。
+桌面开发默认开启热更新。使用 `pnpm tauri dev --no-watch` 可关闭自动重启与前端热更新。开发数据保存在 `.markumo-dev/`，也可通过 `MARKUMO_DEV_DATA_DIR` 指定目录。
 
-### 浏览器预览
+仅预览浏览器界面时运行：
 
 ```sh
 pnpm dev
 ```
 
-访问 `http://localhost:1420`。浏览器模式适合界面开发和内存草稿编辑，桌面文件操作需要 Tauri。启动桌面开发前，请先停止已有的 Vite 服务，避免端口冲突。
+访问 `http://localhost:1420`。浏览器模式可用于界面开发和内存草稿编辑，桌面文件操作需要通过 Tauri 启动。两种开发方式使用相同端口，请勿同时运行。
 
 ### 检查与构建
 
 ```sh
-pnpm typecheck
-pnpm build
+pnpm check
 cargo check --manifest-path src-tauri/Cargo.toml
-cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-`pnpm build` 仅生成前端资源到 `dist/`。`cargo test` 覆盖设置持久化、配置迁移、文件能力、会话恢复和更新安装保护。
-
-仓库还提供针对真实编辑器与应用界面的浏览器回归：
-
-```sh
-node scripts/settings-keybindings-regression.mjs
-node scripts/smooth-caret-regression.mjs
-node scripts/updater-regression.mjs
-node scripts/rich-clipboard-regression.mjs
-node scripts/native-drop-regression.mjs
-node scripts/release-regression.mjs
-```
-
-浏览器回归需要可用的 Playwright 和 Chromium。可用 `MARKUMO_PLAYWRIGHT_MODULE` 指定 Playwright 模块的绝对路径，用 `MARKUMO_CHROME` 指定本机 Chrome 可执行文件。测试产物写入忽略跟踪的 `test-results/`；更新回归使用模拟安装器，不安装或重启应用。实现与验收说明见 [设置和快捷键](docs/settings-keybindings.md)、[平滑光标](docs/smooth-caret.md) 和 [更新系统](docs/updater.md)。
+`pnpm check` 执行类型检查和前端构建。也可分别运行 `pnpm typecheck` 与 `pnpm build`；前端产物写入 `dist/`。
 
 ## 生成安装包
 
@@ -107,37 +92,34 @@ macOS / Linux：
 sh build.sh
 ```
 
-脚本默认安装锁定依赖并构建当前系统的安装包。可使用 `--check` 检查环境，或使用 `--skip-install` 跳过依赖安装。
+脚本会安装锁定依赖，并为当前系统生成安装包。使用 `--check` 仅检查环境，使用 `--skip-install` 跳过依赖安装。各平台需在对应系统上构建。
 
-Windows 打包脚本会将生成的程序和安装包恢复为正常的 Medium 完整性标记，避免构建目录继承的 Low 标记影响启动。
+默认产物位于 `src-tauri/target/release/bundle/`，按格式存放在 `nsis/`、`macos/`、`dmg/`、`deb/` 或 `appimage/` 中。自定义 Cargo 输出目录或编译目标时，以构建日志为准。
 
-| 平台 | 默认产物目录 | 格式 |
-| --- | --- | --- |
-| Windows | `src-tauri/target/release/bundle/nsis/` | EXE 安装包 |
-| macOS | `src-tauri/target/release/bundle/macos/`、`dmg/` | APP、DMG |
-| Linux | `src-tauri/target/release/bundle/deb/`、`appimage/` | DEB、AppImage |
+发布流程与更新签名配置见 [发布说明](docs/releasing.md)。
 
-各平台需在对应系统上构建。使用自定义 Cargo target 或输出目录时，以构建日志中的实际路径为准。
+### 移动目录后无法构建
 
-## 技术结构
+如果移动或重命名项目后出现 `failed to read plugin permissions`，且错误引用旧目录，通常是 Cargo 缓存中的 Tauri 权限文件仍保留旧的绝对路径。清理缓存后重新运行打包脚本：
 
-- **界面**：Vue 3、TypeScript、Vite。
-- **桌面服务**：Rust、Tauri 2，处理文件读写、工作区和系统集成。
-- **编辑内核**：普通文本、代码及 Markdown 源码使用 CodeMirror 6；Markdown 即时排版使用 ProseMirror，代码块嵌入 CodeMirror 6。
-- **渲染**：Markdown-it、KaTeX、Mermaid。
-
-```text
-src/                 界面、编辑器与应用功能
-src-tauri/           Rust 桌面服务、图标和 Windows 集成
-scripts/             开发与打包脚本
-public/              静态资源
-design/              图标设计源文件
+```sh
+cargo clean --manifest-path src-tauri/Cargo.toml
 ```
 
-应用标识统一为 `com.markumo.app`，开发配置目录为 `.markumo-dev/`，浏览器偏好使用 `markumo.settings.v1`，Windows 文件关联及右键菜单注册项统一使用 `Markumo`。
+此命令会清理 Rust 构建产物，下一次编译耗时会增加。迁移源码时建议不复制 `target/` 目录。
 
-首次启动会从旧版标准目录导入编辑器设置、最近文件、工作区及上次会话；已有的新配置不会被覆盖，旧目录保留为备份。自定义开发目录仅通过 `MARKUMO_DEV_DATA_DIR` 指定。更新后的注册项在重新构建并安装后生效；Windows 的默认应用选择由系统管理，必要时在“打开方式”或“默认应用”中重新选择 Markumo。
+## 项目结构
+
+```text
+src/          界面、编辑器与应用功能
+src-tauri/    Rust 桌面服务、应用图标与系统集成
+scripts/      开发启动、打包与发布脚本
+public/       静态资源
+docs/         发布说明与更新日志
+```
+
+界面使用 Vue、TypeScript 和 Vite；桌面服务使用 Rust 与 Tauri；文本与代码编辑基于 CodeMirror，Markdown 即时排版基于 ProseMirror，配合 Markdown-it、KaTeX 和 Mermaid 完成渲染。
 
 ## 开源协议
 
-Markumo 自 1.0.3 起采用 **GNU Affero General Public License v3.0（AGPL-3.0-only）**。许可证全文见 [LICENSE](LICENSE)，各第三方依赖保留其各自的许可证和版权声明。
+采用 [GNU Affero General Public License（AGPL-3.0-only）](LICENSE)。第三方依赖保留各自的许可证与版权声明。

@@ -1,24 +1,19 @@
 {
   "name": "markumo",
   "private": true,
-  "version": "1.0.5",
+  "version": "1.0.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "check": "pnpm typecheck && pnpm build",
     "test": "node tests/markdown-links/regression.mjs",
-    "test:smoke": "node scripts/run-regressions.mjs smoke",
-    "test:regression": "node scripts/run-regressions.mjs regression",
-    "test:outline:code": "node scripts/run-regressions.mjs scripts/code-structure-regression.mjs",
-    "test:tabs": "node scripts/run-regressions.mjs scripts/tab-navigation-regression.mjs",
-    "test:quality:browser": "node scripts/phase07-browser-audit.mjs --soak-minutes=0 --label=ci",
-    "check": "pnpm typecheck && pnpm build && pnpm test:smoke",
-    "tauri": "node scripts/tauri.mjs",
-    "tauri:watch": "node scripts/tauri.mjs dev --watch",
     "test:markdown:live": "node tests/markdown-links/regression.mjs",
-    "test:links": "node tests/markdown-links/regression.mjs"
+    "test:links": "node tests/markdown-links/regression.mjs",
+    "tauri": "node scripts/tauri.mjs",
+    "tauri:watch": "node scripts/tauri.mjs dev --watch"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

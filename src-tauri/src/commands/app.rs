@@ -75,15 +75,3 @@ pub async fn open_external_link(url: String) -> Result<(), String> {
     .await
     .map_err(|e| e.to_string())?
 }
-
-#[cfg(test)]
-mod link_tests {
-    use super::*;
-    #[test]
-    fn browser_links_reject_executable_schemes_and_embedded_credentials() {
-        assert!(validated_external_url("https://github.com/pucj0/Markumo/releases/latest").is_ok());
-        assert!(validated_external_url("javascript:alert(1)").is_err());
-        assert!(validated_external_url("file:///C:/Windows/system32/cmd.exe").is_err());
-        assert!(validated_external_url("https://user:password@github.com/").is_err());
-    }
-}

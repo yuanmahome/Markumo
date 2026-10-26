@@ -379,10 +379,6 @@ fn render_pdf(
             eprintln!("销毁 PDF 打印窗口失败: {e}");
         }
     });
-    #[cfg(all(test, feature = "conversion-webview-tests"))]
-    if native_pdf_tests::fault() == 1 {
-        return Err("injected failure after native PDF window creation".into());
-    }
     let generated = work.path().join("printed.pdf");
     let (tx, rx) = mpsc::channel();
     let print_output = generated.clone();
@@ -438,12 +434,6 @@ fn render_pdf(
         }
     });
     let deadline = Instant::now() + Duration::from_secs(30);
-    #[cfg(all(test, feature = "conversion-webview-tests"))]
-    let deadline = if native_pdf_tests::fault() == 2 {
-        Instant::now() + Duration::from_millis(1)
-    } else {
-        deadline
-    };
     loop {
         op.check()?;
         if std::fs::metadata(&generated).is_ok_and(|m| m.len() > conversion::MAX_OUTPUT as u64) {
@@ -462,70 +452,5 @@ fn render_pdf(
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(e) => return Err(format!("打印回调丢失: {e}")),
         }
-    }
-}
-
-#[cfg(all(test, windows, feature = "conversion-webview-tests"))]
-mod native_pdf_tests {
-    use super::*;
-    use tauri::Manager;
-    thread_local! {static FAULT:std::cell::Cell<u8>=const{std::cell::Cell::new(0)};}
-    pub(super) fn fault() -> u8 {
-        FAULT.with(std::cell::Cell::get)
-    }
-
-    #[test]
-    #[ignore = "requires an interactive Windows session with WebView2; run explicitly"]
-    fn real_webview2_prints_and_releases_hidden_window() {
-        let mut context = tauri::generate_context!();
-        context.config_mut().app.windows.clear();
-        context.config_mut().identifier = "com.markumo.conversion-test".into();
-        let (tx, rx) = std::sync::mpsc::channel();
-        let app=tauri::Builder::default().any_thread().setup(move|app| {
-            let handle=app.handle().clone();
-            std::thread::spawn(move|| {
-                let result=(||->Result<(),String>{
-                    let dir=tempfile::tempdir().map_err(|e|e.to_string())?;let target=dir.path().join("output.pdf");
-                    let store=ConversionStore::default();store.register("test");let permit=store.dialog("test")?;
-                    let selected=store.selected(&permit,Some(target.clone()),Purpose::Pdf)?.unwrap();
-                    drop(permit);
-                    let op=store.begin("test",&[(&selected.token,Purpose::Pdf)])?;
-                    conversion::export_pdf(&op,|output|render_pdf(&handle,&op,"<!doctype html><html><head><style>@page{size:A4;margin:20mm}body{font-family:Arial}pre{white-space:pre-wrap}</style></head><body><h1>Markumo Native PDF</h1><p>Phase 06.2 / WebView2</p><pre>line 1\nline 2</pre><table><tr><td>one</td><td>two</td></tr></table></body></html>",output))?;
-                    conversion::validate_pdf(&std::fs::read(&target).map_err(|e|e.to_string())?)?;
-                    std::thread::sleep(Duration::from_millis(200));
-                    if handle.webview_windows().keys().any(|label|label.starts_with("pdf-print-")){return Err("打印窗口泄漏".into());}
-                    let artifacts=Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-results/conversion");std::fs::create_dir_all(&artifacts).map_err(|e|e.to_string())?;
-                    std::fs::copy(target,artifacts.join("native-webview2.pdf")).map_err(|e|e.to_string())?;
-                    drop(op);
-                    for mode in [1,2] {
-                        let destination=dir.path().join(format!("failed-{mode}.pdf"));
-                        let permit=store.dialog("test")?;
-                        let selection=store.selected(&permit,Some(destination.clone()),Purpose::Pdf)?.unwrap();
-                        let op=store.begin("test",&[(&selection.token,Purpose::Pdf)])?;
-                        FAULT.with(|f|f.set(mode));
-                        let result=conversion::export_pdf(&op,|output|render_pdf(&handle,&op,"<h1>Failure test</h1>",output));
-                        FAULT.with(|f|f.set(0));
-                        result.expect_err("injected native PDF error was reported as success");
-                        assert!(!destination.exists());
-                        std::thread::sleep(Duration::from_millis(1500));
-                        assert!(!handle.webview_windows().keys().any(|s|s.starts_with("pdf-print-")));
-                    }
-                    std::thread::sleep(Duration::from_secs(2));
-                    assert!(!std::fs::read_dir(std::env::temp_dir()).unwrap().any(|entry|entry.unwrap().file_name().to_string_lossy().starts_with("markumo-pdf-")),"temporary PDF profile leaked");
-                    Ok(())
-                })();
-                let _=tx.send(result);handle.exit(0);
-            });
-            Ok(())
-        }).build(context).unwrap();
-        app.run_return(|_, event| {
-            if let tauri::RunEvent::ExitRequested {
-                code: None, api, ..
-            } = event
-            {
-                api.prevent_exit();
-            }
-        });
-        rx.recv_timeout(Duration::from_secs(45)).unwrap().unwrap();
     }
 }

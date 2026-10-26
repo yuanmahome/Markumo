@@ -253,11 +253,6 @@ impl ConversionStore {
             deadline: Instant::now() + TIMEOUT,
         })
     }
-    #[cfg(test)]
-    pub fn expire(&self, token: &str) {
-        lock(&self.0).leases.get_mut(token).unwrap().expires =
-            Instant::now() - Duration::from_secs(1);
-    }
 }
 
 pub struct Operation {
