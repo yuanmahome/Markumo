@@ -331,7 +331,28 @@ body.light .markdown-live { --text: #333; --bright: #333; --muted: #777; --line:
 
 /* Code Block - Clean Typora Container with Internal Line Numbers */
 .markdown-live .md-code-block {
-  margin: 1.2em 0;
+  /* Shared display/edit geometry. ch follows the actual tabular number font,
+     including font changes and zoom; no estimated pixel width per digit. */
+  --code-font-family: var(--font-mono);
+  --code-font-size: var(--md-code-font-size);
+  --code-line-height: var(--md-code-line-height);
+  --code-font-weight: 400;
+  --code-letter-spacing: 0px;
+  --code-number-padding-left: 8px;
+  --code-number-padding-right: 8px;
+  --code-number-min-width: calc(2ch + var(--code-number-padding-left) + var(--code-number-padding-right));
+  --code-gutter-width: 0px;
+  --code-padding-left: 14px;
+  --code-padding-right: 30px;
+  --code-padding-top: 10px;
+  --code-padding-bottom: 6px;
+  font: var(--code-font-weight) var(--code-font-size)/var(--code-line-height) var(--code-font-family);
+  letter-spacing: var(--code-letter-spacing);
+  font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
+  tab-size: 2;
+  /* Block spacing follows prose size, independently of the shared code font. */
+  margin: calc(var(--md-font-size) * 1.2) 0;
   width: 100%;
   box-sizing: border-box;
   white-space: normal;
@@ -339,6 +360,9 @@ body.light .markdown-live { --text: #333; --bright: #333; --muted: #777; --line:
   flex-direction: column;
   position: relative;
   overflow: visible;
+}
+.markdown-live .md-code-block.has-code-numbers {
+  --code-gutter-width: max(var(--code-number-min-width), calc(var(--code-digits, 1) * 1ch + var(--code-number-padding-left) + var(--code-number-padding-right)));
 }
 
 .markdown-live .md-code-surface {
@@ -589,7 +613,7 @@ body.light .file-icon-gray { color: #6c7c92; }
 
 .markdown-live .md-code-block .cm-editor {
   height: auto !important;
-  font: var(--md-code-font-size)/var(--md-code-line-height) var(--font-mono);
+  font: inherit;
   color: var(--text);
   background: transparent;
   width: 100%;
@@ -597,20 +621,29 @@ body.light .file-icon-gray { color: #6c7c92; }
 
 .markdown-live .md-code-block .cm-scroller {
   overflow: auto;
-  font-family: var(--font-mono);
-  line-height: var(--md-code-line-height);
+  font: inherit;
+  letter-spacing: inherit;
 }
 
 .markdown-live .md-code-block .cm-gutters {
-  background: transparent;
+  background: var(--md-code-bg);
   color: var(--muted);
   border: 0;
-  font-size: 12px;
-  padding-left: 4px;
+  font: inherit;
+  padding: 0;
+}
+.markdown-live .md-code-block .cm-lineNumbers {
+  width: var(--code-gutter-width);
+}
+.markdown-live .md-code-block .cm-lineNumbers .cm-gutterElement {
+  width: var(--code-gutter-width);
+  min-width: var(--code-number-min-width);
+  padding: 0 var(--code-number-padding-right) 0 var(--code-number-padding-left);
+  text-align: right;
 }
 
 .markdown-live .md-code-block .cm-content {
-  padding: 10px 30px 6px 0;
+  padding: var(--code-padding-top) 0 var(--code-padding-bottom);
   caret-color: var(--bright);
 }
 
@@ -619,7 +652,7 @@ body.light .file-icon-gray { color: #6c7c92; }
 .markdown-live .md-code-block .cm-focused .cm-selectionBackground { background: var(--selection); }
 
 .markdown-live .md-code-block .cm-line {
-  padding: 0 14px;
+  padding: 0 var(--code-padding-right) 0 var(--code-padding-left);
 }
 
 .markdown-live .md-code-block .cm-focused {
@@ -628,16 +661,21 @@ body.light .file-icon-gray { color: #6c7c92; }
 
 .markdown-live .md-code-block .md-code-placeholder {
   margin: 0;
-  padding: 10px 30px 6px 0;
-  font: var(--md-code-font-size)/var(--md-code-line-height) var(--font-mono);
+  padding: var(--code-padding-top) 0 var(--code-padding-bottom);
+  font: inherit;
+  letter-spacing: inherit;
   color: var(--text);
   background: transparent;
   white-space: pre;
   overflow-x: auto;
+  overflow-anchor: none;
   box-sizing: border-box;
 }
 .markdown-live .md-code-block .md-code-placeholder > code {
   display: block;
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
   font: inherit;
   padding: 0;
   border: 0;
@@ -645,33 +683,41 @@ body.light .file-icon-gray { color: #6c7c92; }
   white-space: inherit;
 }
 .markdown-live .md-code-placeholder .md-code-line {
-  display: block;
-  position: relative;
+  display: grid;
+  grid-template-columns: var(--code-gutter-width) minmax(0, 1fr);
   box-sizing: border-box;
   min-height: 1lh;
-  padding: 0 14px;
 }
-.markdown-live .md-code-placeholder > code.md-code-flat { position: relative; padding: 0 14px; }
-.markdown-live .md-code-placeholder.has-numbers .md-code-line,
-.markdown-live .md-code-placeholder.has-numbers > code.md-code-flat {
-  --static-gutter: calc(max(20px, var(--code-digits, 1) * 7.2px + 8px) + 4px);
-  padding-left: calc(14px + var(--static-gutter));
+.markdown-live .md-code-placeholder > code.md-code-flat {
+  display: grid;
+  grid-template-columns: var(--code-gutter-width) minmax(0, 1fr);
 }
-.markdown-live .md-code-placeholder.has-numbers .md-code-line::before,
-.markdown-live .md-code-placeholder.has-numbers > code.md-code-flat::before {
-  content: attr(data-line);
-  position: absolute;
+.markdown-live .md-code-placeholder .md-code-number {
+  position: sticky;
   left: 0;
-  top: 0;
   box-sizing: border-box;
-  width: var(--static-gutter);
-  padding: 0 3px 0 9px;
+  width: var(--code-gutter-width);
+  padding: 0 var(--code-number-padding-right) 0 var(--code-number-padding-left);
   text-align: right;
-  font-size: 12px;
+  font: inherit;
   color: var(--muted);
+  background: var(--md-code-bg);
+  white-space: pre;
   user-select: none;
+  z-index: 1;
 }
-.markdown-live .md-code-placeholder.has-numbers > code.md-code-flat::before { content: attr(data-line-numbers); white-space: pre; line-height: calc(var(--md-code-font-size) * var(--md-code-line-height)); }
+.markdown-live .md-code-placeholder:not(.has-numbers) .md-code-number { visibility: hidden; padding: 0; }
+.markdown-live .md-code-placeholder .md-code-text {
+  display: block;
+  padding: 0 var(--code-padding-right) 0 var(--code-padding-left);
+  min-width: 0;
+  min-height: 1lh;
+}
+/* A real trailing logical line, including an empty document, takes one row.
+   Generated content never changes source offsets or clipboard text. */
+.markdown-live .md-code-placeholder .md-code-text:empty::before,
+.markdown-live .md-code-placeholder .md-code-flat-text::after { content: '\200b'; }
+.markdown-live .md-code-block .md-code-placeholder.is-wrapped > code { width: 100%; }
 .markdown-live .md-code-block .md-code-placeholder.is-wrapped {
   /* Match CodeMirror lineWrapping, including spaces at wrap boundaries. */
   white-space: break-spaces;

@@ -75,7 +75,7 @@ export function staticCodeLines(
       html += classes ? `<span class="${escape(classes)}">${text}</span>` : text
       html += renderZeroMarkers(index, to)
     }
-    if (compact) return `<span class="md-code-line md-code-text" data-line="${index + 1}">${html}</span>`
+    if (compact) return `<span class="md-code-line" data-line="${index + 1}"><span class="md-code-number" aria-hidden="true">${index + 1}</span><span class="md-code-text">${html}</span></span>`
     const number = String(index + 1).padStart(Math.max(2, String(lines.length).length), ' ')
     return `<span class="md-code-line"><span class="md-code-number" aria-hidden="true">${number}</span><span class="md-code-text">${html}</span></span>`
   }).join('')

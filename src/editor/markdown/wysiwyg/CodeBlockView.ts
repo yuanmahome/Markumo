@@ -199,6 +199,7 @@ export class CodeBlockView implements NodeView {
   ) {
     this.isMermaid = /^mermaid(?:\s|$)/i.test(node.attrs.params)
     this.dom.className = 'md-code-block md-code-block-container'
+    this.updateLayout()
     this.dom.contentEditable = 'false'
     this.surface.className = 'md-code-surface'
 
@@ -408,7 +409,7 @@ export class CodeBlockView implements NodeView {
     }
     if (!container || !this.placeholder.contains(container)) return null
 
-    const flatCode = this.placeholder.querySelector('code.md-code-flat')
+    const flatCode = this.placeholder.querySelector('.md-code-flat-text')
     if (flatCode && flatCode.contains(container)) {
       const prefix = document.createRange()
       prefix.selectNodeContents(flatCode)
@@ -418,13 +419,14 @@ export class CodeBlockView implements NodeView {
 
     let offset = 0
     for (const line of this.placeholder.querySelectorAll('.md-code-line')) {
-      if (line.contains(container)) {
+      const text = line.querySelector('.md-code-text')!
+      if (text.contains(container)) {
         const prefix = document.createRange()
-        prefix.selectNodeContents(line)
+        prefix.selectNodeContents(text)
         prefix.setEnd(container, domOffset)
         return Math.max(0, Math.min(sourceLen, offset + prefix.toString().length))
       }
-      offset += (line.textContent?.length ?? 0) + 1
+      offset += (text.textContent?.length ?? 0) + 1
     }
     return null
   }
@@ -438,13 +440,15 @@ export class CodeBlockView implements NodeView {
     this.highlightAbort = null
     offscreenHighlightedViews.delete(this)
     if (this.placeholder) {
+      // Hold the measured display height only during synchronous replacement.
+      // This prevents scroll anchoring from observing an empty code container.
+      this.cmContainer.style.minHeight = getComputedStyle(this.placeholder).height
       this.savedScrollLeft = this.placeholder.scrollLeft
       this.placeholder.remove()
       this.placeholder = null
     }
     this.displayHighlighted = false
 
-    this.cmContainer.style.minHeight = ''
     this.cmInstance = new CMView({
       parent: this.cmContainer,
       state: CMState.create({
@@ -577,6 +581,10 @@ export class CodeBlockView implements NodeView {
       }),
     })
 
+    // CM normally measures gutters on the next animation frame. Force its public
+    // geometry read before painting (also for empty blocks with no caret lookup).
+    this.cmInstance.coordsAtPos(this.cmInstance.state.selection.main.head)
+    this.cmContainer.style.minHeight = ''
     if (this.savedScrollLeft > 0) {
       this.cmInstance.scrollDOM.scrollLeft = this.savedScrollLeft
     }
@@ -695,19 +703,31 @@ export class CodeBlockView implements NodeView {
       code.innerHTML = staticCodeLines(source, spans ?? [], escapeCode, true, this.pendingHighlights)
       this.displayHighlighted = !!spans
     } else {
-      code.className = 'md-code-flat md-code-text'
-      code.textContent = source || '\n'
-      code.dataset.lineNumbers = Array.from({ length: lineCount }, (_, index) => index + 1).join('\n')
+      code.className = 'md-code-flat'
+      const numbers = document.createElement('span')
+      numbers.className = 'md-code-number'
+      numbers.setAttribute('aria-hidden', 'true')
+      numbers.textContent = Array.from({ length: lineCount }, (_, index) => index + 1).join('\n')
+      const text = document.createElement('span')
+      text.className = 'md-code-flat-text md-code-text'
+      text.textContent = source
+      code.append(numbers, text)
       this.displayHighlighted = false
     }
 
-    pre.style.setProperty('--code-digits', String(lineCount).length.toString())
+    this.updateLayout(lineCount)
     pre.replaceChildren(code)
     pre.classList.toggle('is-wrapped', this.settings.codeWrap)
     pre.classList.toggle('has-numbers', this.settings.codeLineNumbers)
     if (this.savedScrollLeft > 0) {
       pre.scrollLeft = this.savedScrollLeft
     }
+  }
+
+  private updateLayout(lineCount = this.node.textContent.split('\n').length) {
+    this.dom.style.setProperty('--code-digits', String(String(lineCount).length))
+    this.dom.classList.toggle('has-code-numbers', this.settings.codeLineNumbers)
+    this.dom.classList.toggle('has-code-wrap', this.settings.codeWrap)
   }
 
   private renderPlaceholder(scheduleHighlight = this.renderVisible) {
@@ -1016,6 +1036,7 @@ export class CodeBlockView implements NodeView {
     const changed = node.textContent !== this.node.textContent
     const languageChanged = node.attrs.params !== this.node.attrs.params
     this.node = node
+    if (changed) this.updateLayout()
     this.selector.update(node.attrs.params)
     if (languageChanged) this.updateLanguageBadge()
     if (changed || languageChanged) this.cachedSpans = null
@@ -1122,6 +1143,7 @@ export class CodeBlockView implements NodeView {
 
   typography(settings: MarkdownTypography) {
     this.settings = settings
+    this.updateLayout()
     if (this.cmInstance) {
       this.cmInstance.dispatch({
         effects: [
