@@ -10,6 +10,8 @@
     "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "check": "pnpm typecheck && pnpm build",
     "test": "node tests/markdown-links/regression.mjs",
+    "test:smoke": "node tests/run-suite.mjs smoke",
+    "test:regression": "node tests/run-suite.mjs regression",
     "test:markdown:live": "node tests/markdown-links/regression.mjs",
     "test:links": "node tests/markdown-links/regression.mjs",
     "tauri": "node scripts/tauri.mjs",
