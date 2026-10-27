@@ -115,6 +115,8 @@ await page.addInitScript(() => {
       if (dirPath === 'C:/projects/projectC') return window.__fixtureProjectC.entries
       return []
     },
+    revealedNodes: [],
+    async revealNode(p) { window.__workspaceGateway.revealedNodes.push(p) },
     async removeWorkspaceFolder() {},
     async findFiles() { return [] },
   }
@@ -250,6 +252,16 @@ try {
     assert.match(await page.locator('.sidebar-wrapper').innerText(), /projectB/)
     assert.match(await page.locator('.sidebar-wrapper').innerText(), /projectC/)
     assert.match(await page.locator('.sidebar-wrapper').innerText(), /main\.rs/)
+
+    // 验证在多根目录下移除 projectC 与在资源管理器中定位
+    await shell(() => window.__workspaceShell.workspace.revealNode('C:/projects/projectC'))
+    assert.deepEqual(await shell(() => window.__workspaceGateway.revealedNodes), ['C:/projects/projectC'])
+
+    await shell(() => window.__workspaceShell.workspace.removeFolder('C:/projects/projectC'))
+    await settle()
+    const remainingRoots = await shell(() => window.__workspaceShell.workspace.roots.map(r => r.name))
+    assert.deepEqual(remainingRoots, ['projectB'])
+    assert.doesNotMatch(await page.locator('.sidebar-wrapper').innerText(), /projectC/)
   })
 
   // 场景 6: 工作区打开后切换单文件模式，后续文件树刷新不会强制切回

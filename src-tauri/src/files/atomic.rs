@@ -241,6 +241,7 @@ fn in_place_write(path: &Path, bytes: &[u8], expected: Option<&str>) -> Result<(
     // Recovery copy outside the target directory: never creates or removes an
     // entry next to the document, and stays usable if the write fails.
     let mut backup = tempfile::NamedTempFile::new_in(std::env::temp_dir())
+        .or_else(|_| path.parent().map(tempfile::NamedTempFile::new_in).unwrap_or_else(tempfile::NamedTempFile::new))
         .map_err(|error| save_error(error, "无法创建保存回滚备份"))?;
     backup
         .write_all(&original)

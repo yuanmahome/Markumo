@@ -422,14 +422,15 @@ pub async fn search_workspace(
             cancel_token.clone(),
             |batch: Vec<SearchMatch>| {
                 total += batch.len();
-                let _ = win.emit("workspace-search-batch", batch);
+                let _ = win.emit_to(win.label(), "workspace-search-batch", batch);
             },
         );
 
         let canceled = cancel_token.load(std::sync::atomic::Ordering::Relaxed);
 
         let summary = result.as_ref().ok();
-        let _ = win.emit(
+        let _ = win.emit_to(
+            win.label(),
             "workspace-search-done",
             SearchDonePayload {
                 search_id: search_id.clone(),
@@ -696,11 +697,8 @@ pub(crate) fn reveal_path(p: &std::path::Path) -> Result<(), String> {
             UI::Shell::{SHOpenFolderAndSelectItems, SHParseDisplayName},
         };
         let wide = shell_path(p);
-        unsafe {
+        let shell_result = unsafe {
             let initialized = CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
-            if initialized < 0 {
-                return Err(format!("资源管理器 COM 初始化失败: {initialized:#x}"));
-            }
             let mut pidl = std::ptr::null_mut();
             let parsed = SHParseDisplayName(
                 wide.as_ptr(),
@@ -717,9 +715,23 @@ pub(crate) fn reveal_path(p: &std::path::Path) -> Result<(), String> {
             if !pidl.is_null() {
                 CoTaskMemFree(pidl.cast());
             }
-            CoUninitialize();
-            if result < 0 {
-                return Err(format!("在资源管理器显示失败: {result:#x}"));
+            if initialized >= 0 {
+                CoUninitialize();
+            }
+            result
+        };
+        if shell_result < 0 {
+            let display = crate::display::display_path(p);
+            let fallback = std::process::Command::new("explorer")
+                .arg(format!("/select,{display}"))
+                .spawn();
+            if fallback.is_err() {
+                std::process::Command::new("explorer")
+                    .arg(&display)
+                    .spawn()
+                    .map_err(|e| {
+                        format!("在资源管理器显示失败: {shell_result:#x}; 启动外部进程失败: {e}")
+                    })?;
             }
         }
     }

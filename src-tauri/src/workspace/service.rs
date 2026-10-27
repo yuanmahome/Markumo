@@ -242,14 +242,29 @@ impl WorkspaceService {
 
     pub fn remove_workspace(&mut self, path: &Path) -> Result<(), String> {
         let previous = self.roots();
-        if self.current_root.as_deref() == Some(path) {
+        let canonical = path.canonicalize().ok();
+        let target_display = crate::display::display_path(path);
+        let matches = |root: &Path| -> bool {
+            root == path
+                || canonical.as_deref() == Some(root)
+                || {
+                    let r = crate::display::display_path(root);
+                    if cfg!(windows) {
+                        r.replace('/', "\\").eq_ignore_ascii_case(&target_display.replace('/', "\\"))
+                    } else {
+                        r == target_display
+                    }
+                }
+        };
+
+        if self.current_root.as_deref().is_some_and(&matches) {
             self.current_root = if self.additional_roots.is_empty() {
                 None
             } else {
                 Some(self.additional_roots.remove(0))
             };
-        } else if self.additional_roots.iter().any(|root| root == path) {
-            self.additional_roots.retain(|root| root != path);
+        } else if let Some(pos) = self.additional_roots.iter().position(|root| matches(root)) {
+            self.additional_roots.remove(pos);
         } else {
             return Err("该文件夹不在当前工作区中".into());
         }
@@ -598,5 +613,35 @@ impl WorkspaceService {
 
     pub fn recent_workspaces(&self) -> Vec<String> {
         self.preferences.recent_workspaces.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remove_workspace_supports_display_and_canonical_paths() {
+        let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-results/workspace/rust");
+        fs::create_dir_all(&parent).unwrap();
+        let parent = parent.canonicalize().unwrap();
+        let temp = tempfile::Builder::new().prefix("test-").tempdir_in(&parent).unwrap();
+        let sub1 = temp.path().join("sub1");
+        let sub2 = temp.path().join("sub2");
+        fs::create_dir_all(&sub1).unwrap();
+        fs::create_dir_all(&sub2).unwrap();
+
+        let mut service = WorkspaceService::default();
+        let info1 = service.open_workspace(sub1.clone()).unwrap();
+        let info2 = service.add_workspace(sub2.clone()).unwrap();
+        assert_eq!(service.roots().len(), 2);
+
+        // Remove using the display string path sent to the frontend
+        service.remove_workspace(Path::new(&info1.root_path)).unwrap();
+        assert_eq!(service.roots().len(), 1);
+
+        // Remove using display string of second root
+        service.remove_workspace(Path::new(&info2.root_path)).unwrap();
+        assert_eq!(service.roots().len(), 0);
     }
 }

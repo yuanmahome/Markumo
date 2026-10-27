@@ -64,6 +64,7 @@ export class WorkspaceController {
     promise: Promise<void>
   }>()
   private folderLoads = new Map<WorkspaceNode,Promise<boolean>>()
+  private pendingReads=new Map<string,Promise<Awaited<ReturnType<WorkspaceGateway['openWorkspaceFile']>>>>()
   expanding = false
   smartExpand = true
   compactFolders = false
@@ -128,6 +129,7 @@ export class WorkspaceController {
   private openListeners = new Set<() => void>()
   private searchBatchUnsub: (() => void) | null = null
   private searchDoneUnsub: (() => void) | null = null
+  private initialized=false
 
   constructor(
     readonly gateway: WorkspaceGateway,
@@ -141,6 +143,10 @@ export class WorkspaceController {
   }
 
   connect() {
+    if(this.initialized||this.disposed)return
+    this.initialized=true;void this.loadRecents()
+  }
+  private connectSearch(){
     if (this.searchBatchUnsub || this.disposed) return
     this.searchBatchUnsub = this.gateway.onSearchBatch(batch => this.onSearchBatch(batch))
     this.searchDoneUnsub = this.gateway.onSearchDone(payload => this.onSearchDone(payload))
@@ -151,7 +157,6 @@ export class WorkspaceController {
       const changed=documents.some(doc=>{const before=this.searchSnapshots.get(doc.id);return before?this.documentManager.getState(doc.id)?.doc!==before.text:doc.dirty||this.searchScope==='opened'}) || [...this.searchSnapshots.keys()].some(id=>!ids.has(id))
       if(changed){this.searchDirty=true;if(this.searchDialogOpen)this.scheduleSearch();else this.searchSnapshots=new Map(documents.map(doc=>[doc.id,{id:doc.id,text:markRaw(this.documentManager.getState(doc.id)!.doc)}]))}
     })
-    void this.loadRecents()
   }
 
   subscribe(fn: () => void) {
@@ -242,7 +247,7 @@ export class WorkspaceController {
       await this.gateway.removeWorkspaceFolder(path)
       this.cancelOpens(); this.openRevision++
       if (this.selectedTreePath && this.isWithin(this.selectedTreePath, path)) this.selectedTreePath = null
-      this.roots = this.roots.filter(root => root.rootPath !== path)
+      this.roots = this.roots.filter(root => displayPathKey(root.rootPath) !== displayPathKey(path))
       const first = this.roots[0]
       this.rootPath = first?.rootPath || null; this.rootName = first?.name || ''; this.entries = first?.entries || []
       this.resetSearchContext()
@@ -619,11 +624,11 @@ export class WorkspaceController {
       manager.navigationRevision(id) === intent.navigation
     request.promise = (async () => {
       try {
-        const file = await this.gateway.openWorkspaceFile(targetPath)
+        const file = await this.readWorkspaceFile(targetPath)
         const consumers = [...request.consumers].filter(([id, intent]) => valid(id, intent))
         if (!consumers.length) {
           if (!manager.openedDocuments.some(doc => doc.fileToken === file.token))
-            void this.fileController.gateway.release(file.token).catch(() => {})
+            this.releaseUnadopted(file.token)
           return
         }
         // Import once, then share the document with each still-valid pane.
@@ -642,6 +647,14 @@ export class WorkspaceController {
     return request.promise
   }
 
+  private readWorkspaceFile(path:string){
+    const key=displayPathKey(path),pending=this.pendingReads.get(key)
+    if(pending)return pending
+    if(this.pendingReads.size>=8)return Promise.reject(Error('正在打开的文件过多，请稍后再试。'))
+    const request=this.gateway.openWorkspaceFile(path).finally(()=>{if(this.pendingReads.get(key)===request)this.pendingReads.delete(key)})
+    this.pendingReads.set(key,request);return request
+  }
+  private releaseUnadopted(token:string){queueMicrotask(()=>{if(!this.documentManager.openedDocuments.some(doc=>doc.fileToken===token))void this.fileController.gateway.release(token).catch(error=>{if(!this.disposed)this.notify('释放文件授权失败：'+String(error))})})}
   async openWorkspaceFileInPane(options: OpenWorkspaceFileInPaneOptions): Promise<{ success: boolean; paneId?: string; docId?: string }> {
     if (this.disposed || this.operationBusy || this.documentManager.isComposing) {
       return { success: false }
@@ -662,6 +675,8 @@ export class WorkspaceController {
     const zone = options.zone || 'center'
     const pin = options.pin ?? true
     const manager = this.documentManager
+    const requestedPane=manager.layout.getPane(targetPane),epoch=this.openEpoch
+    if(!requestedPane)return {success:false}
     const key = displayPathKey(targetPath)
 
     // Dropping a file always produces a real (pinned) tab so the next preview
@@ -690,15 +705,15 @@ export class WorkspaceController {
     // Load first: a failed or cancelled read must not leave a stray empty pane.
     let file: Awaited<ReturnType<WorkspaceGateway['openWorkspaceFile']>>
     try {
-      file = await this.gateway.openWorkspaceFile(targetPath)
+      file = await this.readWorkspaceFile(targetPath)
     } catch (e) {
       if (!options.cancellationToken?.isCancelled && !options.signal?.aborted) {
         this.notify(`打开工作区文件失败: ${e}`)
       }
       return { success: false }
     }
-    if (this.disposed || options.cancellationToken?.isCancelled || options.signal?.aborted) {
-      void this.fileController.gateway.release(file.token).catch(() => {})
+    if (this.disposed || epoch!==this.openEpoch||manager.layout.getPane(targetPane)!==requestedPane||options.cancellationToken?.isCancelled || options.signal?.aborted) {
+      this.releaseUnadopted(file.token)
       return { success: false }
     }
 
@@ -1171,6 +1186,7 @@ export class WorkspaceController {
     this.cancelSearch(false);this.clearSearchPreview();this.searchResults=[];this.searchTotal=0;this.selectedMatches=new Set();this.searchLimited=false;this.searchSkipped=0;this.searchMessage=''
     this.searchQuery=queryText;this.searchDirty=false
     if(!queryText){this.searchId='';this.searchStatus='idle';this.emit();return}
+    this.connectSearch()
     if(this.searchScope!=='opened'&&!this.roots.length){this.searchStatus='error';this.searchMessage='未打开工作区；请选择已打开文件范围或打开文件夹';this.emit();return}
     this.searchId='search-'+Date.now()+'-'+(++this.searchSequence);const id=this.searchId
     this.searchSnapshots=new Map(this.textSearchDocuments().map(doc=>[doc.id,{id:doc.id,text:markRaw(this.documentManager.getState(doc.id)!.doc)}]))
