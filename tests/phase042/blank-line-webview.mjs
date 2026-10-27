@@ -114,7 +114,7 @@ try {
     await page.keyboard.press('Control+Enter')
     await page.keyboard.press('Enter')
     const inserted = await snap()
-    const expected = baseline ? inserted.serialized : `${fence}\n\n\n\n${fence}\n`.replaceAll('\n', eol)
+    const expected = baseline ? inserted.serialized : `${fence}\n\n\n\n\n\n${fence}\n`.replaceAll('\n', eol)
     assert.equal(inserted.serialized, expected)
     await save(expected)
     const diskHex = fs.readFileSync(disk).toString('hex')
@@ -134,7 +134,7 @@ try {
     }
     if (!baseline) {
       await caret(true); await page.keyboard.press('Backspace')
-      const deleted = `${fence}\n\n\n${fence}\n`.replaceAll('\n', eol)
+      const deleted = `${fence}\n\n\n\n${fence}\n`.replaceAll('\n', eol)
       await save(deleted); await close(); await open()
       assert.equal((await snap()).blanks, 1)
       assert.equal((await snap()).serialized, deleted)

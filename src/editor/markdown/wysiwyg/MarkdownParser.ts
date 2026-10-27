@@ -283,9 +283,9 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
   }
   if(source.slice(cursor).trim())add(cursor,source.length,true,'引用定义 / 扩展源码')
   addBlanks(source.length,hasContent?'end':'start')
-  // A whitespace-only document also has a final editable line after its last
-  // terminator (N newlines are N+1 lines). This zero-byte block is not the
-  // special editorTrailing entry used after code/table/image nodes.
+  // A whitespace-only document also has a final editable position after its
+  // persisted paragraph spans. It owns no bytes and is distinct from the
+  // editorTrailing entry used after code/table/image nodes.
   if(!hasContent && source.endsWith('\n')){
     const candidate=previous?.blocks.find(block=>block.blank&&block.from===source.length&&block.raw==='')
     const id=candidate?.id || `md-${++identity}`,node=candidate?.node || s.nodes.paragraph.create({sourceId:id})

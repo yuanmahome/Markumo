@@ -4,6 +4,9 @@
   --md-code-bg: var(--sidebar);
   --md-code-font-size: 13px;
   --md-code-line-height: 1.65;
+  /* github.css reference theme: measured fence borders use 15px margins.
+     Share this between Live and Split; it is independent of code font size. */
+  --md-code-block-spacing: 15px;
   --md-table-border: var(--line);
   --md-heading-color: var(--bright);
   --md-link-color: var(--accent);
@@ -43,7 +46,9 @@ body.light :is(.markdown-live, .split-preview-pane) {
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) p { margin: var(--md-paragraph-spacing) 0; line-height: var(--md-line-height); }
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) p.md-blank-line,
 .split-preview-content .md-blank-line {
-  margin: 0;
+  /* An editable empty paragraph has the same line box and collapsed paragraph
+     margins as prose. Native Typora Enter measures 1.6em + .8em per paragraph. */
+  margin: var(--md-paragraph-spacing) 0;
   line-height: var(--md-line-height);
   min-height: calc(var(--md-font-size) * var(--md-line-height));
   min-height: 1lh;

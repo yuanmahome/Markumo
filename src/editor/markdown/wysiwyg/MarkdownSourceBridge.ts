@@ -25,14 +25,18 @@ export class MarkdownSourceBridge {
     // The remaining prefix is the original Markdown block separator, including
     // its exact EOL spelling. It is emitted once per gap, never per paragraph.
     const separators=new Map<string,string>()
+    const gaps=new Map<string,{blanks:SourceBlock[];tail:string}>()
+    let gapBlanks:SourceBlock[]=[]
     let separator='',firstId:string|undefined
     for(const block of this.blocks){
       separator+=block.prefix
-      if(block.blank)continue
+      if(block.blank){gapBlanks.push(block);continue}
       firstId??=block.id
+      gaps.set(block.id,{blanks:gapBlanks,tail:block.prefix});gapBlanks=[]
       separators.set(block.id,separator);separator=''
     }
     const originalTail=separator+this.tail
+    const tailGap={blanks:gapBlanks,tail:this.tail}
     const eol=this.source.match(/\r?\n/)?.[0] || '\n'
     const entries:{node:Node;id:string;old?:SourceBlock;raw:string;blank:boolean}[]=[]
     let source='',definitionsChanged=false,inlineApplied=false
@@ -79,7 +83,7 @@ export class MarkdownSourceBridge {
       let raw=inlineRaw??(old?.node.eq(node)?old.raw:old&&node.type.name==='table'&&old.node.type===node.type?(patchTable(old.node,node,old.raw)??serializeBlock(node)):serializeBlock(node))
       if(!old?.node.eq(node))raw=raw.replace(/\r?\n/g,old?.raw.match(/\r?\n/)?.[0] || eol)
       const blank=isBlankParagraphNode(node)
-      if(blank)raw=old?.blank&&old.node.eq(node)?old.raw:node.textContent+eol
+      if(blank)raw=old?.blank&&old.node.eq(node)?old.raw:node.textContent+eol+eol
       entries.push({node,id,old,raw,blank})
       if(node.type.name==='protected_source' && !old?.node.eq(node) && (node.attrs.kind === 'reference' || old?.node.attrs.kind === 'reference' || /^\s*\[[^\]]+\]:/m.test(raw)))definitionsChanged=true
     })
@@ -87,44 +91,69 @@ export class MarkdownSourceBridge {
       source+=prefix;const from=source.length;source+=entry.raw
       blocks.push({id:entry.id,from,to:source.length,raw:entry.raw,prefix,node:entry.node,blank:entry.blank || undefined})
     }
+    // Structural bytes can sit AFTER an editable span too (odd-length gaps,
+    // or a space/tab line). Keep them in their original order around surviving
+    // spans, instead of collecting every prefix at the start of the gap.
+    const gapLayout=(pending:typeof entries,prefix:string,gap?:{blanks:SourceBlock[];tail:string})=>{
+      const ids=new Set(pending.filter(entry=>entry.old?.blank).map(entry=>entry.id))
+      const prefixes=new Map<string,string>();let carry=''
+      for(const block of gap?.blanks || []){
+        carry+=block.prefix
+        if(ids.has(block.id)){prefixes.set(block.id,carry);carry=''}
+      }
+      if(!prefixes.size)return {prefixes:pending.map((_,i)=>i===0?prefix:''),tail:''}
+      carry+=gap!.tail
+      const result=pending.map(entry=>prefixes.get(entry.id)||'')
+      // A newly inserted paragraph before the first surviving span shares its
+      // leading separator; it must not acquire another copy of that separator.
+      const first=pending.findIndex(entry=>prefixes.has(entry.id))
+      if(first>0){result[0]=result[first];result[first]=''}
+      return {prefixes:result,tail:carry}
+    }
     let pending:typeof entries=[],hasContent=false
     for(const entry of entries){
       if(entry.blank){pending.push(entry);continue}
       const original=entry.old&&!entry.old.blank?separators.get(entry.id):undefined
       let prefix=hasContent?(original || eol+eol):(entry.id===firstId?original || '':'')
       if(pending.length){
+        const layout=gapLayout(pending,prefix,gaps.get(entry.id))
+        prefix=layout.prefixes[0]
         // Minimal Markdown may have just one terminator between blocks. An
-        // inserted empty line still needs its own source line beyond the normal
+        // inserted paragraph still needs its own span beyond the normal
         // separator. A whitespace-bearing line remains actual user content.
         if(hasContent&&!pending[0].node.textContent){
           const count=(prefix.match(/\n/g)||[]).length
           if(count<2)prefix+=eol.repeat(2-count)
         }
+        layout.prefixes[0]=prefix
         pending.forEach((blank,index)=>{
-          if(!blank.raw.endsWith('\n'))blank.raw=blank.node.textContent+eol
-          emit(blank,index===0?prefix:'')
+          if(!blank.raw.endsWith('\n'))blank.raw=blank.node.textContent+eol+eol
+          emit(blank,layout.prefixes[index])
         })
-        emit(entry,'');pending=[]
+        emit(entry,layout.tail);pending=[]
       }else emit(entry,prefix)
       hasContent=true
     }
     let tail=originalTail
     if(pending.length){
-      // In a whitespace-only document the final editable line has no line
-      // terminator. N empty paragraphs therefore encode N-1 real newlines.
+      // The final editable position in a whitespace-only document owns no
+      // bytes. Preserve existing spans; only a newly inserted final position
+      // is zero-byte. Moving that position into the interior materializes a
+      // complete paragraph span, just like an ordinary Enter.
       if(!hasContent){
         pending.forEach((entry,index)=>{
-          if(index===pending.length-1)entry.raw=entry.node.textContent
-          else if(!entry.raw.endsWith('\n'))entry.raw=entry.node.textContent+eol
+          if(index===pending.length-1 && !entry.old)entry.raw=entry.node.textContent
+          else if(index<pending.length-1&&!entry.raw.endsWith('\n'))entry.raw=entry.node.textContent+eol+eol
         })
       }else{
         pending.forEach((entry,index)=>{
-          if(!entry.raw.endsWith('\n')&&(index<pending.length-1||!entry.raw))entry.raw=entry.node.textContent+eol
+          if(!entry.raw.endsWith('\n')&&(index<pending.length-1||!entry.raw))entry.raw=entry.node.textContent+eol+eol
         })
       }
       const prefix=hasContent?(originalTail || eol):''
-      pending.forEach((entry,index)=>emit(entry,index===0?prefix:''))
-      tail=''
+      const layout=gapLayout(pending,prefix,tailGap)
+      pending.forEach((entry,index)=>emit(entry,layout.prefixes[index]))
+      tail=layout.tail
     }
     if(inlinePatch&&!inlineApplied)throw new Error('局部源码目标已失效，拒绝修改。')
     source+=tail

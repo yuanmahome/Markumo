@@ -562,7 +562,7 @@ defineExpose({ syncScroll })
   border: 1px solid var(--line);
   border-radius: 4px;
   overflow: hidden;
-  margin: 1.2em 0;
+  margin: var(--md-code-block-spacing, 15px) 0;
 }
 
 :deep(.md-preview-fence pre) {

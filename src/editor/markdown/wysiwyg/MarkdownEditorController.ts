@@ -348,8 +348,15 @@ export class MarkdownEditorController implements LiveEditor {
               dispatch?.(state.tr.setNodeMarkup($from.before(),s.nodes.paragraph,{sourceId:$from.parent.attrs.sourceId}).setMeta('isolated',true).scrollIntoView())
               return true
             },
-            'Delete': (state, dispatch) => {
+            'Delete': (state, dispatch, view) => {
               const {empty,$from}=state.selection
+              if(empty && $from.depth===1 && $from.parent.type===s.nodes.paragraph &&
+                !$from.parent.content.size && !$from.parent.attrs.editorTrailing && state.doc.childCount>1){
+                if(view&&!view.editable)return true
+                const at=$from.before(),tr=state.tr.delete(at,$from.after())
+                tr.setSelection(Selection.near(tr.doc.resolve(Math.min(at,tr.doc.content.size)),1))
+                dispatch?.(tr.setMeta('isolated',true).scrollIntoView());return true
+              }
               if (empty && $from.parent.type === s.nodes.paragraph && $from.parent.content.size === 0) {
                 if ($from.after() === state.doc.content.size && state.doc.childCount > 1) {
                   const tr = state.tr.delete($from.before(), $from.after())

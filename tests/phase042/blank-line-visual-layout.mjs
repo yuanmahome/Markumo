@@ -7,6 +7,7 @@ import { createServer } from 'vite'
 const root = path.resolve('test-results/phase042/blank-lines-visual')
 fs.mkdirSync(root, { recursive: true })
 const disk = path.join(root, 'visual-test.md')
+const typora = JSON.parse(fs.readFileSync(new URL('./fixtures/typora-blank-lines.json', import.meta.url), 'utf8'))
 
 const server = await createServer({
   server: { host: '127.0.0.1', port: 1485, strictPort: true, hmr: false, watch: null },
@@ -98,18 +99,18 @@ try {
   const prefixLines = Array.from({ length: 23 }, (_, i) => `line ${i + 1}`).join('\n')
   const fence1 = '```js\nconst a = 1;\n```'
   const fence2 = '```java\npublic class A {\n    public static void main(String[] args) {}\n}\n```'
-  // 23 lines + fence1 (line 24 is ```) + 5 physical empty lines (lines 25-29) + fence2 (line 30 starts with ```java)
+  // Reproduce the original gap, independently of the preceding document length.
   const fixtureDoc = `${prefixLines}\n${fence1}\n\n\n\n\n\n${fence2}\n`
 
   await reset(fixtureDoc)
 
   // 1. 验证源码换行数与解析出的持久空段落数
-  const gapMatch = fixtureDoc.match(/```\n([\s\S]*?)```java/)
+  const gapMatch = fixtureDoc.match(/```(\n+)```java/)
   assert(gapMatch, 'Fixture contains two code blocks')
   const newlines = (gapMatch[1].match(/\n/g) || []).length
-  assert.equal(newlines, 5, 'Between fences there are 5 blank lines / 6 continuous newlines')
+  assert.equal(newlines, 6, 'Between fences there are 5 physical blank lines / 6 continuous newlines')
 
-  assert.equal(await blanks(), 4, 'Markumo block parser produces exactly 4 editable blank paragraphs')
+  assert.equal(await blanks(), typora.original.editableParagraphs, 'Native Typora reference: two editable paragraphs')
 
   // 2. 测量 Live 模式 DOM 真实尺寸与样式
   const liveData = await page.evaluate(() => {
@@ -143,16 +144,16 @@ try {
     }
   })
 
-  assert.equal(liveData.blankParasCount, 4, 'Live mode renders exactly 4 p.md-blank-line elements')
+  assert.equal(liveData.blankParasCount, 2, 'Live mode renders the two reference paragraphs')
   for (const p of liveData.paraMeasurements) {
-    assert.equal(p.marginTop, 0, 'Blank paragraph top margin must be 0')
-    assert.equal(p.marginBottom, 0, 'Blank paragraph bottom margin must be 0')
+    assert(Math.abs(p.marginTop-liveData.fontSize*.8)<.01, 'Blank paragraph has prose margin')
+    assert.equal(p.marginBottom, p.marginTop)
     assert(Math.abs(p.height - liveData.singleLineHeight) < 1, 'Blank paragraph height equals line-height')
   }
 
-  // 4 个连续空行的高度总和约为 4 * 1行高 (约 102.4px at 16px/1.6)
-  // 代码块上下各保留正常间隔，总空白区域高度不再异常放大至 200px+
-  assert(liveData.visualGap < 160, `Visual gap (${liveData.visualGap}px) should not be inflated above 160px`)
+  // Native GUI reference supplies the target height; do not infer it from
+  // physical source lines. Code block margins may differ slightly by theme.
+  assert(Math.abs(liveData.visualGap-typora.original.gap)<1.5, `Measured gap ${liveData.visualGap} vs native reference ${typora.original.gap}`)
 
   // 3. 测量 Split 模式
   await page.evaluate(() => window.f.mode('split'))
@@ -185,10 +186,10 @@ try {
     }
   })
 
-  assert.equal(splitData.blankParasCount, 4, 'Split mode renders exactly 4 .md-blank-line elements')
+  assert.equal(splitData.blankParasCount, 2, 'Split renders the two reference paragraphs')
   for (const p of splitData.paraMeasurements) {
-    assert.equal(p.marginTop, 0, 'Split blank paragraph top margin must be 0')
-    assert.equal(p.marginBottom, 0, 'Split blank paragraph bottom margin must be 0')
+    assert(Math.abs(p.marginTop-liveData.fontSize*.8)<.01)
+    assert.equal(p.marginBottom, p.marginTop)
     assert(Math.abs(p.height - liveData.singleLineHeight) < 1, 'Split blank paragraph height equals line-height')
   }
 
@@ -197,7 +198,7 @@ try {
     Math.abs(liveData.visualGap - splitData.visualGap) < 2,
     `Live (${liveData.visualGap}px) and Split (${splitData.visualGap}px) visual gaps match`
   )
-  console.log('PASS 8.1 实际文件复现测试：4 个持久空段落、正常行高、零 margin、Live 与 Split 视觉高度一致')
+  console.log('PASS 8.1 实测 Typora fixture：2 个持久空段落、普通段落间距、Live 与 Split 视觉高度一致')
 
   // ==========================================
   // 8.2 & 8.3 多种空行数量与线性高度递增验证
@@ -216,7 +217,7 @@ try {
     const gaps = []
     const counts = [0, 1, 2, 4, 5]
     for (const count of counts) {
-      const src = count === 0 ? `${pair.a}\n\n${pair.b}\n` : `${pair.a}\n${'\n'.repeat(count + 1)}${pair.b}\n`
+      const src = pair.a+'\n\n'+'\n\n'.repeat(count)+pair.b+'\n'
       await reset(src)
       assert.equal(await blanks(), count, `${pair.name}: ${count} blank paragraphs parsed`)
 
@@ -237,8 +238,8 @@ try {
       gaps.push({ count, gap })
     }
 
-    // 校验线性增长：从 1 到 2, 4, 5，每个空段落递增约 1 个行高 (±2px 浏览器浮点误差)
-    const lineH = liveData.singleLineHeight
+    // 校验 GUI 实测增量：行高加普通段落折叠 margin。
+    const lineH = liveData.singleLineHeight + liveData.fontSize * .8
     const gap1 = gaps.find(g => g.count === 1).gap
     const gap2 = gaps.find(g => g.count === 2).gap
     const gap4 = gaps.find(g => g.count === 4).gap
@@ -248,14 +249,14 @@ try {
     assert(Math.abs((gap4 - gap1) - 3 * lineH) < 3.5, `${pair.name}: +3 blanks increases gap by ~3 line-heights`)
     assert(Math.abs((gap5 - gap1) - 4 * lineH) < 4.0, `${pair.name}: +4 blanks increases gap by ~4 line-heights`)
   }
-  console.log('PASS 8.2 & 8.3 多种空行数量排版高度断言：各块之间空行高度近似严格线性增长 (斜率 = 1行高)')
+  console.log('PASS 8.2 & 8.3 每个空段落的高度增量 = 行高 + 折叠段落间距，与 Typora GUI 实测一致')
 
   // ==========================================
   // 8.4 编辑行为与持久化
   // 点击空行、文字输入、删除、Backspace、Enter、Undo/Redo、保存及重开
   // ==========================================
   await reset(`${fence1}\n\n\n\n\n\n${fence2}\n`)
-  assert.equal(await blanks(), 4)
+  assert.equal(await blanks(), 2)
 
   // 1. 点击第 2 个空段落 (index = 1)
   await page.locator('.markdown-live .md-prose > p.md-blank-line').nth(1).click()
@@ -267,7 +268,7 @@ try {
 
   // 2. 输入文字：该段落应失去 md-blank-line 类并具有正常段落 margin
   await page.keyboard.insertText('Inserted Line')
-  assert.equal(await blanks(), 3, 'Typing converts 1 blank line into a regular paragraph')
+  assert.equal(await blanks(), 1, 'Typing converts 1 blank line into a regular paragraph')
   const insertedState = await page.evaluate(() => {
     const p = document.querySelectorAll('.markdown-live .md-prose > p')[1]
     const s = window.getComputedStyle(p)
@@ -286,7 +287,7 @@ try {
   for (let i = 0; i < 'Inserted Line'.length; i++) {
     await page.keyboard.press('Backspace')
   }
-  assert.equal(await blanks(), 4, 'Deleting all text restores empty paragraph to blank line')
+  assert.equal(await blanks(), 2, 'Deleting all text restores empty paragraph to blank line')
   const restoredClass = await page.evaluate(() => {
     const p = document.querySelectorAll('.markdown-live .md-prose > p')[1]
     return p.classList.contains('md-blank-line')
@@ -295,17 +296,17 @@ try {
 
   // 4. Backspace 删除空行
   await page.keyboard.press('Backspace')
-  assert.equal(await blanks(), 3, 'Backspace on blank paragraph deletes it')
+  assert.equal(await blanks(), 1, 'Backspace on blank paragraph deletes it')
 
   // 5. Enter 插入空行
   await page.keyboard.press('Enter')
-  assert.equal(await blanks(), 4, 'Enter in blank paragraph inserts a new blank paragraph')
+  assert.equal(await blanks(), 2, 'Enter in blank paragraph inserts a new blank paragraph')
 
   // 6. Undo / Redo
   await page.keyboard.press('Control+z')
-  assert.equal(await blanks(), 3, 'Undo works on blank paragraph operations')
+  assert.equal(await blanks(), 1, 'Undo works on blank paragraph operations')
   await page.keyboard.press('Control+y')
-  assert.equal(await blanks(), 4, 'Redo works on blank paragraph operations')
+  assert.equal(await blanks(), 2, 'Redo works on blank paragraph operations')
 
   // 7. 保存到真实文件网关并两次关闭/重开
   const expectedSource = `${fence1}\n\n\n\n\n\n${fence2}\n`
@@ -315,14 +316,14 @@ try {
 
   for (let reopen = 0; reopen < 2; reopen++) {
     assert.equal(await text(), expectedSource)
-    assert.equal(await blanks(), 4)
+    assert.equal(await blanks(), 2)
     assert.equal(await page.evaluate(() => window.files.save(window.f.id)), true)
     assert.deepEqual(fs.readFileSync(disk), Buffer.from(expectedSource))
     assert.equal(await page.evaluate(() => window.files.close(window.f.id)), 'closed')
 
     await page.evaluate(async path => window.files.recent(path), disk)
     await page.waitForFunction(() => window.f.live()?.bridge.source === window.f.manager.getText(window.f.id))
-    assert.equal(await blanks(), 4)
+    assert.equal(await blanks(), 2)
     assert.equal(await text(), expectedSource)
 
     const reopenedGap = await page.evaluate(() => {
@@ -340,10 +341,10 @@ try {
     await page.waitForFunction(() => window.f.ready())
     assert.equal(await text(), expectedSource)
     if (mode === 'live') {
-      assert.equal(await blanks(), 4)
+      assert.equal(await blanks(), 2)
     } else if (mode === 'split') {
       await page.waitForSelector('.split-preview-content .md-blank-line')
-      assert.equal(await page.locator('.split-preview-content .md-blank-line').count(), 4)
+      assert.equal(await page.locator('.split-preview-content .md-blank-line').count(), 2)
     }
   }
   console.log('PASS 三种模式（Source / Live / Split）循环切换，源码字节与空行数量保持一致')

@@ -1,0 +1,2 @@
+# Keep the exact LF bytes saved by the native Typora reference session.
+typora-enter-*.md text eol=lf

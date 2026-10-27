@@ -54,7 +54,7 @@ body.light .markdown-live { --text: #333; --bright: #333; --muted: #777; --line:
 }
 
 .markdown-live .md-prose p.md-blank-line {
-  margin: 0;
+  margin: var(--md-paragraph-spacing) 0;
   line-height: var(--md-line-height);
   min-height: calc(var(--md-font-size) * var(--md-line-height));
   min-height: 1lh;
@@ -359,8 +359,7 @@ body.light .markdown-live { --text: #333; --bright: #333; --muted: #777; --line:
   font-variant-numeric: tabular-nums;
   font-variant-ligatures: none;
   tab-size: 2;
-  /* Block spacing follows prose size, independently of the shared code font. */
-  margin: calc(var(--md-font-size) * 1.2) 0;
+  margin: var(--md-code-block-spacing, 15px) 0;
   width: 100%;
   box-sizing: border-box;
   white-space: normal;
