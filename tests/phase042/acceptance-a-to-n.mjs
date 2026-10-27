@@ -81,8 +81,10 @@ const child = spawn(binary, [], {
 const scenarioResults = []
 const errors = []
 let browser
+let activeScenario = 'startup'
 
 async function runScenario(id, title, fn) {
+  activeScenario = id
   const t0 = performance.now()
   const details = await fn()
   const durationMs = Number((performance.now() - t0).toFixed(2))
@@ -106,7 +108,7 @@ try {
   const page = browser.contexts().flatMap(c => c.pages()).find(p => !p.url().startsWith('devtools:'))
   assert(page, 'Main WebView2 page not found')
 
-  page.on('pageerror', e => errors.push(`pageerror: ${e.message}`))
+  page.on('pageerror', e => {const detail=`pageerror [${activeScenario}]: ${e.stack || e.message}`;errors.push(detail);console.error(detail)})
   page.on('console', m => {
     if (m.type() === 'error') errors.push(`console.error: ${m.text()}`)
   })

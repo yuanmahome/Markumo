@@ -1,6 +1,5 @@
 <template>
   <div
-    ref="paneContainer"
     :data-pane-id="paneId"
     :class="[
       `pane pane-${paneId}`,
@@ -9,9 +8,6 @@
     ]"
     @focusin="manager.focusPane(paneId, false)"
     @mousedown="manager.focusPane(paneId, false)"
-    @dragover="handleDragOver"
-    @dragleave="handleDragLeave"
-    @drop="handleDrop"
   >
     <TabBar
       :docs="paneDocs"
@@ -78,7 +74,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
+import { computed } from 'vue'
 import TabBar from './TabBar.vue'
 import ExternalFileBanner from './ExternalFileBanner.vue'
 import EditorPane from './EditorPane.vue'
@@ -88,7 +84,7 @@ import DropZoneOverlay, { type DropZone } from './DropZoneOverlay.vue'
 import type { DocumentManager } from '../../editor/core/DocumentManager'
 import type { FileController } from '../../features/files/FileController'
 import type { SplitDirection } from '../../editor/layout/types'
-import { tabDragService, resolvePaneDropZone } from '../../editor/layout/TabDragService'
+import { tabDragService } from '../../editor/layout/TabDragService'
 import type { MarkdownMode } from '../../types'
 
 const props = withDefaults(defineProps<{
@@ -118,24 +114,8 @@ const emit = defineEmits<{
   (e: 'update:markdown-width', width: number): void
 }>()
 
-const paneContainer = ref<HTMLElement | null>(null)
-const isDraggingOver = ref(false)
-const dragZone = ref<DropZone | null>(null)
-
-const isDropActive = computed(() => {
-  return (
-    isDraggingOver.value ||
-    (tabDragService.isDragging.value && tabDragService.activePaneDrop.value?.paneId === props.paneId)
-  )
-})
-
-const currentDropZone = computed<DropZone>(() => {
-  if (tabDragService.isDragging.value && tabDragService.activePaneDrop.value?.paneId === props.paneId) {
-    return tabDragService.activePaneDrop.value.zone
-  }
-  return dragZone.value || 'center'
-})
-
+const isDropActive = computed(() => tabDragService.isDragging.value && tabDragService.activePaneDrop.value?.paneId === props.paneId)
+const currentDropZone = computed<DropZone>(() => tabDragService.activePaneDrop.value?.paneId === props.paneId ? tabDragService.activePaneDrop.value.zone : 'center')
 const paneModel = computed(() => { props.revision; return props.manager.layout.getPane(props.paneId) })
 const paneActiveId = computed(() => { props.revision; return paneModel.value?.group.activeId || null })
 const paneDocs = computed(() => {
@@ -235,103 +215,6 @@ function handleClosePane() {
   props.manager.closePane(props.paneId)
 }
 
-// 4-direction Drop Targets: left, right, top, bottom, center
-function getDropTargetBody(): HTMLElement | null {
-  if (!paneContainer.value) return null
-  return (
-    paneContainer.value.querySelector<HTMLElement>('.pane-document-shell') ||
-    paneContainer.value.querySelector<HTMLElement>('.pane-document') ||
-    paneContainer.value
-  )
-}
-
-function handleDragEndOrCancel() {
-  isDraggingOver.value = false
-  dragZone.value = null
-}
-
-function onWindowKeyDown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    handleDragEndOrCancel()
-  }
-}
-
-onMounted(() => {
-  window.addEventListener('dragend', handleDragEndOrCancel)
-  window.addEventListener('drop', handleDragEndOrCancel)
-  window.addEventListener('keydown', onWindowKeyDown)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('dragend', handleDragEndOrCancel)
-  window.removeEventListener('drop', handleDragEndOrCancel)
-  window.removeEventListener('keydown', onWindowKeyDown)
-})
-
-function handleDragOver(event: DragEvent) {
-  const types = event.dataTransfer?.types || []
-  if (!types.includes('application/x-markumo-tab') && !types.includes('application/x-markumo-file')) {
-    return
-  }
-  event.preventDefault()
-  if (!paneContainer.value) return
-  const body = getDropTargetBody() || paneContainer.value
-  const rect = body.getBoundingClientRect()
-  if (!rect.width || !rect.height) return
-
-  const onTabBar = (event.target as Element).closest('.tabs')
-  const zone = onTabBar ? 'center' : resolvePaneDropZone(rect, event.clientX, event.clientY)
-
-  dragZone.value = zone
-  isDraggingOver.value = true
-  if (event.dataTransfer) event.dataTransfer.dropEffect = (event.ctrlKey || event.altKey) ? 'copy' : 'move'
-}
-
-function handleDragLeave(event: DragEvent) {
-  if (paneContainer.value && !paneContainer.value.contains(event.relatedTarget as Node)) {
-    isDraggingOver.value = false
-    dragZone.value = null
-  }
-}
-
-function handleDrop(event: DragEvent) {
-  const types = event.dataTransfer?.types || []
-  if (!types.includes('application/x-markumo-tab') && !types.includes('application/x-markumo-file')) {
-    return
-  }
-  event.preventDefault()
-  event.stopPropagation()
-  const body = getDropTargetBody() || paneContainer.value
-  const zone = (event.target as Element).closest('.tabs') || !body
-    ? 'center' : resolvePaneDropZone(body.getBoundingClientRect(), event.clientX, event.clientY)
-  isDraggingOver.value = false
-  dragZone.value = null
-  const isCopy = event.ctrlKey || event.altKey
-
-  // 1. Internal Tab Drag
-  const rawTab = event.dataTransfer?.getData('application/x-markumo-tab')
-  if (rawTab) {
-    try {
-      const tab = JSON.parse(rawTab)
-      if (typeof tab.id === 'string' && typeof tab.from === 'string') {
-        props.manager.transferTab(tab.id, tab.from, props.paneId, { copy: isCopy, direction: zone === 'center' ? undefined : zone })
-        return
-      }
-    } catch {}
-  }
-
-  // 2. Workspace File Tree Drag
-  const rawFile = event.dataTransfer?.getData('application/x-markumo-file')
-  if (rawFile) {
-    try {
-      const fileData = JSON.parse(rawFile)
-      if (typeof fileData.path === 'string') {
-        emit('open-workspace-file', { path: fileData.path, name: fileData.name, paneId: props.paneId, zone })
-        return
-      }
-    } catch {}
-  }
-}
 </script>
 
 <style scoped>

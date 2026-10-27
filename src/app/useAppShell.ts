@@ -26,8 +26,9 @@ import {
   listenDetachCommitted,
   setDetachRequestHandler,
   takeDetachedDocument,
+  receiveDetachCommitted,receiveDetachCanceled,setHandoffBusyHandler,disposeHandoffs,
 } from '../features/windows/tabDetach'
-import { resolvePaneDropZone } from '../editor/layout/TabDragService'
+import { resolvePaneDropZone,tabDragService,type TabDragResult } from '../editor/layout/TabDragService'
 import type { SplitDirection } from '../editor/layout/types'
 import type { EditorDocument } from '../types'
 import { RecoveryController } from '../features/recovery/RecoveryController'
@@ -442,6 +443,11 @@ export function useAppShell() {
   )
 
   // --- Window Close Guard ---
+  async function destroyNativeWindow(){
+    if(!alive)return
+    const win=(await import('@tauri-apps/api/window')).getCurrentWindow()
+    startup.exit();window.dispatchEvent(new CustomEvent('markumo:dispose-window'));await win.destroy()
+  }
   const windowClose = new WindowCloseGuard({
     status: () =>
       computeWindowCloseStatus({
@@ -467,10 +473,7 @@ export function useAppShell() {
       discardRef.value?.open('当前窗口中的文档')
     },
     destroy: async () => {
-      if (alive) {
-        startup.exit()
-        await (await import('@tauri-apps/api/window')).getCurrentWindow().destroy()
-      }
+      await destroyNativeWindow()
     },
     blocked: reason => toast(reason === 'composing' ? '请先完成当前输入法输入，再关闭窗口。' : '请等待当前文件操作完成后再关闭。'),
     failed: () => toast('关闭窗口失败，编辑内容仍保留在当前窗口。'),
@@ -960,7 +963,7 @@ export function useAppShell() {
         }
         await recovery.discardActive()
         startup.exit()
-        await (await import('@tauri-apps/api/window')).getCurrentWindow().destroy()
+        await destroyNativeWindow()
       } catch {
         toast('关闭窗口失败，编辑内容仍保留在当前窗口。')
       }
@@ -1219,11 +1222,16 @@ export function useAppShell() {
    * come from the source window. Only after this window really mounted the
    * document does it tell the source to release its tab.
    */
-  async function adoptIncomingDocument(x?: number, y?: number): Promise<EditorDocument | null> {
-    const adopted = await takeDetachedDocument().catch(() => null)
+  async function adoptIncomingDocument(x?: number, y?: number,handoffId?:string): Promise<EditorDocument | null> {
+    if(!alive||fileBusy.value||files.workspaceBusy||files.activeOperationCount||manager.isComposing||discardRef.value?.visible||pendingClose){if(handoffId){await cancelDetach(handoffId);if(alive)toast('请先完成当前窗口操作，再接收标签。')}return null}
+    const adopted = await takeDetachedDocument(handoffId)
     if (!adopted) return null
-    const { handoffId, payload } = adopted
+    const { handoffId:receivedId, payload } = adopted
+    let incomingId:string|null=null,createdPane:string|null=null,release:(()=>void)|null=null
     try {
+      if(manager.openedDocuments.some(doc=>doc.id===payload.documentId||!!payload.path&&sameFilePath(doc.path,payload.path)))throw Error('目标窗口已打开此文档，已取消移交以保留两边内容。')
+      if(!alive)throw Error('目标窗口已关闭')
+      files.workspaceBusy=true
       let targetPane = manager.activePane
       let targetZone: 'center' | 'left' | 'right' | 'top' | 'bottom' = 'center'
       if (typeof x === 'number' && typeof y === 'number') {
@@ -1236,7 +1244,7 @@ export function useAppShell() {
             || paneEl
           const rect = body.getBoundingClientRect()
           if (rect.width > 0 && rect.height > 0) {
-            targetZone = resolvePaneDropZone(rect, x, y)
+            targetZone = under?.closest('.tabs')?'center':resolvePaneDropZone(rect, x, y)
           }
         }
       }
@@ -1244,6 +1252,8 @@ export function useAppShell() {
       const pane = targetZone === 'center'
         ? targetPane
         : manager.splitPane(targetZone as SplitDirection, targetPane, undefined, targetPane, false)
+      if(targetZone!=='center')createdPane=pane
+      manager.focusPane(pane,false)
 
       let docId: string | null = null
       if (!payload.fileToken && !payload.path) {
@@ -1262,33 +1272,33 @@ export function useAppShell() {
             token: payload.fileToken || `detached-${payload.documentId}`,
             path: payload.path || '',
             name: payload.name,
+            kind:payload.kind||'text',media:payload.media,classInfo:payload.classInfo,
             text: payload.text,
             encoding: payload.encoding as unknown as Encoding,
             bom: payload.bom,
             eol: payload.eol as EditorDocument['eol'],
             readOnly: payload.readOnly,
             version: payload.version || '',
-          },
+          } as import('../features/files/contracts').OpenFile,
           false,
           pane,
           false,
         )
         if (!accepted) {
           if (targetZone !== 'center') manager.closePane(pane)
-          await cancelDetach(handoffId).catch(() => {})
-          return null
+          throw Error('目标窗口无法打开移交文档')
         }
         const doc =
           manager.openedDocuments.find(item => item.fileToken === payload.fileToken && payload.fileToken) ||
-          manager.openedDocuments.find(item => item.name === payload.name)
+          manager.openedDocuments.find(item => !!payload.path&&sameFilePath(item.path,payload.path))
         docId = doc?.id ?? null
       }
 
       if (!docId) {
         if (targetZone !== 'center') manager.closePane(pane)
-        await cancelDetach(handoffId).catch(() => {})
-        return null
+        throw Error('移交文档身份不可用')
       }
+      incomingId=docId
 
       // `restoreRecoveredText` applies the transferred body without adding an
       // undo step and marks the document dirty, which is exactly the state the
@@ -1298,28 +1308,45 @@ export function useAppShell() {
         manager.setMarkdownMode(docId, payload.markdownMode as MarkdownMode, pane)
       }
       if (payload.pinned) manager.pin(docId, pane)
+      else if(!payload.dirty)manager.paneGroup(pane).unpin(docId)
+      if(payload.mediaView)Object.assign(manager.mediaViewState(docId,pane),payload.mediaView)
       manager.setSelectionOffsets(docId, payload.anchor, payload.head, pane)
       manager.restoreScroll(docId, payload.scrollTop, payload.scrollLeft, pane)
       manager.focusPane(pane, true)
-      await commitDetach(handoffId).catch(() => {})
+      release=manager.holdForHandoff(docId)
+      if(!release||!alive)throw Error('目标窗口尚未准备好')
+      await commitDetach(receivedId)
+      release();release=null
       return manager.metadata(docId)
     } catch (error) {
-      await cancelDetach(handoffId).catch(() => {})
+      const committed=await cancelDetach(receivedId)
+      if(committed&&incomingId){release?.();return manager.metadata(incomingId)}
+      if(incomingId)for(const pane of manager.layout.getAllLeafIds())manager.close(incomingId,true,pane)
+      release?.()
+      if(createdPane&&manager.layout.getPane(createdPane))manager.closePane(createdPane)
       throw error
-    }
+    }finally{files.workspaceBusy=false}
   }
 
   async function adoptDetachedDocument(): Promise<EditorDocument | null> {
     return adoptIncomingDocument()
   }
+  function outgoingCommitted(event:{handoffId:string;documentId:string}){
+    if(!receiveDetachCommitted(event))return
+    if(currentLaunchKind==='detached'&&manager.openedDocuments.length===0)void import('@tauri-apps/api/window').then(({getCurrentWindow})=>getCurrentWindow().close())
+  }
 
   const startup = new DesktopStartup({
-    protect: scope => scope.register('close', async () =>
-      (await import('@tauri-apps/api/window')).getCurrentWindow().onCloseRequested(async event => {
+    protect: async scope => {
+      const win=(await import('@tauri-apps/api/window')).getCurrentWindow()
+      await scope.register('close', async () =>win.onCloseRequested(async event => {
         event.preventDefault()
         if (!alive) return
         await windowClose.request('native')
-      })),
+      }))
+      await scope.register('detach',()=>listenDetachCommitted(outgoingCommitted))
+      await scope.register('detach-canceled',()=>win.listen<{handoffId:string;documentId:string}>('markumo:detach-canceled',event=>receiveDetachCanceled(event.payload)))
+    },
     loadPreferences: current => preferences.loadPreferences(current),
     initialize: initializeLaunch,
     adopt: async (launch, current) => {
@@ -1329,11 +1356,12 @@ export function useAppShell() {
       // A detached window boots with nothing restored: its body arrives through
       // the detach handshake instead of the session or the disk.
       const adopted = launch.kind === 'detached' ? await adoptDetachedDocument() : null
+      if(launch.kind==='detached'&&!adopted)throw Error('标签移交已取消，原窗口保留文档。')
       if (!adopted) files.acceptBatch(launch.files)
       const selected = adopted
         || manager.openedDocuments.find(doc => doc.path === launch.activePath) || manager.openedDocuments[0]
-      if (selected) manager.select(selected.id, 'main')
-      restoreEditorLayout(manager, launch.editorLayout)
+      if (selected&&!adopted) manager.select(selected.id, 'main')
+      if(!adopted)restoreEditorLayout(manager, launch.editorLayout)
       appMode.value = launch.kind === 'app' ? launch.layout.mode : 'single'
       sidebarWidth.value = launch.layout.sidebarWidth
       wasNarrow = window.innerWidth < 900
@@ -1365,14 +1393,27 @@ export function useAppShell() {
     },
   })
 
+  async function commitWorkspaceDrop(result:TabDragResult){
+    if(result.payload.kind!=='file')return
+    const pane=result.paneDrop?.paneId||result.tabInsert?.paneId
+    if(!pane)return
+    const opened=await workspace.openWorkspaceFileInPane({path:result.payload.path,paneId:pane,pin:true,zone:result.paneDrop?.zone||'center'})
+    if(opened.success&&opened.docId&&opened.paneId&&result.tabInsert){
+      const tabs=manager.paneGroup(opened.paneId).tabs,at=tabs.findIndex(tab=>tab.documentId===result.tabInsert!.targetDocId)
+      if(result.tabInsert.targetDocId!==opened.docId)manager.transferTab(opened.docId,opened.paneId,opened.paneId,{targetIndex:at<0?tabs.length:at+(result.tabInsert.position==='after'?1:0)})
+    }
+  }
   onMounted(async () => {
+    tabDragService.configure(undefined,result=>void commitWorkspaceDrop(result))
     if (desktop) await files.external.start()
     // One-time move of the previous localStorage history into the native store.
     if (desktop) void migrateLegacyHistory(toast).catch(() => {})
     // The tab bar only raises the intent; the shell owns the transfer.
     setDetachRequestHandler((documentId, paneId, drop) => {
+      if(fileBusy.value||files.workspaceBusy||files.activeOperationCount||manager.isComposing){toast('请等待当前文件操作或输入完成。');return}
       void detachDocumentToWindow(manager, documentId, paneId, drop, toast)
     })
+    setHandoffBusyHandler(busy=>{files.workspaceBusy=busy})
     window.addEventListener('editor-notice', editorNotice)
     window.addEventListener('markdown-open-relative', openRelativeLink)
     window.addEventListener('paste', imagePaste, true)
@@ -1388,6 +1429,9 @@ export function useAppShell() {
       await startup.start()
       if (!alive || !launchReady) return
       try {
+        await startup.listeners.register('tab-drag',async()=> (await import('@tauri-apps/api/window')).getCurrentWindow().listen<{id:string;point:{x:number;y:number;ctrlKey:boolean;altKey:boolean}|null}>('markumo:tab-drag-finished',event=>tabDragService.nativeFinished(event.payload.id,event.payload.point)))
+        if(!alive)return
+        tabDragService.configure({begin:id=>invoke<boolean>('begin_tab_drag',{id}),cancel:id=>{if(id)void invoke('cancel_tab_drag',{id}).catch(()=>{})}},result=>void commitWorkspaceDrop(result))
         await startup.listeners.register('pending', async () => (await import('@tauri-apps/api/window')).getCurrentWindow().listen('files-pending', () => void drainPending()))
         if (!alive || !launchReady) return
         await startup.listeners.register('activate', async () => (await import('@tauri-apps/api/window')).getCurrentWindow().listen<string[]>('external-activate', event => {
@@ -1399,23 +1443,9 @@ export function useAppShell() {
         }))
         if (!alive || !launchReady) return
         await startup.listeners.register('incoming-tab', async () => (await import('@tauri-apps/api/window')).getCurrentWindow().listen<{ handoffId: string; x?: number; y?: number }>('markumo:incoming-tab', event => {
-          void adoptIncomingDocument(event.payload.x, event.payload.y).catch(error => toast(`接收标签失败：${fileError(error)}`))
+          void adoptIncomingDocument(event.payload.x, event.payload.y,event.payload.handoffId).catch(error => toast(`接收标签失败：${fileError(error)}`))
         }))
         if (!alive || !launchReady) return
-        await startup.listeners.register('detach', async () => listenDetachCommitted(({ documentId }) => {
-          // The target window adopted the body: only now may the source drop
-          // its tab. Nothing is discarded if this event never arrives.
-          const panes = manager.layout.getAllLeafIds()
-          for (const pane of panes) {
-            manager.close(documentId, true, pane)
-          }
-          if (currentLaunchKind === 'detached' && manager.openedDocuments.length === 0) {
-            void (async () => {
-              const win = (await import('@tauri-apps/api/window')).getCurrentWindow()
-              await win.close()
-            })()
-          }
-        }))
         if (!alive || !launchReady) return
         const prefs = await tauriFiles.preferences()
         if (alive) {
@@ -1462,6 +1492,7 @@ export function useAppShell() {
   })
 
   onUnmounted(() => {
+    tabDragService.dispose();setDetachRequestHandler(null);disposeHandoffs()
     window.removeEventListener('editor-notice', editorNotice)
     window.removeEventListener('markdown-open-relative', openRelativeLink)
     window.removeEventListener('paste', imagePaste, true)

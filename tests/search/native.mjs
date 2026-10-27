@@ -4,7 +4,8 @@ import path from 'node:path'
 import {spawn} from 'node:child_process'
 import {chromium} from 'playwright'
 
-const root=path.resolve('test-results/phase042'),output=path.resolve('test-results/search/native'),label='global-search',port=9683
+const root=path.resolve('test-results/phase042'),output=path.resolve('test-results/search/native'),label=process.argv.find(v=>v.startsWith('--label='))?.slice(8)||'global-search',port=9683
+assert(/^[\w-]+$/.test(label))
 const config=JSON.parse(fs.readFileSync(path.join(root,`config-${label}.json`),'utf8'))
 const profile=path.resolve(config.app.appDirectoriesOverride),binary=path.join(root,`markumo-${label}.exe`)
 assert.equal(profile,path.join(root,`native-profile-${label}`))

@@ -47,6 +47,7 @@ interface CachedDocument {
   caret: Compartment
   brackets: Compartment
   typewriter: Compartment
+  handoff:Compartment
   languageGeneration: number
   readyLanguageGeneration: number | null
   scroll: { top: number; left: number }
@@ -56,6 +57,9 @@ interface CachedDocument {
 export class DocumentManager {
   readonly layout = new EditorLayoutManager()
   private readonly views = new Map<string, EditorView>()
+  private readonly viewDocuments=new Map<string,string>()
+  private readonly restoreFrames=new Map<string,number>()
+  private readonly stopLayout:()=>void
   private readonly hosts = new Map<string, HTMLElement>()
   private readonly rehosting = new Map<string, {host:HTMLElement;id:string|null;focused:boolean}>()
   private readonly liveViews = new Map<string, {id:string; editor:LiveEditor}>()
@@ -90,7 +94,7 @@ export class DocumentManager {
 
   constructor(seeds: DocumentSeed[] = [], private readonly languageLoader = loadLanguage) {
     for (const seed of seeds) this.seeds.set(seed.id, seed)
-    this.layout.subscribe(() => this.notify())
+    this.stopLayout=this.layout.subscribe(() => this.notify())
   }
 
   subscribe(listener: () => void) { this.listeners.add(listener); return () => this.listeners.delete(listener) }
@@ -176,6 +180,12 @@ export class DocumentManager {
   }
   getState(id: string) { return this.records.get(id)?.state }
   getText(id: string) { return this.records.get(id)?.state.doc.toString() }
+  holdForHandoff(id:string){
+    if(this.media.has(id))return ()=>{}
+    const record=this.records.get(id);if(!record||this.disposed||this.isComposing)return null
+    this.effects(record,[record.handoff.reconfigure([EditorState.readOnly.of(true),EditorView.editable.of(false),EditorState.transactionFilter.of(tr=>tr.docChanged?[]:tr)])])
+    let held=true;return ()=>{if(!held)return;held=false;if(!this.disposed&&this.records.get(id)===record)this.effects(record,[record.handoff.reconfigure([])])}
+  }
   getBaselineText(id: string) { return this.records.get(id)?.baseline?.toString() ?? null }
   mediaViewState(id: string, pane: string): MediaViewState {
     return this.media.viewState(id, pane)
@@ -199,11 +209,12 @@ export class DocumentManager {
     const isMd = !binary && !byteEditor && /\.(md|markdown)$/i.test(seed.name)
     const initialMdMode: MarkdownMode | undefined = isMd ? (seed.mode || this.defaultMarkdownMode) : undefined
 
-    const brackets = new Compartment(), typewriter = new Compartment()
+    const brackets = new Compartment(), typewriter = new Compartment(),handoff=new Compartment()
     const state = EditorState.create({
       doc: seed.text,
       extensions: [
         coreExtensions,
+        handoff.of([]),
         brackets.of(bracketHighlight(binary || byteEditor ? 'off' : this.bracketMode)),
         caret.of(smoothCaret(this.caretAnimation)),
         typewriter.of(typewriterExtension({
@@ -263,7 +274,7 @@ export class DocumentManager {
         encoding: seed.encoding || 'UTF-8', eol: seed.eol || (/\r\n/.test(seed.text) ? 'CRLF' : 'LF'), bom: seed.bom ?? false, readOnly: false, lastDiskVersion: null,
         charCount: state.doc.length, line: 1, column: 1, mode: initialMdMode,
       },
-      state, baseline: state.doc, baselineEndings: endings.snapshot(state), endings, language, wrap, theme, markdownMode, indent, caret, brackets, typewriter, languageGeneration: 0, readyLanguageGeneration: null, scroll: { top: 0, left: 0 },
+      state, baseline: state.doc, baselineEndings: endings.snapshot(state), endings, language, wrap, theme, markdownMode, indent, caret, brackets, typewriter,handoff, languageGeneration: 0, readyLanguageGeneration: null, scroll: { top: 0, left: 0 },
       panes: { main: { selection: state.selection, top: 0, left: 0 }, secondary: { selection: state.selection, top: 0, left: 0 } },
     }
     this.records.set(seed.id, record)
@@ -706,7 +717,7 @@ export class DocumentManager {
     const view = this.paneView(resolved)
     if (view && this.paneGroup(resolved).activeId === id) {
       view.dispatch({ selection: EditorSelection.single(clamp(anchor), clamp(head)) })
-    }
+    }else if(resolved===this.activePane)record.state=record.state.update({selection,annotations:Transaction.addToHistory.of(false)}).state
     this.notify()
     return true
   }
@@ -719,14 +730,17 @@ export class DocumentManager {
     if (record.panes[resolved]) record.panes[resolved] = { ...record.panes[resolved], top, left }
     else record.panes[resolved] = { selection: record.state.selection, top, left }
     const scroll = () => {
+      this.restoreFrames.delete(resolved)
+      if(this.disposed||this.records.get(id)!==record||this.paneGroup(resolved).activeId!==id)return
       const root = this.hosts.get(resolved)?.querySelector<HTMLElement>('.markdown-live, .cm-scroller')
       if (root) {
         root.scrollTop = top
         root.scrollLeft = left
       }
     }
+    cancelAnimationFrame(this.restoreFrames.get(resolved)||0)
     scroll()
-    requestAnimationFrame(scroll)
+    this.restoreFrames.set(resolved,requestAnimationFrame(scroll))
     return true
   }
 
@@ -783,11 +797,19 @@ export class DocumentManager {
     if (!view) {
       const parent = this.hosts.get(resolved)
       if (!parent || this.disposed) return
-      view = new EditorView({ parent, state: record.state, dispatchTransactions: trs => this.applyTransactions(resolved, trs) })
+      view = new EditorView({ parent, state: record.state, dispatchTransactions: trs => {
+        // An async dispatch may outlive this mount. A Pane can already own a
+        // replacement view; never route the old view's transactions into it.
+        if(this.views.get(resolved)===view)this.applyTransactions(resolved, trs)
+      } })
       this.views.set(resolved, view)
+      this.viewDocuments.set(resolved,record.meta.id)
     }
     const shownView = view
-    shownView.setState(record.state.update({ selection: record.panes[resolved].selection, annotations: Transaction.addToHistory.of(false) }).state)
+    if(this.viewDocuments.get(resolved)!==record.meta.id||!shownView.state.doc.eq(record.state.doc)){
+      shownView.setState(record.state.update({ selection: record.panes[resolved].selection, annotations: Transaction.addToHistory.of(false) }).state)
+      this.viewDocuments.set(resolved,record.meta.id)
+    }else if(!shownView.state.selection.eq(record.panes[resolved].selection))shownView.dispatch({selection:record.panes[resolved].selection,annotations:Transaction.addToHistory.of(false)})
     const shownDocument = shownView.state.doc, shownNavigation = this.navigationRevision(resolved)
     const scroll = { ...record.panes[resolved] }
     // A raw scrollTop write is overridden by CM's new height-map anchor after
@@ -959,6 +981,9 @@ export class DocumentManager {
     const resolvedFrom = this.resolvePaneId(from)
     const resolvedTo = this.resolvePaneId(to)
     if (this.disposed || this.isComposing || !this.layout.getPane(resolvedFrom)?.group.tabs.some(t => t.documentId === id) || !this.layout.getPane(resolvedTo)) return false
+    // A reorder changes only tab slots. Keep this pane's mounted view, parser,
+    // selection and scroll rather than resetting it twice through showActive.
+    if(resolvedFrom===resolvedTo){const moved=this.layout.moveTab(id,resolvedFrom,resolvedTo,targetIndex);if(moved)this.notify();return moved}
     this.captureScroll(resolvedFrom)
     if (resolvedFrom !== resolvedTo) this.captureScroll(resolvedTo)
     this.copyMediaViewState(id, resolvedFrom, resolvedTo)
@@ -1065,6 +1090,7 @@ export class DocumentManager {
   }
 
   private destroyView(pane: Pane) {
+    cancelAnimationFrame(this.restoreFrames.get(pane)||0);this.restoreFrames.delete(pane);this.viewDocuments.delete(pane)
     this.cancelPaneScroll(pane)
     // View ownership is exact, even after the layout removes a legacy pane ID.
     this.views.get(pane)?.destroy()
@@ -1506,13 +1532,15 @@ export class DocumentManager {
     else showEditorSearch(view, command === 'replace')
   }
   dispose() {
+    if(this.disposed)return
     this.disposed = true
+    this.stopLayout()
     if (this.timer) clearTimeout(this.timer)
-    for (const view of this.views.values()) { cancelSmoothScroll(view.scrollDOM); view.destroy() }
-    for(const live of this.liveViews.values())live.editor.destroy()
+    for(const pane of new Set([...this.views.keys(),...this.liveViews.keys(),...this.restoreFrames.keys()]))this.destroyView(pane)
     this.liveViews.clear();this.liveLoads.clear()
     this.views.clear()
     this.hosts.clear();this.rehosting.clear()
+    this.viewDocuments.clear();this.paneNavigation.clear();this.fileModes={}
     this.records.clear(); this.media.clear(); this.seeds.clear(); this.deferred.clear(); this.listeners.clear(); this.releaseListeners.clear()
   }
 }

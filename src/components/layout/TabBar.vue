@@ -20,7 +20,7 @@
           pinned: doc.pinned,
           'drop-before': isDragInsertingBefore(doc.id),
           'drop-after': isDragInsertingAfter(doc.id),
-          'is-dragging': tabDragService.isDragging.value && tabDragService.dragPayload.value?.fromPaneId === pane && tabDragService.dragPayload.value?.documentId === doc.id
+          'is-dragging': tabDragService.isDragging.value && tabDragService.dragPayload.value?.kind!=='file' && tabDragService.dragPayload.value?.fromPaneId === pane && tabDragService.dragPayload.value?.documentId === doc.id
         }"
         :title="readablePath(doc.path) || doc.name"
         @click="selectTab(doc.id)"
@@ -154,11 +154,13 @@ function onTabPointerDown(event: PointerEvent, doc: EditorDocument) {
     result => {
       const manager = props.manager
       if (!manager) return
+      if(result.payload.kind==='file')return
       const { documentId, fromPaneId, isCopy } = result.payload
       let transferred = false
       // A release outside the window with no in-window target detaches the tab
       // into a new native window instead of dropping it nowhere.
       if (result.outside && !result.paneDrop && !result.tabInsert) {
+        if(isCopy){window.dispatchEvent(new CustomEvent('editor-notice',{detail:'跨窗口请释放复制修饰键后移动标签；副本视图可在当前窗口分栏。'}));return}
         requestDetachToWindow(documentId, fromPaneId, result.outside)
         return
       }
@@ -209,7 +211,7 @@ onMounted(() => {
   observer = new ResizeObserver(() => { void revealActiveTab() })
   if (tabs.value) observer.observe(tabs.value)
 })
-onUnmounted(() => { observer?.disconnect();menuAnchor.value=null })
+onUnmounted(() => { observer?.disconnect();menuAnchor.value=null;tabDragService.cancelForPane(props.pane) })
 
 function openMenu(event: MouseEvent | KeyboardEvent, doc: EditorDocument) {
   const currentIndex = props.docs.findIndex(d => d.id === doc.id)

@@ -267,6 +267,7 @@ export class FileController {
     } catch (error) { this.notify(fileError(error)) }
   }
   close(id: string, discard = false, pane: string = this.manager.activePane) {
+    if(this.workspaceBusy){this.notify('文件操作或标签移交进行中，请稍后关闭。');return 'saving' as const}
     if (this.external.resolving(id)) { this.notify('文件处理进行中，请稍后关闭。'); return 'saving' as const }
     if (this.saving.has(id)) { this.notify('保存进行中，请稍后关闭。'); return 'saving' as const }
     const result = this.manager.close(id, discard, pane)

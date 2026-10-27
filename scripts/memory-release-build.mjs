@@ -218,10 +218,18 @@ await build({
         if (cleanId.endsWith('/src/main.ts')) {
           return PROBE_BOOTSTRAP + '\n' + code
         }
-        if (label==='global-search' && cleanId.endsWith('/app/useAppShell.ts')) {
+        if(label.startsWith('dnd-')&&cleanId.endsWith('/features/windows/tabDetach.ts'))return code.replace('pending.id=started.handoffId','pending.id=started.handoffId; (window as any).__dndLastDetach=started')
+        if(label.startsWith('dnd-')&&cleanId.endsWith('/editor/layout/TabDragService.ts'))return code.replace('export const tabDragService = TabDragService.getInstance()','export const tabDragService = TabDragService.getInstance(); (window as any).__dndDragService=tabDragService').replace('if(id!==this.dragId)return','if(id!==this.dragId)return; (window as any).__dndNativeReleases=((window as any).__dndNativeReleases||0)+1')
+        if ((label==='global-search'||label.startsWith('dnd-')) && cleanId.endsWith('/app/useAppShell.ts')) {
           const anchor='  workspace.connect()'
           assert(code.includes(anchor),'Workspace search probe anchor missing')
-          return code.replace(anchor,`${anchor}\n  ;(window as any).__nativeWorkspace = workspace;\n  ;(window as any).__nativeSearchShell = { appMode, sidebarVisible, sidebarPanel };`)
+          let instrumented=code.replace(anchor,`${anchor}\n  ;(window as any).__nativeWorkspace = workspace;\n  ;(window as any).__nativeSearchShell = { appMode, sidebarVisible, sidebarPanel };`)
+          if(label.startsWith('dnd-')){
+            const at=instrumented.lastIndexOf('  return {'),end=instrumented.lastIndexOf('}')
+            assert(at>0&&end>at,'Shell return probe anchor missing')
+            instrumented=instrumented.slice(0,at)+instrumented.slice(at,end).replace('  return {','  const __dndShell = {\n __detach:(drop:any)=>detachDocumentToWindow(manager,manager.activeId!,manager.activePane,drop,toast),')+'\n;(window as any).__dndShell=__dndShell;return __dndShell\n'+instrumented.slice(end)
+          }
+          return instrumented
         }
         if (cleanId.endsWith('/editor/core/DocumentManager.ts')) {
           const ctorAnchor = 'constructor(seeds: DocumentSeed[] = [], private readonly languageLoader = loadLanguage) {'

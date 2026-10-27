@@ -1,6 +1,7 @@
 pub mod app;
 pub mod conversion;
 pub mod detach;
+pub mod tab_drag;
 pub mod files;
 pub mod history;
 pub mod recovery;

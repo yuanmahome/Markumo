@@ -1,6 +1,6 @@
 [package]
 name = "markumo"
-version = "1.0.9"
+version = "1.1.0"
 description = "Lightweight text and Markdown editor"
 license = "AGPL-3.0-only"
 authors = ["Markumo Team"]
@@ -39,7 +39,7 @@ reqwest = { version = "0.13", default-features = false, features = ["blocking", 
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_System_Com", "Win32_System_DataExchange"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_System_Com", "Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
 webview2-com = "0.39.1"
 windows-core = "0.62.2"
 

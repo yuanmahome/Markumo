@@ -17,9 +17,9 @@
       :aria-current="isNodeActive ? 'page' : undefined"
       :aria-label="compactAriaLabel"
       :aria-expanded="node.isDirectory ? isExpanded : undefined"
-      :draggable="!node.isDirectory"
-      @dragstart="handleDragStart"
-      @dragend="handleDragEnd"
+      draggable="false"
+      @dragstart.prevent
+      @pointerdown="handleFilePointerDown"
       :tabindex="tabStop ? 0 : -1"
       @focus.self="emit('locate-node', node)"
       @click="handleClick"
@@ -91,7 +91,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, onBeforeUnmount } from 'vue'
+import {tabDragService} from '../../editor/layout/TabDragService'
 import ContextMenu from '../common/ContextMenu.vue'
 import { CommandRegistry, menuCommand as cmd, separator } from '../../features/shell/menuModel'
 import Icon from '../common/Icon.vue'
@@ -184,21 +185,10 @@ const isNodeActive = computed(() => !props.node.isDirectory && !!props.activeFil
 
 let dragOccurred = false
 
-function handleDragStart(event: DragEvent) {
-  if (props.node.isDirectory) {
-    event.preventDefault()
-    return
-  }
-  dragOccurred = true
-  event.dataTransfer?.setData('application/x-markumo-file', JSON.stringify({ path: props.node.path, name: props.node.name }))
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copyMove'
+function handleFilePointerDown(event:PointerEvent){
+  if(!props.node.isDirectory)tabDragService.startFileWatching(event,props.node.path,props.node.name)
 }
-
-function handleDragEnd() {
-  setTimeout(() => {
-    dragOccurred = false
-  }, 100)
-}
+onBeforeUnmount(()=>tabDragService.cancelForFile(props.node.path))
 
 function handleClick(event: MouseEvent) {
   if (dragOccurred) {

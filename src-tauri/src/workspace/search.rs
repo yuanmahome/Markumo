@@ -209,6 +209,18 @@ pub struct SearchManager {
     pub previews: Arc<Mutex<super::preview::PreviewCache>>,
 }
 impl SearchManager {
+    pub fn forget_owner(&self, owner: &str) {
+        let prefix = format!("{owner}:");
+        let preview = format!("preview:{owner}");
+        self.token_map().retain(|id, token| {
+            if id.starts_with(&prefix) || *id == preview {
+                token.store(true, Ordering::Relaxed);
+                false
+            } else {
+                true
+            }
+        });
+    }
     /// The token map is a best-effort cancellation registry; recovering a
     /// poisoned guard is safe and keeps cancellation available after a panic in
     /// an unrelated search task. Mutable document stores still surface poisoning

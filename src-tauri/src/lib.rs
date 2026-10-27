@@ -212,6 +212,7 @@ pub fn run() {
         .manage(recovery::RecoveryStore::default())
         .manage(search_manager)
         .manage(commands::detach::DetachStore::default())
+        .manage(commands::tab_drag::NativeDragStore::default())
         .manage(std::sync::Arc::new(std::sync::Mutex::new(history::HistoryStore::default())))
         .setup(move |app| {
             let store = app.state::<FileStore>();
@@ -253,22 +254,28 @@ pub fn run() {
                     files.set_owner(window.label());
                     let inputs=files.image_inputs(paths.clone());
                     let scale=window.scale_factor().unwrap_or(1.0);
-                    let _=window.emit("native-file-drop",serde_json::json!({"inputs":inputs,"x":position.x/scale,"y":position.y/scale}));
+                    let _=window.emit_to(window.label(),"native-file-drop",serde_json::json!({"inputs":inputs,"x":position.x/scale,"y":position.y/scale}));
                 }
             }
             if let tauri::WindowEvent::Destroyed=event{
                 let app=window.app_handle();
+                commands::tab_drag::cancel_owner(&app.state::<commands::tab_drag::NativeDragStore>(),window.label(),None);
+                let search=app.state::<SearchManager>();search.forget_owner(window.label());
+                let previews=search.previews.clone();let owner=window.label().to_owned();
+                tauri::async_runtime::spawn_blocking(move||{if let Ok(mut cache)=previews.lock(){cache.clear(&owner)}});
                 app.state::<conversion::ConversionStore>().close(window.label());
                 if let Ok(mut update)=app.state::<commands::update::UpdateStore>().lock(){update.release(window.label());update.statuses.remove(window.label());}
                 app.state::<WorkspaceStore>().remove(window.label());
                 if let Ok(mut registry)=app.state::<session::LaunchStore>().lock(){registry.windows.remove(window.label());}
-                if let Ok(mut files)=app.state::<FileStore>().lock(){files.release_owner(window.label());}
                 // A detached window that closed before adopting must not leak
                 // the document body or keep the source tab blocked.
                 commands::detach::forget_window(
+                    app,
                     &app.state::<commands::detach::DetachStore>().inner().clone(),
+                    &app.state::<FileStore>().inner().clone(),
                     window.label(),
                 );
+                if let Ok(mut files)=app.state::<FileStore>().lock(){files.release_owner(window.label());}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -279,6 +286,8 @@ pub fn run() {
             commands::app::ensure_update_window,
             commands::session::initialize_launch,commands::session::persist_session,
             commands::detach::detach_tab_to_window, commands::detach::take_detached_document,
+            commands::tab_drag::begin_tab_drag,commands::tab_drag::cancel_tab_drag,
+            commands::detach::detach_status,
             commands::detach::commit_detach, commands::detach::cancel_detach,
             commands::history::history_record, commands::history::history_import, commands::history::history_list,
             commands::history::history_read, commands::history::history_delete,
