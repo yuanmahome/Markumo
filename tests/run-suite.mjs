@@ -12,6 +12,7 @@ const smokeScripts = [
   'tests/phase042/blank-line-persistence.mjs',
   'tests/outline/visibility.mjs',
   'tests/search/browser.mjs',
+  'tests/workspace/open-visibility.mjs',
   'tests/phase042/render-tasks-phase2.mjs',
   'tests/phase042/pane-tab-lifecycle-phase4.mjs',
 ]

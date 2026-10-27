@@ -123,16 +123,22 @@ export function useAppShell() {
 
   const revision = ref(0)
   const unsubscribe = manager.subscribe(() => revision.value++)
-  let lastWorkspaceRevision = 0
+  function onWorkspaceOpenedSuccess() {
+    preserveFocusLayout(() => {
+      if (focusMode.value) {
+        focusMode.value = false
+        savedSidebarVisible.value = null
+      }
+      wasNarrow = window.innerWidth < 900
+      appMode.value = 'workspace'
+      sidebarPanel.value = 'files'
+      sidebarVisible.value = true
+    })
+    if (paletteRef.value?.visible) paletteRef.value.close()
+  }
+  const unsubscribeWorkspaceOpened = workspace.onOpened?.(onWorkspaceOpenedSuccess)
   const unsubscribeWorkspace = workspace.subscribe(() => {
     revision.value++
-    if (workspace.rootPath && workspace.openRevision !== lastWorkspaceRevision) {
-      appMode.value = 'workspace'
-      sidebarVisible.value = true
-      sidebarPanel.value = 'files'
-    }
-    if (workspace.openRevision !== lastWorkspaceRevision && paletteRef.value?.visible) paletteRef.value.close()
-    lastWorkspaceRevision = workspace.openRevision
   })
 
   if (demo) {
@@ -523,6 +529,24 @@ export function useAppShell() {
       fileBusy.value = false
       void drainPending()
     }
+  }
+
+  async function openWorkspaceFolder(add = false): Promise<boolean> {
+    if (startupLoading.value) return false
+    if (!desktop && workspace.gateway === tauriWorkspace) {
+      toast('浏览器仅支持内存编辑；请使用 Tauri 桌面版打开工作区文件夹。')
+      return false
+    }
+    return workspace.openWorkspaceDialog(add)
+  }
+
+  async function openWorkspacePath(path: string, add = false): Promise<boolean> {
+    if (startupLoading.value) return false
+    if (!desktop && workspace.gateway === tauriWorkspace) {
+      toast('浏览器仅支持内存编辑；请使用 Tauri 桌面版打开工作区文件夹。')
+      return false
+    }
+    return workspace.openWorkspacePath(path, add)
   }
 
   async function runFileOperation(action: () => Promise<unknown>) {
@@ -1153,6 +1177,8 @@ export function useAppShell() {
     openHistory,
     openFile,
     openRecent,
+    openWorkspaceFolder,
+    openWorkspacePath,
     saveActive,
     closeDocById,
     quitApp,
@@ -1310,6 +1336,7 @@ export function useAppShell() {
       restoreEditorLayout(manager, launch.editorLayout)
       appMode.value = launch.kind === 'app' ? launch.layout.mode : 'single'
       sidebarWidth.value = launch.layout.sidebarWidth
+      wasNarrow = window.innerWidth < 900
       sidebarVisible.value = launch.kind === 'app' && !!workspace.rootPath && launch.layout.sidebarVisible && !wasNarrow
       if (launch.warnings.length) toast(launch.warnings.join('\n'))
       if (launch.ownsSession) {
@@ -1349,6 +1376,7 @@ export function useAppShell() {
     window.addEventListener('editor-notice', editorNotice)
     window.addEventListener('markdown-open-relative', openRelativeLink)
     window.addEventListener('paste', imagePaste, true)
+    wasNarrow = window.innerWidth < 900
     window.addEventListener('resize', adaptWindowWidth)
     commands.mountListeners(window)
     window.addEventListener('beforeunload', beforeUnload)
@@ -1454,6 +1482,7 @@ export function useAppShell() {
     recovery.dispose()
     files.dispose()
     workspace.destroy()
+    unsubscribeWorkspaceOpened?.()
     unsubscribeWorkspace()
     unsubscribe()
     manager.dispose()
@@ -1520,6 +1549,7 @@ export function useAppShell() {
     manager,
     files,
     workspace,
+    revision,
     openedDocuments,
     mainOpenedDocuments,
     mainActiveId,
@@ -1576,6 +1606,8 @@ export function useAppShell() {
     recentFiles,
     openFile,
     openRecent,
+    openWorkspaceFolder,
+    openWorkspacePath,
     saveActive,
     quitApp,
     startupLoading,

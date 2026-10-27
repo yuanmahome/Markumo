@@ -125,6 +125,7 @@ export class WorkspaceController {
   private replaceSnapshots = new Map<string, { id: string; token: string | undefined; version:string|null; text: NonNullable<ReturnType<DocumentManager['getState']>>['doc'] }>()
 
   private listeners = new Set<() => void>()
+  private openListeners = new Set<() => void>()
   private searchBatchUnsub: (() => void) | null = null
   private searchDoneUnsub: (() => void) | null = null
 
@@ -156,6 +157,15 @@ export class WorkspaceController {
   subscribe(fn: () => void) {
     this.listeners.add(fn)
     return () => this.listeners.delete(fn)
+  }
+
+  onOpened(fn: () => void) {
+    this.openListeners.add(fn)
+    return () => this.openListeners.delete(fn)
+  }
+
+  private notifyOpened() {
+    for (const fn of this.openListeners) fn()
   }
 
   private emit() {
@@ -199,16 +209,13 @@ export class WorkspaceController {
     if (this.operationBusy || (this.fileController.activeOperationCount ?? this.fileController.saving.size) || this.documentManager.isComposing) {
       this.notify('请等待文件操作和输入完成，再切换工作区。'); return false
     }
-    if (!add && this.documentManager.hasDirtyDocuments) {
-      this.notify('当前有未保存的文档修改，请先保存或关闭未保存标签后再切换工作区。')
-      return false
-    }
     if (!this.beginMutation()) return false
     try {
       const info = await this.gateway.openWorkspaceDialog(add)
       if (!info) return false
       if (add && this.rootPath) this.addWorkspace(info)
       else this.applyWorkspace(info)
+      this.notifyOpened()
       return true
     } catch (e) {
       this.notify(String(e))
@@ -219,8 +226,8 @@ export class WorkspaceController {
   private addWorkspace(info: WorkspaceInfo) {
     this.cancelOpens(); this.cancelReveal()
     this.cancelExpand()
-    this.openRevision++
     if (!this.roots.some(root => root.rootPath === info.rootPath)) this.roots.push(info)
+    this.openRevision++
     if (info.warning) this.notify(info.warning)
     this.resetSearchContext()
     this.quickGeneration++; this.quickFiles = []; this.invalidateFileIndex(); void this.loadRecents(); this.emit()
@@ -245,20 +252,20 @@ export class WorkspaceController {
   }
 
   async openWorkspacePath(path: string, add = false): Promise<boolean> {
-    return this.loadWorkspace(() => this.gateway.openWorkspacePath(path, add), add)
+    const success = await this.loadWorkspace(() => this.gateway.openWorkspacePath(path, add), add)
+    if (success) this.notifyOpened()
+    return success
   }
 
   async openDroppedWorkspace(token: string): Promise<boolean> {
-    return this.loadWorkspace(() => this.gateway.openDroppedWorkspace(token), true)
+    const success = await this.loadWorkspace(() => this.gateway.openDroppedWorkspace(token), true)
+    if (success) this.notifyOpened()
+    return success
   }
 
   private async loadWorkspace(load: () => Promise<WorkspaceInfo>, add: boolean): Promise<boolean> {
     if (this.operationBusy || (this.fileController.activeOperationCount ?? this.fileController.saving.size) || this.documentManager.isComposing) {
       this.notify('请等待文件操作和输入完成，再切换工作区。'); return false
-    }
-    if (!add && this.documentManager.hasDirtyDocuments) {
-      this.notify('当前有未保存的文档修改，请先保存或关闭未保存标签后再切换工作区。')
-      return false
     }
     if (!this.beginMutation()) return false
     try {
@@ -274,16 +281,16 @@ export class WorkspaceController {
 
   private applyWorkspace(info: WorkspaceInfo) {
     this.cancelOpens(); this.selectedTreePath = null
-    this.cancelExpand();this.revealSequence++
-    this.openRevision++
-    this.cancelSearch()
-    this.quickGeneration++
-    this.quickFiles = []
-    this.invalidateFileIndex()
+    this.cancelExpand(); this.revealSequence++
     this.rootPath = info.rootPath
     this.rootName = info.name
     this.entries = info.entries
     this.roots = [info]
+    this.openRevision++
+    this.cancelSearch(false)
+    this.quickGeneration++
+    this.quickFiles = []
+    this.invalidateFileIndex()
     if (info.warning) this.notify(info.warning)
     this.resetSearchContext()
     void this.loadRecents()
@@ -1332,5 +1339,6 @@ export class WorkspaceController {
     if (this.searchBatchUnsub) this.searchBatchUnsub()
     if (this.searchDoneUnsub) this.searchDoneUnsub()
     this.listeners.clear()
+    this.openListeners.clear()
   }
 }

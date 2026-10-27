@@ -83,7 +83,7 @@
           :markdown-width="markdownTypography.width"
           :workspace="workspace"
           @open-file="openFile()"
-          @open-workspace="workspace.openWorkspaceDialog()"
+          @open-workspace="openWorkspaceFolder()"
           @new-doc="createNewDoc"
           @open-palette="openPalette"
           @close-outline="showOutline = false"
@@ -249,7 +249,7 @@ const { autoCheckUpdates,autoDownloadUpdates,updateStatus,updatePanelOpen,update
   createNewDoc, closeDocById, cancelPendingClose, discardPending, savePending, setLanguage,
   reopenEncoding, convertEncoding, saveAsEncoding,
   gotoLineRef, handleGotoLine, revealInExplorerToken,
-  desktop, fileBusy, recentFiles, openFile, openRecent, saveActive, quitApp, startupLoading, startupError, settingsReady, updateInstalling,
+  desktop, fileBusy, recentFiles, openFile, openRecent, openWorkspaceFolder, saveActive, quitApp, startupLoading, startupError, settingsReady, updateInstalling,
   recoveryRecords, recoveryVisible, recoveryBusy, recoveryError, recoveryDiff, openRecovery, closeRecovery,
   restoreRecovery, discardRecovery, restoreAllRecovery, showRecoveryDiff, clearRecoveryDiff } = useAppShell()
 const navigationSidebar=ref<InstanceType<typeof Sidebar>>()

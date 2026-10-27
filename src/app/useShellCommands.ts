@@ -65,6 +65,8 @@ export interface ShellCommandsHost {
   toast: (message: string) => void
   openFile: (encoding?: FileOpenEncoding) => Promise<void>
   openRecent: (path: string, preview?: boolean) => Promise<void>
+  openWorkspaceFolder: (add?: boolean) => Promise<boolean>
+  openWorkspacePath: (path: string, add?: boolean) => Promise<boolean>
   saveActive: (saveAs?: boolean, encoding?: Encoding) => Promise<boolean>
   closeDocById: (id: string, pane?: string) => boolean | undefined
   quitApp: (source?: CloseSource) => Promise<void>
@@ -305,8 +307,8 @@ export function useShellCommands(host: ShellCommandsHost) {
       { id: 'zoom-reset', title: '恢复默认字体大小', detail: 'Ctrl+0', category: 'action', action: host.resetZoom },
       { id: 'undo', title: '撤销', detail: 'Ctrl+Z', category: 'action', action: () => host.manager.command('undo') },
       { id: 'redo', title: '重做', detail: 'Ctrl+Y', category: 'action', action: () => host.manager.command('redo') },
-      { id: 'open-workspace', title: '打开工作区文件夹', detail: host.desktop ? '选择目录' : '需要 Tauri 桌面版', category: 'action', disabled: !host.desktop || host.fileBusy.value, action: () => void host.workspace.openWorkspaceDialog() },
-      { id: 'add-workspace', title: '添加文件夹到工作区…', detail: host.desktop ? '选择目录 · 保留现有文件夹' : '需要 Tauri 桌面版', category: 'action', disabled: !host.desktop || host.fileBusy.value, action: () => void host.workspace.openWorkspaceDialog(true) },
+      { id: 'open-workspace', title: '打开工作区文件夹', detail: host.desktop ? '选择目录' : '需要 Tauri 桌面版', category: 'action', disabled: !host.desktop || host.fileBusy.value, action: () => void host.openWorkspaceFolder(false) },
+      { id: 'add-workspace', title: '添加文件夹到工作区…', detail: host.desktop ? '选择目录 · 保留现有文件夹' : '需要 Tauri 桌面版', category: 'action', disabled: !host.desktop || host.fileBusy.value, action: () => void host.openWorkspaceFolder(true) },
       { id: 'workspace-search', title: '在文件中查找…', detail: '工作区或已打开的文本文件', category: 'action', action: () => host.workspace.focusWorkspaceSearch() },
       { id: 'workspace-replace', title: '在文件中替换…', detail: '先核对 Diff 再应用', category: 'action', action: () => host.workspace.focusWorkspaceSearch(true) },
       { id:'directory-search',title:'在此目录中查找…',detail:'当前树目录或文件所在目录',category:'action',disabled:!host.workspace.searchDirectoryContext(),action:()=>host.workspace.focusWorkspaceSearch(false,host.workspace.searchDirectoryContext()) },
@@ -353,7 +355,7 @@ export function useShellCommands(host: ShellCommandsHost) {
       { id: 'inspect-class', title: '查看 JVM ClassFile 结构', detail: '只读结构信息', category: 'action' as const, disabled: !host.desktop || !host.activeDoc.value?.fileToken || host.activeDoc.value.encoding !== 'Hex' || host.fileBusy.value, action: () => void host.reopenEncoding('ClassInfo') },
       ...encodings.map(encoding => ({ id: `open-${encoding}`, title: `按 ${encoding} 编码打开文件`, detail: '原生文件选择', category: 'action' as const, disabled: !host.desktop || host.fileBusy.value, action: () => void host.openFile(encoding) })),
       ...encodings.map(encoding => ({ id: `reopen-${encoding}`, title: `用 ${encoding} 编码重新打开`, detail: '需要先保存修改', category: 'action' as const, disabled: !host.desktop || !host.activeDoc.value?.fileToken || host.fileBusy.value || isMedia(host.activeDoc.value), action: () => void host.reopenEncoding(encoding) })),
-      ...recentWorkspaces().map(path => ({ id: recentWorkspaceCommand(path), title: `打开工作区：${path.split(/[\\/]/).pop()}`, detail: readablePath(path), category: 'action' as const, disabled: !host.desktop || host.fileBusy.value, action: () => void host.workspace.openWorkspacePath(path) })),
+      ...recentWorkspaces().map(path => ({ id: recentWorkspaceCommand(path), title: `打开工作区：${path.split(/[\\/]/).pop()}`, detail: readablePath(path), category: 'action' as const, disabled: !host.desktop || host.fileBusy.value, action: () => void host.openWorkspacePath(path) })),
       ...(host.demo ? host.manager.catalog : host.openedDocuments.value).map(doc => ({
         id: `file-${doc.id}`,
         title: doc.name,
