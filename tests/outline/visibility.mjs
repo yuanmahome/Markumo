@@ -64,6 +64,8 @@ try {
   await check('1 Markdown headings; 2 Markdown empty; 3 Markdown user disabled', async () => {
     await open('README.md', '# Parent\n\n## Child\n\nText\n')
     await shown(true); await parsed(); assert.equal(await page.locator('.outline-item').count(), 2)
+    assert.equal(await page.locator('.outline-line').count(), 0)
+    assert.doesNotMatch(await aside.innerText(), /\bL\d+\b/)
     await open('empty.md', '普通正文，没有标题。')
     await shown(true); await parsed('empty'); assert.match(await aside.innerText(), /当前 Markdown 文件未发现标题结构/)
     await page.evaluate(() => window.__outlineShell.toggleOutline())
@@ -74,6 +76,11 @@ try {
   await check('4 Java symbols; 5 Java empty; 6 Java user disabled and command enabled', async () => {
     await open('App.java', 'class App { void run() {} }'); await shown(true); await parsed()
     assert.match(await aside.innerText(), /App/)
+    await open('Incomplete.java', 'class Incomplete { void run() {} void '); await shown(true); await parsed()
+    assert.match(await aside.innerText(), /Incomplete/)
+    assert.doesNotMatch(await aside.innerText(), /代码含未完成的语法/)
+    assert.equal(await page.locator('.outline-container > [role="status"]').count(), 0)
+    await open('App.java', 'class App { void run() {} }'); await shown(true); await parsed()
     assert.equal(await page.evaluate(() => window.__outlineShell.commandRegistry.value.get('toggle-outline').enabled), true)
     await page.locator('.cm-content').click(); await outlineShortcut(); await shown(false)
     await outlineShortcut(); await shown(true); await parsed()

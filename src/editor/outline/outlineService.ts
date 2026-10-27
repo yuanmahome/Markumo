@@ -95,7 +95,7 @@ export function outlineResult(doc:EditorDocument|null,state:EditorState|undefine
     if(markdown){const items=markdownOutline(text);result={items,status:items.length?'ready':'empty',notice:items.length>=1000?'大纲最多显示前 1000 项。':''}}
     else{
       const parsed=extractCodeSymbols(tree,text,language)
-      result={items:parsed.items,status:parsed.items.length?'ready':'empty',notice:parsed.limited?'结构提取达到预算，已截断（最多 1000 项 / 50000 节点 / 30ms）。':parsed.incomplete?'代码含未完成的语法，仅展示可确认的声明。':''}
+      result={items:parsed.items,status:parsed.items.length?'ready':'empty',notice:parsed.limited?'结构提取达到预算，已截断（最多 1000 项 / 50000 节点 / 30ms）。':''}
     }
   }catch{return empty('结构提取失败，请重新加载语言解析器后重试。','error')}
   let entries=cache.get(text);if(!entries)cache.set(text,entries=new Map())

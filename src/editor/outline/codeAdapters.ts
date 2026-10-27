@@ -129,15 +129,15 @@ export const codeAdapters: Readonly<Record<string,Adapter>> = {
 
 export function extractCodeSymbols(tree: import('@lezer/common').Tree,text:Text,language:string) {
   const adapter=codeAdapters[language],items:OutlineItem[]=[]
-  if(!adapter)return {items,limited:false,incomplete:false}
+  if(!adapter)return {items,limited:false}
   const scopes:OutlineItem[]=[],counts=new Map<string,number>(),cursor=tree.cursor()
-  let visited=0,incomplete=false,limited=false
+  let visited=0,limited=false
   const started=performance.now()
   do {
     if(++visited>50000 || (visited%256===0 && performance.now()-started>30)){limited=true;break}
     const node=cursor.node
     while(scopes.length && scopes[scopes.length-1].to!<=node.from)scopes.pop()
-    if(node.type.isError){incomplete=true;continue}
+    if(node.type.isError)continue
     // Vue template/style syntax is never treated as script declarations.
     if(language==='Vue'){
       let ancestor:SyntaxNode|null=node
@@ -158,5 +158,5 @@ export function extractCodeSymbols(tree: import('@lezer/common').Tree,text:Text,
     items.push(item)
     scopes.push(item)
   }while(cursor.next(!cursor.type.isError))
-  return {items,limited,incomplete}
+  return {items,limited}
 }

@@ -54,7 +54,6 @@
         <span v-if="item.kind==='heading' && item.labelHtml" class="outline-label" v-html="item.labelHtml" />
         <span v-else class="outline-label"><template v-for="(part,partIndex) in labelParts(item)" :key="partIndex"><mark v-if="part.match">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></span>
         <span v-if="item.detail" class="outline-detail">{{ item.detail }}</span>
-        <span class="outline-line">L{{ item.lineNumber }}</span>
       </button>
     </div>
     <p v-if="items.length && !visibleItems.length" class="empty-text" role="status">没有匹配的符号</p>
@@ -349,12 +348,6 @@ defineEmits<{
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.outline-line {
-  font-size: var(--ui-small-font-size);
-  color: var(--muted);
-  font-family: var(--font-mono);
 }
 
 .outline-item.drop-before {
