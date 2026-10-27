@@ -1,6 +1,19 @@
-import {existsSync,readdirSync} from 'node:fs'
+import {existsSync,mkdirSync,readdirSync} from 'node:fs'
 import {join} from 'node:path'
 import {execFileSync} from 'node:child_process'
+
+// Set the output directory before Cargo creates/replaces the executable, so
+// hot rebuilds also inherit Medium instead of the workspace's Low label.
+export function prepareWindowsDevArtifacts(targetDirectory,mainBinaryName='markumo',{target='',release=false}={}){
+  if(process.platform!=='win32')return
+  if(target&&!/^[\w.-]+-windows-(msvc|gnu|gnullvm)$/.test(target))return
+  const output=join(targetDirectory,target,release?'release':'debug')
+  mkdirSync(output,{recursive:true})
+  const icacls=join(process.env.SystemRoot||'C:/Windows','System32/icacls.exe')
+  execFileSync(icacls,[output,'/setintegritylevel','(OI)(CI)M'],{stdio:'pipe',windowsHide:true})
+  const binary=join(output,`${mainBinaryName}.exe`)
+  if(existsSync(binary))execFileSync(icacls,[binary,'/setintegritylevel','M'],{stdio:'pipe',windowsHide:true})
+}
 
 // Build directories can carry a Low mandatory integrity label. An installer
 // inherits it even though its ordinary ACL grants write access, so Windows

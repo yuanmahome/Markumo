@@ -34,4 +34,6 @@
 
 Windows 所有 `pnpm tauri build` / `build.bat` / CI 入口都会把生成的安装包、NSIS 输出目录及主程序设为 Medium 完整性，防止从受限工作目录继承 Low 标签，导致安装器无法写入普通安装目录。仅修改生成产物的安全元数据，不改变签名字节或用户安装目录的权限。
 
+`pnpm tauri dev` 同样在启动前将 Cargo 的开发输出目录及已有主程序设为 Medium，后续热重编译产物继承该级别。否则从 Low 标签工作区启动的开发程序可能将普通桌面文件判定为“不可写”。修复启动脚本或产物标签后，已经运行的 Low 进程仍需重启；不需要修改文档权限或以管理员运行。Windows 原生回归：`node tests/dev/windows-integrity.mjs`。
+
 实现参考：[Tauri updater](https://v2.tauri.app/plugin/updater/)、[GitHub Actions 官方工作流文档](https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions)。
