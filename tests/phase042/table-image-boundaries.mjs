@@ -68,7 +68,9 @@ async function clickImageTail(open = false, pane = 'main') {
 try {
   await page.goto('http://127.0.0.1:1478/tests/markdown-links/fixture.html')
   await page.waitForFunction(() => !!window.f)
-  await reset(`Before\n\n${filledTable}\n`)
+  // A single final terminator leaves only the temporary editing entry. Extra
+  // source lines are now persistent paragraphs and Backspace deletes those.
+  await reset(`Before\n\n${filledTable}`)
   await select(':scope > p:last-child')
   const initial = await snapshot()
   for (const index of [8, 7, 6, 5]) {
@@ -95,7 +97,7 @@ try {
   assert.equal(await page.locator('tr:nth-child(2) td:nth-child(2)').innerText(), '1')
   console.log('PASS nonempty cell start is protected while selected text still deletes')
 
-  await reset(`Before\n\n${filledTable}\n`)
+  await reset(`Before\n\n${filledTable}`)
 
   await select('tr:nth-child(2) td:nth-child(2) p', true)
   await backspace()

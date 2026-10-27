@@ -5,6 +5,7 @@ import type { Node } from 'prosemirror-model'
 import { markdownSchema as s } from './MarkdownSchema'
 import { parseControlledImageHtml } from './imageHtml'
 import { installMarkdownMath } from '../mathSemantics'
+import { blankLineRanges, markdownBlockEnd } from '../blankLines'
 
 export const tokenizer = new MarkdownIt('commonmark', {html:true,linkify:true}).enable(['table','strikethrough','linkify'])
 // Markdown-it decodes percent-encoding in a linkified label by default
@@ -182,7 +183,7 @@ tokenizer.core.ruler.after('markumo_callouts', 'markumo_toc', state => {
 // prosemirror-markdown still declares markdown-it 14 types; the shared runtime
 // is markdown-it 15. Only this official adapter boundary needs a type bridge.
 export const markdownParser = new MarkdownParser(s, tokenizer as unknown as ConstructorParameters<typeof MarkdownParser>[1], tokens as unknown as ConstructorParameters<typeof MarkdownParser>[2])
-export interface SourceBlock { id:string; from:number; to:number; raw:string; prefix:string; node:Node }
+export interface SourceBlock { id:string; from:number; to:number; raw:string; prefix:string; node:Node; blank?:boolean }
 let identity=0
 export function parseMarkdown(source:string, referenceEnvironment:Record<string,unknown> = {}, previous?:{blocks:readonly SourceBlock[];environment:Record<string,unknown>}) {
   const starts=[0]; for(let i=0;i<source.length;i++)if(source[i]==='\n')starts.push(i+1)
@@ -207,11 +208,7 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
   let level=0
   for(const token of [...parsed, ...definitions]){
     if(level===0 && token.map){
-      let to=starts[token.map[1]] ?? source.length
-      while(to>(starts[token.map[0]]||0) && source[to-1]==='\n'){
-        to--
-        if(source[to-1]==='\r')to--
-      }
+      const to=markdownBlockEnd(source,starts[token.map[0]],starts[token.map[1]] ?? source.length,token.type==='fence'?token.markup:undefined)
       const reference = token.type === 'reference_definition'
       const footnote = reference && String(token.meta?.label || '').startsWith('^')
       ranges.push({from:starts[token.map[0]],to,raw:token.type==='html_block'||(reference && !footnote),
@@ -221,7 +218,17 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
     level+=token.nesting
   }
   ranges.sort((a,b)=>a.from-b.from)
-  const blocks:SourceBlock[]=[]; let cursor=0
+  const blocks:SourceBlock[]=[]; let cursor=0,hasContent=false
+  const addBlanks=(to:number,edge:'start'|'between'|'end')=>{
+    for(const range of blankLineRanges(source,cursor,to,edge)){
+      const raw=source.slice(range.from,range.to),entry=reusable.get(raw)
+      const candidate=entry && entry.used<entry.blocks.length?entry.blocks[entry.used++]:undefined
+      const id=candidate?.id || `md-${++identity}`
+      const node=candidate?.node || s.nodes.paragraph.create({sourceId:id},range.text?s.text(range.text):undefined)
+      blocks.push({id,from:range.from,to:range.to,raw,prefix:source.slice(cursor,range.from),node,blank:true})
+      cursor=range.to
+    }
+  }
   const add=(from:number,to:number,raw:boolean,label='扩展语法（保留源码）',kind?:string)=>{
     const original=source.slice(from,to),entry=reusable.get(original)
     kind ??= /^---\r?\n/.test(original) && from === 0 ? 'yaml' : /^\s*\[\^/.test(original) ? 'footnote'
@@ -265,15 +272,25 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
       }
     }catch{node=s.nodes.protected_source.create({source:original,label,kind})}
     if(!reused)node=node.type.create({...node.attrs,sourceId:id},node.content,node.marks)
-    blocks.push({id,from,to,raw:original,prefix:source.slice(cursor,from),node});cursor=to
+    blocks.push({id,from,to,raw:original,prefix:source.slice(cursor,from),node});cursor=to;hasContent=true
   }
   for(const range of ranges){
     if(range.from<cursor)continue
     const gap=source.slice(cursor,range.from)
     if(gap.trim()){const from=cursor+(gap.match(/^\s*/)?.[0].length||0);add(from,range.from-gap.match(/\s*$/)![0].length,true,'引用定义 / 扩展源码')}
+    addBlanks(range.from,hasContent?'between':'start')
     add(range.from,range.to,!!range.raw,range.label,range.kind)
   }
   if(source.slice(cursor).trim())add(cursor,source.length,true,'引用定义 / 扩展源码')
+  addBlanks(source.length,hasContent?'end':'start')
+  // A whitespace-only document also has a final editable line after its last
+  // terminator (N newlines are N+1 lines). This zero-byte block is not the
+  // special editorTrailing entry used after code/table/image nodes.
+  if(!hasContent && source.endsWith('\n')){
+    const candidate=previous?.blocks.find(block=>block.blank&&block.from===source.length&&block.raw==='')
+    const id=candidate?.id || `md-${++identity}`,node=candidate?.node || s.nodes.paragraph.create({sourceId:id})
+    blocks.push({id,from:source.length,to:source.length,raw:'',prefix:'',node,blank:true})
+  }
   const doc=s.nodes.doc.create(null,blocks.length?blocks.map(b=>b.node):s.nodes.paragraph.create())
   return {doc,blocks,tail:source.slice(cursor),environment:env}
 }

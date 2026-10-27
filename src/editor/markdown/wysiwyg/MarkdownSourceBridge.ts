@@ -20,6 +20,20 @@ export class MarkdownSourceBridge {
    * the patch against the exact expected source revision. */
   prepare(doc:Node, inlinePatch?:SourcePatch){
     const byId=new Map(this.blocks.map(b=>[b.id,b])),used=new Set<string>(),blocks:SourceBlock[]=[]
+    // Remove only the source lines represented by editable gap paragraphs.
+    // The remaining prefix is the original Markdown block separator, including
+    // its exact EOL spelling. It is emitted once per gap, never per paragraph.
+    const separators=new Map<string,string>()
+    let separator='',firstId:string|undefined
+    for(const block of this.blocks){
+      separator+=block.prefix
+      if(block.blank)continue
+      firstId??=block.id
+      separators.set(block.id,separator);separator=''
+    }
+    const originalTail=separator+this.tail
+    const eol=this.source.match(/\r?\n/)?.[0] || '\n'
+    const entries:{node:Node;id:string;old?:SourceBlock;raw:string;blank:boolean}[]=[]
     let source='',definitionsChanged=false,inlineApplied=false
     doc.forEach(node=>{
       if(isTrailingParagraph(node) && !node.content.size)return
@@ -62,23 +76,64 @@ export class MarkdownSourceBridge {
         inlineApplied=true
       }
       let raw=inlineRaw??(old?.node.eq(node)?old.raw:old&&node.type.name==='table'&&old.node.type===node.type?(patchTable(old.node,node,old.raw)??serializeBlock(node)):serializeBlock(node))
-      if(old && !old.node.eq(node) && old.raw.includes('\r\n')) raw=raw.replace(/\r?\n/g,'\r\n')
-      // An empty source has a placeholder paragraph but no source block. Two
-      // missing blocks must not count as the same existing first block.
-      const prefix = !blocks.length ? (old && old === this.blocks[0] ? old.prefix : '') : (old ? old.prefix || (!raw.startsWith('\n') ? '\n\n' : '') : (!raw.startsWith('\n') ? '\n\n' : ''))
-      source+=prefix;const from=source.length;source+=raw
+      if(!old?.node.eq(node))raw=raw.replace(/\r?\n/g,old?.raw.match(/\r?\n/)?.[0] || eol)
+      const blank=node.type.name==='paragraph' && node.content.content.every(child=>child.isText&&!child.marks.length&&/^[\t ]*$/.test(child.text!))
+      if(blank)raw=old?.blank&&old.node.eq(node)?old.raw:node.textContent+eol
+      entries.push({node,id,old,raw,blank})
       if(node.type.name==='protected_source' && !old?.node.eq(node) && (node.attrs.kind === 'reference' || old?.node.attrs.kind === 'reference' || /^\s*\[[^\]]+\]:/m.test(raw)))definitionsChanged=true
-      blocks.push({id,from,to:source.length,raw,prefix,node})
     })
+    const emit=(entry:typeof entries[number],prefix:string)=>{
+      source+=prefix;const from=source.length;source+=entry.raw
+      blocks.push({id:entry.id,from,to:source.length,raw:entry.raw,prefix,node:entry.node,blank:entry.blank || undefined})
+    }
+    let pending:typeof entries=[],hasContent=false
+    for(const entry of entries){
+      if(entry.blank){pending.push(entry);continue}
+      const original=entry.old&&!entry.old.blank?separators.get(entry.id):undefined
+      let prefix=hasContent?(original || eol+eol):(entry.id===firstId?original || '':'')
+      if(pending.length){
+        // Minimal Markdown may have just one terminator between blocks. An
+        // inserted empty line still needs its own source line beyond the normal
+        // separator. A whitespace-bearing line remains actual user content.
+        if(hasContent&&!pending[0].node.textContent){
+          const count=(prefix.match(/\n/g)||[]).length
+          if(count<2)prefix+=eol.repeat(2-count)
+        }
+        pending.forEach((blank,index)=>{
+          if(!blank.raw.endsWith('\n'))blank.raw=blank.node.textContent+eol
+          emit(blank,index===0?prefix:'')
+        })
+        emit(entry,'');pending=[]
+      }else emit(entry,prefix)
+      hasContent=true
+    }
+    let tail=originalTail
+    if(pending.length){
+      // In a whitespace-only document the final editable line has no line
+      // terminator. N empty paragraphs therefore encode N-1 real newlines.
+      if(!hasContent){
+        pending.forEach((entry,index)=>{
+          if(index===pending.length-1)entry.raw=entry.node.textContent
+          else if(!entry.raw.endsWith('\n'))entry.raw=entry.node.textContent+eol
+        })
+      }else{
+        pending.forEach((entry,index)=>{
+          if(!entry.raw.endsWith('\n')&&(index<pending.length-1||!entry.raw))entry.raw=entry.node.textContent+eol
+        })
+      }
+      const prefix=hasContent?(originalTail || eol):''
+      pending.forEach((entry,index)=>emit(entry,index===0?prefix:''))
+      tail=''
+    }
     if(inlinePatch&&!inlineApplied)throw new Error('局部源码目标已失效，拒绝修改。')
-    source+=this.tail
+    source+=tail
     const patch=textPatch(this.source,source)
     if(this.blocks.some(block=>!used.has(block.id)&&(block.node.attrs.kind === 'reference'||/^\s*\[[^\]]+\]:/m.test(block.raw))))definitionsChanged=true
-    return {source,patch,definitionsChanged,commit:()=>{this.source=source;this.doc=withoutTrailingParagraph(doc);this.blocks=blocks;if(definitionsChanged)this.environment=parseMarkdown(source).environment}}
+    return {source,patch,definitionsChanged,commit:()=>{this.source=source;this.doc=withoutTrailingParagraph(doc);this.blocks=blocks;this.tail=tail;if(definitionsChanged)this.environment=parseMarkdown(source).environment}}
   }
   sourcePosition(pos:number){
     let offset=0
-    for(const b of this.blocks){if(pos<=offset+b.node.nodeSize){
+    for(const b of this.blocks){if(pos<offset+b.node.nodeSize){
       const local=Math.max(0,pos-offset-1)
       if(b.node.type.name==='code_block'){const opening=/^ {0,3}(?:`{3,}|~{3,})[^\n]*\n/.exec(b.raw);return Math.min(b.to,b.from+(opening?.[0].length||0)+local)}
       const mapped=inlineSourcePosition(b.node,b.raw,local)
@@ -88,7 +143,7 @@ export class MarkdownSourceBridge {
   }
   documentPosition(sourcePos:number){
     let offset=0
-    for(const b of this.blocks){if(sourcePos<=b.to){
+    for(const b of this.blocks){if(sourcePos<b.to || sourcePos===b.to&&!b.blank){
       let local=Math.max(0,sourcePos-b.from)
       if(b.node.type.name==='code_block'){const opening=/^ {0,3}(?:`{3,}|~{3,})[^\n]*\n/.exec(b.raw);local=Math.max(0,local-(opening?.[0].length||0))}
       return Math.min(offset+b.node.nodeSize-1,offset+1+local)

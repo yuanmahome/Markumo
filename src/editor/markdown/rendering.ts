@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it'
+import { blankLineRanges, markdownBlockEnd } from './blankLines'
 import { syntaxSpans } from '../core/syntaxSpans'
 import { LanguageSupport } from '@codemirror/language'
 import { fenceLanguage, loadLanguage, type LanguageName } from '../languages'
@@ -25,6 +26,33 @@ export { markdownSemantics } from './semantics'
 export { fenceLanguage } from '../languages'
 export function createMarkdownRenderer(onLanguageReady: () => void = () => {}, preview = false) {
   const md = new MarkdownIt(markdownSemantics)
+  if (preview) {
+    md.core.ruler.before('strip_references', 'markumo_blank_lines', state => {
+      const starts=[0]
+      for(let i=0;i<state.src.length;i++)if(state.src[i]==='\n')starts.push(i+1)
+      const lines=new Map(starts.map((start,index)=>[start,index]))
+      const output:typeof state.tokens=[]
+      let cursor=0,level=0,hasContent=false
+      const gap=(to:number,edge:'start'|'between'|'end')=>{
+        for(const range of blankLineRanges(state.src,cursor,to,edge)){
+          const token=new state.Token('markumo_blank_line','p',0)
+          const line=lines.get(range.from)??0
+          token.map=[line,line+1]
+          output.push(token)
+        }
+      }
+      for(const token of state.tokens){
+        if(level===0&&token.map){
+          const from=starts[token.map[0]],end=starts[token.map[1]]??state.src.length
+          gap(from,hasContent?'between':'start')
+          cursor=markdownBlockEnd(state.src,from,end,token.type==='fence'?token.markup:undefined);hasContent=true
+        }
+        output.push(token);level+=token.nesting
+      }
+      gap(state.src.length,hasContent?'end':'start');state.tokens=output
+    })
+    md.renderer.rules.markumo_blank_line=(tokens,index)=>`<p class="md-blank-line" data-source-line="${tokens[index].map![0]+1}"></p>\n`
+  }
   // Keep the raw spelling of a linkified URL in the rendered text, exactly like
   // the Live editor does. Decoding `%20` here would make the preview disagree
   // with the editable text and with what is stored on disk.

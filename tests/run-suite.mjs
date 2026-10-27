@@ -9,6 +9,7 @@ const smokeScripts = [
   'tests/phase042/code-block-layout.mjs',
   'tests/phase042/slash-table-browser.mjs',
   'tests/phase042/table-image-boundaries.mjs',
+  'tests/phase042/blank-line-persistence.mjs',
   'tests/phase042/render-tasks-phase2.mjs',
   'tests/phase042/pane-tab-lifecycle-phase4.mjs',
 ]

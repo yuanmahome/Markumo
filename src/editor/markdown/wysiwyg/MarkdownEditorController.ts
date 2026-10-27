@@ -314,6 +314,14 @@ export class MarkdownEditorController implements LiveEditor {
             'Mod-Shift-x': toggleMark(s.marks.strike),
             'Mod-`': toggleMark(s.marks.code),
             'Backspace': (state, dispatch, view) => {
+              const selection=state.selection
+              if(selection.empty && selection.$from.depth===1 && selection.$from.parent.type===s.nodes.paragraph &&
+                !selection.$from.parent.content.size && !selection.$from.parent.attrs.editorTrailing && state.doc.childCount>1){
+                if(view&&!view.editable)return true
+                const at=selection.$from.before(),tr=state.tr.delete(at,selection.$from.after())
+                tr.setSelection(Selection.near(tr.doc.resolve(Math.min(at,tr.doc.content.size)),-1))
+                dispatch?.(tr.setMeta('isolated',true).scrollIntoView());return true
+              }
               if (tableBackspace(state, dispatch, view)) return true
               const {empty,$from}=state.selection
               if (empty && $from.parent.type === s.nodes.paragraph && $from.parent.content.size === 0) {
@@ -441,11 +449,19 @@ export class MarkdownEditorController implements LiveEditor {
               handleClick: (view, _pos, event) => {
                 const a = (event.target as Element).closest('a')
                 if (!a) {
-                  // Click outside popover closes it
-                  if (!this.properties.hidden && !(event.target as Element).closest('.md-properties')) {
-                    this.properties.hidden = true
-                  }
+                  if (!this.properties.hidden && !(event.target as Element).closest('.md-properties')) this.properties.hidden = true
                   this.slashController?.close()
+                  const paragraph=(event.target as Element).closest('p')
+                  if(paragraph&&!event.shiftKey&&view.dom.contains(paragraph)){
+                    const pos=view.posAtDOM(paragraph,0),$pos=view.state.doc.resolve(pos)
+                    if($pos.depth===1&&$pos.parent.type===s.nodes.paragraph&&!$pos.parent.content.size){
+                      // Hit-testing the far side of an empty line can resolve
+                      // to its neighbour in Chromium. The paragraph DOM gives
+                      // the exact editable source line the user clicked.
+                      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc,pos)))
+                      view.focus();return true
+                    }
+                  }
                   return this.activateMark(view,event)
                 }
                 return this.activateLink(view,event)
