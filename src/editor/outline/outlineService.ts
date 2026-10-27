@@ -30,10 +30,20 @@ export interface OutlineItem {
   kind?: 'heading' | 'function' | 'method' | 'constructor' | 'class' | 'interface' | 'struct' | 'enum' | 'trait' | 'impl' | 'type' | 'field' | 'member' | 'namespace' | 'object'
   parentId?:string; scopeFrom?:number; detail?:string
 }
-export interface OutlineResult { items:OutlineItem[]; notice:string }
+export type OutlineCapability = 'markdown' | 'code' | 'unsupported'
+export type OutlineParseStatus = 'loading' | 'ready' | 'empty' | 'error' | 'paused'
+export interface OutlineResult { items:OutlineItem[]; notice:string; status:OutlineParseStatus }
+/** Capability describes the selected language, never a parse attempt or its
+ * symbol count. It must remain stable while the same parser loads or fails. */
+export function getOutlineCapability(doc:Pick<EditorDocument,'language'|'kind'|'encoding'>|null|undefined):OutlineCapability {
+  if(!doc || doc.kind && doc.kind!=='text' || doc.encoding==='Hex')return 'unsupported'
+  const language=resolveLanguage(doc.language || 'Plain Text')
+  if(language?.name==='Markdown')return 'markdown'
+  return language?.parser==='lezer' && !!codeAdapters[language.name] ? 'code' : 'unsupported'
+}
 const cache = new WeakMap<Text, Map<string,{tree:ReturnType<typeof syntaxTree>;result:OutlineResult}>>()
 export const MAX_CODE_OUTLINE_SIZE = 256 * 1024
-export const isMarkdownOutline=(doc:EditorDocument|null)=>!!doc && (doc.language==='Markdown' || (!doc.language && /\.(md|markdown)$/i.test(doc.name)))
+export const isMarkdownOutline=(doc:EditorDocument|null)=>getOutlineCapability(doc)==='markdown'
 function markdownOutline(text: Text): OutlineItem[] {
   const tokens = outlineMarkdown.parse(text.toString(), {}), items: OutlineItem[] = []
   for (let index = 0; index < tokens.length && items.length < 1000; index++) {
@@ -66,26 +76,28 @@ export function extractOutline(doc: EditorDocument | null, state: EditorState | 
 }
 
 export function outlineResult(doc:EditorDocument|null,state:EditorState|undefined):OutlineResult {
-  const empty=(notice=''):OutlineResult=>({items:[],notice})
-  if(!doc||!state)return empty()
-  if(doc.languageStatus!=='ready')return empty(doc.languageStatus==='error'?'语言解析器不可用。':'正在加载语言解析器…')
-  const markdown=isMarkdownOutline(doc),text=state.doc,tree=syntaxTree(state),key=markdown?'markdown':doc.language
-  if(text.length>(markdown?1024*1024:MAX_CODE_OUTLINE_SIZE))return empty('文档较大，大纲已暂停。')
+  const empty=(notice='',status:OutlineParseStatus='empty'):OutlineResult=>({items:[],notice,status})
+  const capability=getOutlineCapability(doc)
+  if(!doc||!state||capability==='unsupported')return empty()
+  const markdown=capability==='markdown'
+  if(doc.languageStatus==='error')return empty(`${markdown?'大纲':'代码结构'}加载失败。${doc.languageError || '请重新加载语言解析器后重试。'}`,'error')
+  if(doc.languageStatus!=='ready')return empty(markdown?'正在加载大纲…':'正在加载代码结构…','loading')
+  const language=resolveLanguage(doc.language)!.name
+  const text=state.doc,tree=syntaxTree(state),key=markdown?'markdown':language
+  if(text.length>(markdown?1024*1024:MAX_CODE_OUTLINE_SIZE))return empty('文档较大，大纲已暂停。','paused')
   if(!markdown){
-    const language=resolveLanguage(doc.language||'Plain Text')
-    if(!language||language.parser==='none')return empty('纯文本不提供代码结构。')
-    if(language.parser==='stream')return empty('当前语言仅提供词法高亮，无法可靠提取结构。')
-    if(!codeAdapters[doc.language])return empty('当前解析器尚未提供结构适配。')
-    if(tree.length<text.length || !syntaxTreeAvailable(state,text.length))return empty('语法解析尚未完成，暂不显示代码结构。')
+    if(tree.length<text.length || !syntaxTreeAvailable(state,text.length))return empty('正在加载代码结构…','loading')
   }
   const cached=cache.get(text)?.get(key)
   if(cached && (markdown||cached.tree===tree))return cached.result
   let result:OutlineResult
-  if(markdown){const items=markdownOutline(text);result={items,notice:items.length>=1000?'大纲最多显示前 1000 项。':''}}
-  else{
-    const parsed=extractCodeSymbols(tree,text,doc.language)
-    result={items:parsed.items,notice:parsed.limited?'结构提取达到预算，已截断（最多 1000 项 / 50000 节点 / 30ms）。':parsed.incomplete?'代码含未完成的语法，仅展示可确认的声明。':''}
-  }
+  try {
+    if(markdown){const items=markdownOutline(text);result={items,status:items.length?'ready':'empty',notice:items.length>=1000?'大纲最多显示前 1000 项。':''}}
+    else{
+      const parsed=extractCodeSymbols(tree,text,language)
+      result={items:parsed.items,status:parsed.items.length?'ready':'empty',notice:parsed.limited?'结构提取达到预算，已截断（最多 1000 项 / 50000 节点 / 30ms）。':parsed.incomplete?'代码含未完成的语法，仅展示可确认的声明。':''}
+    }
+  }catch{return empty('结构提取失败，请重新加载语言解析器后重试。','error')}
   let entries=cache.get(text);if(!entries)cache.set(text,entries=new Map())
   entries.set(key,{tree,result});return result
 }

@@ -33,6 +33,7 @@
         :active-panel="sidebarPanel"
         :sidebar-visible="sidebarVisible"
         :outline-visible="showOutline"
+        :outline-supported="outlineSupported"
         @select-panel="handleSelectPanel"
         @toggle-outline="toggleOutline"
         @open-settings="openSettings"
@@ -100,6 +101,7 @@
       v-if="!focusMode"
       :doc="activeDoc"
       :manager="manager"
+      :outline-enabled="outlineVisible"
       @set-language="setLanguage"
       @reopen-encoding="reopenEncoding"
       @convert-encoding="convertEncoding"
@@ -240,7 +242,7 @@ import { workspaceNavigationKey } from './features/workspace/navigation'
 import { useAppShell } from './app/useAppShell'
 const { autoCheckUpdates,autoDownloadUpdates,updateStatus,updatePanelOpen,updateConfirmRef,updateManager,openUpdatePanel,openUpdateRelease,openUpdateLink,caretAnimation,outlineWidth,markdownClipboard,markdownTypography,appMode, sidebarVisible, sidebarWidth, sidebarPanel, focusMode, theme, uiFontSize, fontSize, fontFamily, indentSize, useTabs, shortcuts, updateShortcuts, updateKeymap, keymapPreset, wordWrap, showOutline, typewriterMode, defaultMdMode, liveToolbar, externalFileMonitoring, autoReloadExternal, autoSave, autoSaveDelay, treeClickMode, autoFollowActiveFile, smartExpand, compactFolders, syntaxStyle, bracketMode, imageRules,currentDocumentImageRules,updateDocumentImageRules,
   paletteRef, settingsRef, discardRef, toastRef, historyOpen, historyPath, historyDocumentId, historyContent, manager, files, workspace, openedDocuments, activeDoc, activeDocId, exportProgress, cancelExport, paletteActions, menuGroups,commandRegistry,executeCommand,
-  setMode, toggleSidebar, handleSelectPanel, leftSidebarOccupied, effectiveOutlinePosition, outlineVisible, toggleTheme, toggleFocus, openSettings, openPalette, handleSelectDoc,
+  setMode, toggleSidebar, handleSelectPanel, leftSidebarOccupied, effectiveOutlinePosition, outlineSupported, outlineVisible, toggleOutline, toggleTheme, toggleFocus, openSettings, openPalette, handleSelectDoc,
   createNewDoc, closeDocById, cancelPendingClose, discardPending, savePending, setLanguage,
   reopenEncoding, convertEncoding, saveAsEncoding,
   gotoLineRef, handleGotoLine, revealInExplorerToken,
@@ -261,7 +263,6 @@ provide(workspaceNavigationKey, {workspace,enabled:()=>appMode.value==='workspac
   return valid()
 }})
 defineExpose({ settingsReady })
-function toggleOutline() { showOutline.value = !showOutline.value }
 function updateMarkdownWidth(width: number) {
   markdownTypography.value = { ...markdownTypography.value, width: Math.max(480, Math.min(1400, Math.round(width))) }
 }

@@ -8,9 +8,10 @@
       </select>
     </div>
     <p v-if="notice" class="empty-text" role="status">{{ notice }}</p>
-    <div v-if="items.length === 0 && !notice" class="empty-outline">
+    <button v-if="status === 'error'" class="outline-retry" @click="$emit('retry')">重新加载代码结构</button>
+    <div v-if="items.length === 0 && (!notice || status === 'empty')" class="empty-outline">
       <p class="empty-text">
-        {{ isMarkdown ? '当前 Markdown 文件未发现标题结构' : '当前文件未发现可提取的符号或大纲' }}
+        {{ isMarkdown ? '当前 Markdown 文件未发现标题结构' : '当前文件暂无可提取的代码结构' }}
       </p>
     </div>
 
@@ -61,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import type { OutlineItem } from '../../editor/outline/outlineService'
+import type { OutlineItem, OutlineParseStatus } from '../../editor/outline/outlineService'
 import type { DocumentManager } from '../../editor/core/DocumentManager'
 import { useOutlineViewport } from '../../editor/outline/useOutlineViewport'
 import { planOutlineMove } from '../../editor/outline/outlineReorder'
@@ -72,6 +73,7 @@ const props=defineProps<{
   items: OutlineItem[]
   isMarkdown: boolean
   notice?: string
+  status?: OutlineParseStatus
   manager?: DocumentManager
   documentId?: string | null
 }>()
@@ -243,6 +245,7 @@ function onDrop(e: DragEvent, targetItem: OutlineItem) {
 
 defineEmits<{
   (e: 'select-item', item: OutlineItem): void
+  (e: 'retry'): void
 }>()
 </script>
 
@@ -256,6 +259,7 @@ defineEmits<{
 }
 .outline-filter{display:flex;gap:4px;padding:6px;position:sticky;top:0;background:var(--sidebar);z-index:1}
 .outline-filter input{min-width:0;flex:1;width:0;background:var(--soft);border:1px solid var(--line);padding:4px;color:var(--ink)}
+.outline-retry{margin:0 12px 12px;padding:6px 10px;color:var(--ink);background:var(--soft);border:1px solid var(--line);border-radius:4px}
 .outline-filter select{max-width:88px;min-width:0;background:var(--soft);border:1px solid var(--line);color:var(--ink)}
 .outline-detail{max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font:var(--ui-small-font-size) var(--font-mono)}
 .outline-label mark{background:var(--accentbg);color:var(--accent);font-weight:600}

@@ -48,6 +48,8 @@ export function useShellPreferences(host: ShellPreferencesHost) {
   const fontSize = ref(14)
   const wordWrap = ref(false)
   const showOutline = ref(false)
+  // Persist only the user's choice. File capability, parser progress and layout
+  // visibility are derived elsewhere and must never write back to this ref.
   const defaultMdMode = ref<MarkdownMode>('live')
   const liveToolbar = ref(true)
   const fontFamily = ref<EditorSettings['fontFamily']>('system')

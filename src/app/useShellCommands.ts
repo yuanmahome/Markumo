@@ -52,6 +52,8 @@ export interface ShellCommandsHost {
   sidebarPanel: Ref<SidebarPanel>
   appMode: Ref<AppMode>
   showOutline: Ref<boolean>
+  outlineSupported: ComputedRef<boolean>
+  toggleOutline: () => void
   wordWrap: Ref<boolean>
   revision: Ref<number>
   // Modal visibility guards
@@ -287,7 +289,7 @@ export function useShellCommands(host: ShellCommandsHost) {
         const pane=[...document.querySelectorAll<HTMLElement>('[data-pane-id]')].find(element=>element.dataset.paneId===host.manager.activePane)
         pane?.querySelector<HTMLButtonElement>('.open-tabs-button')?.click()
       } },
-      { id: 'toggle-outline', title: '显示/隐藏大纲', detail: '', category: 'action', action: () => { host.showOutline.value = !host.showOutline.value } },
+      { id: 'toggle-outline', title: '显示/隐藏大纲', detail: host.outlineSupported.value ? '' : '当前文件不支持大纲', category: 'action', disabled: !host.outlineSupported.value, action: host.toggleOutline },
       { id: 'toggle-focus', title: '切换专注模式', detail: 'F8', category: 'action', action: host.toggleFocus },
       { id: 'toggle-typewriter', title: '切换打字机模式', detail: 'F9', category: 'action', action: host.toggleTypewriter },
       { id: 'focus-left-pane', title: '聚焦左侧分栏', detail: '', category: 'action', action: () => host.manager.layout.focusDirection('left') },

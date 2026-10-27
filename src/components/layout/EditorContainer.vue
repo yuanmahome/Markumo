@@ -39,7 +39,7 @@
       @keydown.left.prevent="setOutlineWidth(visibleOutlineWidth + (outlinePosition === 'right' ? 10 : -10))" @keydown.right.prevent="setOutlineWidth(visibleOutlineWidth + (outlinePosition === 'left' ? 10 : -10))"
       @keydown.home.prevent="setOutlineWidth(160)" @keydown.end.prevent="setOutlineWidth(maxOutlineWidth)"
     ></div>
-    <aside v-show="docked" class="outline-sidebar" :style="{ width: `${visibleOutlineWidth}px` }" aria-label="文档大纲">
+    <aside v-show="docked" class="outline-sidebar" :data-capability="capability" :data-parse-status="structure.status" :style="{ width: `${visibleOutlineWidth}px` }" aria-label="文档大纲">
       <div class="outline-head">
         <span>大纲</span>
         <div class="outline-actions">
@@ -60,9 +60,11 @@
         :items="outlineItems"
         :is-markdown="isMarkdownDoc"
         :notice="outlineNotice"
+        :status="structure.status"
         :manager="manager"
-        :document-id="doc?.id"
+        :document-id="outlineDocument?.id"
         @select-item="handleSelectOutline"
+        @retry="retryOutline"
       />
     </aside>
   </div>
@@ -72,7 +74,8 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import SplitLayoutNode from './SplitLayoutNode.vue'
 import OutlineView from './OutlineView.vue'
-import { isMarkdownOutline, type OutlineItem } from '../../editor/outline/outlineService'
+import { getOutlineCapability, type OutlineItem } from '../../editor/outline/outlineService'
+import type { LanguageName } from '../../editor/languages'
 import { useDocumentOutline } from '../../editor/outline/useDocumentOutline'
 import type { EditorDocument } from '../../types'
 import type { DocumentManager } from '../../editor/core/DocumentManager'
@@ -136,7 +139,9 @@ const minimumEditorWidth = computed(() => {
 })
 const maxOutlineWidth = computed(() => Math.max(160, Math.min(520, containerWidth.value - minimumEditorWidth.value - 4)))
 const visibleOutlineWidth = computed(() => Math.min(maxOutlineWidth.value, Math.max(160, dragWidth.value ?? props.outlineWidth ?? localOutlineWidth.value)))
-const docked = computed(() => props.showOutline && !props.focusMode && !!props.doc && !spaceCollapsed.value)
+const outlineDocument = computed(() => { revision.value; return props.manager.activeDocument })
+const capability = computed(() => getOutlineCapability(outlineDocument.value))
+const docked = computed(() => props.showOutline && capability.value !== 'unsupported' && !props.focusMode && !spaceCollapsed.value)
 watch([containerWidth, minimumEditorWidth], ([available, minimum]) => {
   const threshold = minimum + 164
   if (available < threshold) spaceCollapsed.value = true
@@ -207,16 +212,18 @@ function handleOpenWorkspaceFile(payload: { path: string; name: string; paneId: 
   }
 }
 
-const isMarkdownDoc = computed(() => {
-  return (!props.doc?.kind || props.doc.kind === 'text') && isMarkdownOutline(props.doc)
-})
+const isMarkdownDoc = computed(() => capability.value === 'markdown')
 
-const structure=useDocumentOutline(()=>props.manager,()=>props.doc,()=>docked.value)
+const structure=useDocumentOutline(()=>props.manager,()=>outlineDocument.value,()=>docked.value)
 const outlineItems=computed(()=>structure.value.items)
 const outlineNotice=computed(()=>structure.value.notice)
 
 function handleSelectOutline(item: OutlineItem) {
-  if (props.doc) props.manager.revealOutline(props.doc.id, item)
+  if (outlineDocument.value) props.manager.revealOutline(outlineDocument.value.id, item)
+}
+function retryOutline() {
+  const document=outlineDocument.value
+  if(document&&capability.value!=='unsupported')void props.manager.setLanguage(document.id,document.language as LanguageName)
 }
 
 onUnmounted(() => {

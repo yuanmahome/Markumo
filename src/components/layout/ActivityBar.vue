@@ -20,9 +20,10 @@
 
     <button
       class="ib"
-      :class="{ on: outlineVisible }"
-      :aria-pressed="outlineVisible"
-      title="文档大纲"
+      :class="{ on: outlineSupported && outlineVisible }"
+      :aria-pressed="outlineSupported && outlineVisible"
+      :disabled="!outlineSupported"
+      :title="outlineSupported ? '文档大纲' : '当前文件不支持大纲'"
       @click="$emit('toggle-outline')"
     >
       <Icon name="outline" />
@@ -48,6 +49,7 @@ defineProps<{
   activePanel: SidebarPanel
   sidebarVisible: boolean
   outlineVisible?: boolean
+  outlineSupported?: boolean
 }>()
 
 defineEmits<{

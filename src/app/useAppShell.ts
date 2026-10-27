@@ -4,6 +4,7 @@ import { DesktopStartup } from './desktopStartup'
 import { DocumentManager } from '../editor/core/DocumentManager'
 import { sampleDocuments } from '../features/tabs/sampleDocuments'
 import type { LanguageName } from '../editor/languages'
+import { getOutlineCapability } from '../editor/outline/outlineService'
 import type { AppMode, SidebarPanel, MarkdownMode } from '../types'
 import type CommandPalette from '../components/modals/CommandPalette.vue'
 import type SettingsModal from '../components/modals/SettingsModal.vue'
@@ -165,7 +166,13 @@ export function useAppShell() {
   // and the outline itself never feed back into sidebar preferences.
   const leftSidebarOccupied = computed(() => !focusMode.value && appMode.value === 'workspace' && sidebarVisible.value && (sidebarPanel.value === 'files' || sidebarPanel.value === 'search'))
   const effectiveOutlinePosition = computed(() => leftSidebarOccupied.value ? 'right' as const : 'left' as const)
-  const outlineVisible = computed(() => preferences.showOutline.value && !focusMode.value)
+  const outlineCapability = computed(() => getOutlineCapability(activeDoc.value))
+  const outlineSupported = computed(() => outlineCapability.value !== 'unsupported')
+  const outlineVisible = computed(() => preferences.showOutline.value && outlineSupported.value && !focusMode.value)
+  function toggleOutline() {
+    if(!outlineSupported.value){toast('当前文件不支持大纲');return}
+    preferences.showOutline.value=!preferences.showOutline.value
+  }
 
   watch([preferences.externalFileMonitoring, preferences.autoReloadExternal, preferences.settingsReady], () => {
     files.external.configure(desktop && preferences.settingsReady.value && preferences.externalFileMonitoring.value, preferences.autoReloadExternal.value)
@@ -764,7 +771,7 @@ export function useAppShell() {
   }
 
   function handleSelectPanel(panel: SidebarPanel) {
-    if (panel === 'outline') { preferences.showOutline.value = !preferences.showOutline.value; return }
+    if (panel === 'outline') { toggleOutline(); return }
     if (sidebarPanel.value === panel && sidebarVisible.value) sidebarVisible.value = false
     else {
       sidebarPanel.value = panel
@@ -1131,6 +1138,8 @@ export function useAppShell() {
     sidebarPanel,
     appMode,
     showOutline: preferences.showOutline,
+    outlineSupported,
+    toggleOutline,
     wordWrap: preferences.wordWrap,
     revision,
     paletteRef,
@@ -1524,6 +1533,9 @@ export function useAppShell() {
     handleSelectPanel,
     leftSidebarOccupied,
     effectiveOutlinePosition,
+    outlineCapability,
+    outlineSupported,
+    toggleOutline,
     outlineVisible,
     toggleTheme: preferences.toggleTheme,
     toggleFocus,

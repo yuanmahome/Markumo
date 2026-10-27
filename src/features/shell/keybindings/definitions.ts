@@ -415,9 +415,9 @@ const definitions: Omit<KeybindingCommand,'executeId'|'supported'|'contexts'|'us
   {
     id: 'toggle-outline',
     label: '显示/隐藏文档大纲',
-    category: 'markdown',
-    description: '切换当前 Markdown 大纲面板展示',
-    scope: 'markdown-live',
+    category: 'view',
+    description: '切换当前支持文件的文档大纲面板展示',
+    scope: 'global',
     defaultBinding: 'Mod+Shift+O',
   },
   {

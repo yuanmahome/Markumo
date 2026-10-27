@@ -132,6 +132,7 @@ const props = defineProps<{
   root?: { rootPath: string; name: string } | null
   multiRoot?: boolean
   manager?: DocumentManager
+  outlineEnabled?: boolean
 }>()
 
 const navigation = inject(workspaceNavigationKey, undefined)
@@ -153,7 +154,7 @@ const fallbackSegments = computed(() => {
   }))
 })
 
-const structure = useDocumentOutline(() => props.manager, () => props.doc, () => !!props.manager && (!props.doc?.kind || props.doc.kind === 'text'))
+const structure = useDocumentOutline(() => props.manager, () => props.doc, () => !!props.manager && !!props.outlineEnabled)
 const activeSymbol = useOutlineViewport(() => props.manager, () => props.doc?.id, () => structure.value.items)
 const symbolChain = computed(() => {
   const items = structure.value.items, index = items.findIndex(item => item.id === activeSymbol.value)

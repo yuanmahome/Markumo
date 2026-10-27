@@ -247,7 +247,7 @@
               <button type="button" role="menuitem" :disabled="!state || state.composing" title="搜索与替换" @mousedown.prevent @click="openSearch">
                 <MarkdownToolbarIcon name="search" :size="16" /><span>搜索与替换</span>
               </button>
-              <button type="button" role="menuitem" :disabled="!state || state.composing" :title="outlineVisible ? '隐藏大纲' : '显示大纲'" @mousedown.prevent @click="toggleOutlineFromMenu">
+              <button type="button" role="menuitem" :disabled="!outlineSupported || !state || state.composing" :title="!outlineSupported ? '当前文件不支持大纲' : outlineVisible ? '隐藏大纲' : '显示大纲'" @mousedown.prevent @click="toggleOutlineFromMenu">
                 <MarkdownToolbarIcon name="outline" :size="16" /><span>{{ outlineVisible ? '隐藏大纲' : '显示大纲' }}</span>
               </button>
             </div>
@@ -292,7 +292,7 @@
           </Teleport>
         </div>
         <MarkdownModeSwitcher class="md-toolbar-mode" :mode="mode" :disabled="state.composing" @change="changeMode" />
-        <button type="button" class="md-toolbar-btn md-toolbar-outline" data-priority="3" :class="{ active: outlineVisible }" :disabled="state.composing" :aria-label="outlineVisible ? '隐藏大纲' : '显示大纲'" :aria-pressed="outlineVisible" :title="outlineVisible ? '隐藏大纲' : '显示大纲'" @mousedown.prevent @click="toggleOutline">
+        <button type="button" class="md-toolbar-btn md-toolbar-outline" data-priority="3" :class="{ active: outlineVisible }" :disabled="!outlineSupported || state.composing" :aria-label="outlineVisible ? '隐藏大纲' : '显示大纲'" :aria-pressed="outlineVisible" :title="!outlineSupported ? '当前文件不支持大纲' : outlineVisible ? '隐藏大纲' : '显示大纲'" @mousedown.prevent @click="toggleOutline">
           <MarkdownToolbarIcon name="outline" :size="18" />
         </button>
         <button type="button" class="md-toolbar-btn md-toolbar-collapse" aria-label="折叠 Markdown 工具栏" title="折叠 Markdown 工具栏" @mousedown.prevent @click="collapseToolbar">
@@ -310,6 +310,7 @@ import type { MarkdownFormat } from '../../editor/markdown/formatCommands'
 import type { MarkdownToolbarCommand } from '../../editor/markdown/wysiwyg/contracts'
 import type { MarkdownMode } from '../../types'
 import { shortcutLabel } from '../../features/shell/editorSettings'
+import { getOutlineCapability } from '../../editor/outline/outlineService'
 import MarkdownModeSwitcher from './MarkdownModeSwitcher.vue'
 import MarkdownToolbarIcon from './MarkdownToolbarIcon.vue'
 
@@ -333,6 +334,7 @@ const moreInsertDisabled = computed(() => formattingDisabled.value || !state.val
 const markdownWidth = ref(props.markdownWidth ?? 860)
 watch(() => props.markdownWidth, value => { if (pendingWidth === null) markdownWidth.value = value ?? 860 })
 const outlineVisible = computed(() => props.outlineVisible === true)
+const outlineSupported = computed(() => { props.revision; return getOutlineCapability(props.manager.activeDocument)!=='unsupported' })
 
 const headingOptions = [
   { value: 0, label: '正文' },
@@ -475,6 +477,7 @@ function openSearch() {
 }
 
 function toggleOutline() {
+  if(!outlineSupported.value)return
   closePopovers()
   if (state.value?.composing) return
   emit('toggle-outline')
