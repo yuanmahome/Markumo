@@ -53,6 +53,14 @@ body.light .markdown-live { --text: #333; --bright: #333; --muted: #777; --line:
   line-height: var(--md-line-height);
 }
 
+.markdown-live .md-prose p.md-blank-line {
+  margin: 0;
+  line-height: var(--md-line-height);
+  min-height: calc(var(--md-font-size) * var(--md-line-height));
+  min-height: 1lh;
+  white-space: pre-wrap;
+}
+
 /* Headings Typography */
 .markdown-live .md-prose h1,
 .markdown-live .md-prose h2,

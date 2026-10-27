@@ -43,6 +43,7 @@ import { createLiveSearchPlugin } from './plugins/LiveSearch'
 import { LiveSearchController } from './LiveSearchController'
 import { createNodeTargetPlugin, nodeTargetKey, type NodeTarget } from './plugins/NodeTarget'
 import { safeMarkdownURL, openMarkdownLink } from '../links'
+import { isBlankParagraphNode } from '../blankLines'
 import { LiveClipboard, type LiveClipboardOperation } from './LiveClipboard'
 import { LiveContextMenu, type LiveMenuEntry, type LiveMenuItem } from './LiveContextMenu'
 import { defaultMarkdownClipboard, type MarkdownClipboardSettings } from './contracts'
@@ -285,6 +286,11 @@ export class MarkdownEditorController implements LiveEditor {
               const pos = $from.before()
               decorations.push(Decoration.node(pos, pos + $from.parent.nodeSize, { class: 'md-heading-focused', 'data-heading-level': `h${$from.parent.attrs.level}` }))
             }
+            state.doc.forEach((node, pos) => {
+              if (isBlankParagraphNode(node)) {
+                decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: 'md-blank-line' }))
+              }
+            })
             return DecorationSet.create(state.doc, decorations)
           } } }),
           new Plugin({

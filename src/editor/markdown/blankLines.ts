@@ -18,6 +18,12 @@ export function blankLineRanges(source: string, from: number, to: number, edge: 
   return ranges
 }
 
+/** Check if a node represents an editable blank paragraph (not a trailing placeholder). */
+export function isBlankParagraphNode(node: { type: { name: string }; content: { content: readonly any[]; size?: number }; attrs?: { editorTrailing?: boolean } }) {
+  if (node.type.name !== 'paragraph' || node.attrs?.editorTrailing) return false
+  return node.content.content.every(child => child.isText && (!child.marks || !child.marks.length) && /^[\t ]*$/.test(child.text || ''))
+}
+
 /** An unclosed fence owns its trailing newlines; they are code content. */
 export function markdownBlockEnd(source:string,from:number,end:number,fence?:string) {
   let to=end

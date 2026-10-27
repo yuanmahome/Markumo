@@ -10,6 +10,7 @@ const smokeScripts = [
   'tests/phase042/slash-table-browser.mjs',
   'tests/phase042/table-image-boundaries.mjs',
   'tests/phase042/blank-line-persistence.mjs',
+  'tests/phase042/blank-line-visual-layout.mjs',
   'tests/outline/visibility.mjs',
   'tests/search/browser.mjs',
   'tests/drag/browser.mjs',

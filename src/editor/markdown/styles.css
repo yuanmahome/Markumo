@@ -240,7 +240,7 @@
 .md-preview-fence-header { display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border:1px solid var(--line);border-bottom:0;background:var(--soft);border-radius:6px 6px 0 0;color:var(--muted);font:12px var(--font-sans) }
 .md-preview-fence-header button { font:inherit;color:var(--sub);background:transparent;cursor:pointer }
 
-.split-preview-content .md-blank-line { min-height:1lh; margin:0; white-space:pre-wrap; }
+:is(.markdown-live .md-prose, .split-preview-content) .md-blank-line { min-height:1lh; margin:0; white-space:pre-wrap; }
 .split-preview-pane { --md-image-border-color:color-mix(in srgb,var(--ink) 35%,var(--editor)); }
 .split-preview-pane[data-image-border="true"] .split-preview-content img { box-sizing:border-box; border:1px solid var(--md-image-border-color,var(--line)); border-radius:4px; }
 .split-preview-pane[data-image-border="false"] .split-preview-content img { border:0; border-radius:0; }

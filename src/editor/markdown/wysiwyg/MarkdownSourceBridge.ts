@@ -2,6 +2,7 @@ import { Fragment, Slice, type Node } from 'prosemirror-model'
 import { parseMarkdown, type SourceBlock } from './MarkdownParser'
 import { patchTable, serializeBlock } from './MarkdownSerializer'
 import { isTrailingParagraph, withoutTrailingParagraph } from './TrailingParagraph'
+import { isBlankParagraphNode } from '../blankLines'
 export interface SourcePatch { from:number;to:number;insert:string;blockId?:string;htmlOrdinal?:number;imageDraft?:{from:number;to:number} }
 export function textPatch(before:string,after:string):SourcePatch|null {
   if(before===after)return null
@@ -77,7 +78,7 @@ export class MarkdownSourceBridge {
       }
       let raw=inlineRaw??(old?.node.eq(node)?old.raw:old&&node.type.name==='table'&&old.node.type===node.type?(patchTable(old.node,node,old.raw)??serializeBlock(node)):serializeBlock(node))
       if(!old?.node.eq(node))raw=raw.replace(/\r?\n/g,old?.raw.match(/\r?\n/)?.[0] || eol)
-      const blank=node.type.name==='paragraph' && node.content.content.every(child=>child.isText&&!child.marks.length&&/^[\t ]*$/.test(child.text!))
+      const blank=isBlankParagraphNode(node)
       if(blank)raw=old?.blank&&old.node.eq(node)?old.raw:node.textContent+eol
       entries.push({node,id,old,raw,blank})
       if(node.type.name==='protected_source' && !old?.node.eq(node) && (node.attrs.kind === 'reference' || old?.node.attrs.kind === 'reference' || /^\s*\[[^\]]+\]:/m.test(raw)))definitionsChanged=true

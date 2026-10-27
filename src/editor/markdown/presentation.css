@@ -41,6 +41,14 @@ body.light :is(.markdown-live, .split-preview-pane) {
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) h5 { font-size: 1em; }
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) h6 { font-size: 1em; color: var(--muted); }
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) p { margin: var(--md-paragraph-spacing) 0; line-height: var(--md-line-height); }
+:is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) p.md-blank-line,
+.split-preview-content .md-blank-line {
+  margin: 0;
+  line-height: var(--md-line-height);
+  min-height: calc(var(--md-font-size) * var(--md-line-height));
+  min-height: 1lh;
+  white-space: pre-wrap;
+}
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) strong { font-weight: 700; color: var(--bright); }
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) em { font-style: italic; }
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) s { text-decoration: line-through; color: var(--muted); }
