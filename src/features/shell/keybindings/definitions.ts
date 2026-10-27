@@ -230,7 +230,7 @@ const definitions: Omit<KeybindingCommand,'executeId'|'supported'|'contexts'|'us
   },
   {
     id: 'workspace-search',
-    label: '工作区全文搜索',
+    label: '在文件中查找',
     category: 'search',
     description: '在整个工作区目录内全局检索文本',
     scope: 'workspace',
@@ -238,10 +238,12 @@ const definitions: Omit<KeybindingCommand,'executeId'|'supported'|'contexts'|'us
   },
 
   {
-    id: 'workspace-replace', label: '工作区替换', category: 'search',
+    id: 'workspace-replace', label: '在文件中替换', category: 'search',
     description: '展开工作区替换输入并预览跨文件修改', scope: 'workspace', defaultBinding: 'Mod+Shift+R',
   },
   // --- 分栏类 (split) ---
+  {id:'directory-search',label:'在此目录中查找',category:'search',description:'在已授权工作区的指定目录中搜索',scope:'workspace'},
+  {id:'directory-replace',label:'在此目录中替换',category:'search',description:'在已授权目录中预览替换',scope:'workspace'},
   {
     id: 'split-editor',
     label: '向右拆分分栏',

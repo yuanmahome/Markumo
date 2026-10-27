@@ -42,6 +42,7 @@ pub struct ReplaceFile {
     pub version: String,
     pub buffer: bool,
     pub edits: Vec<ReplaceEdit>,
+    pub document_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -94,7 +95,14 @@ pub fn allowed_path(
     // Validate the supplied spelling before following links. Canonicalization
     // above selects the root, but erases the evidence of a symlink/reparse point.
     let valid = validate_under_root(root, path).map_err(|e| e.to_string())?;
-    if !in_directory(&valid, query) || IgnoreRuleSet::new(root, false).is_ignored(&valid, false) {
+    if query.scope == "opened" {
+        return Err("已打开文件范围禁止直接写入磁盘".into());
+    }
+    if !in_directory(&valid, query)
+        || IgnoreRuleSet::new(root, false).is_ignored(&valid, false)
+        || !super::search::FileFilters::new(query)?
+            .allows(&super::guard::relative_slash_path(root, &valid), false)
+    {
         return Err("文件在搜索范围之外或被忽略".into());
     }
     let ext = valid
@@ -255,10 +263,12 @@ fn preview_single_file(
     // The buffer path arrives from the UI, which uses display paths, while this
     // function holds the canonical path. One shared comparison accepts either
     // spelling so the open document's text is always the authoritative one.
-    let buffer = query
-        .buffers
-        .iter()
-        .find(|b| super::search::same_file(&b.path, &path) || Path::new(&b.path) == Path::new(target_str));
+    let buffer = query.buffers.iter().find(|b| {
+        super::search::same_file(&b.path, &path) || Path::new(&b.path) == Path::new(target_str)
+    });
+    if buffer.is_some_and(|buffer| buffer.read_only) {
+        return Err("打开的文档为只读".into());
+    }
     let (disk, encoding, bom) = codec::decode_with_path(
         &bytes,
         buffer.and_then(|b| b.encoding.as_deref()),
@@ -287,6 +297,7 @@ fn preview_single_file(
         version,
         buffer: buffer.is_some(),
         edits: changes,
+        document_id: buffer.and_then(|b| b.document_id.clone()),
     }))
 }
 
@@ -306,6 +317,66 @@ pub fn preview(
         .max_results
         .unwrap_or(MAX_MATCHES)
         .clamp(1, MAX_MATCHES);
+    super::search::validate_scope(roots, query)?;
+    let filters = super::search::FileFilters::new(query)?;
+    if query.scope == "opened" {
+        let mut files = Vec::new();
+        let mut total = 0;
+        let mut size = 0;
+        let mut limited = false;
+        let mut skipped = Vec::new();
+        for buffer in &query.buffers {
+            if token.load(Ordering::Relaxed) {
+                break;
+            }
+            if !filters.allows(
+                buffer.relative_path.as_deref().unwrap_or(&buffer.path),
+                false,
+            ) || !targets.is_empty() && !targets.contains(&buffer.path)
+            {
+                continue;
+            }
+            if buffer.read_only {
+                skipped.push(format!("{}：只读缓冲区", buffer.path));
+                continue;
+            }
+            if total >= max_results || started.elapsed() > Duration::from_secs(10) {
+                limited = true;
+                break;
+            }
+            let changes = edits(
+                &buffer.text,
+                query,
+                replacement,
+                max_results - total,
+                &token,
+            )?;
+            total += changes.len();
+            size += changes
+                .iter()
+                .map(|c| c.before.len() + c.insert.len() + c.context.len())
+                .sum::<usize>();
+            if size > MAX_PREVIEW {
+                limited = true;
+                break;
+            }
+            if !changes.is_empty() {
+                files.push(ReplaceFile {
+                    path: buffer.path.clone(),
+                    version: crate::files::version_of(buffer.text.as_bytes(), None),
+                    buffer: true,
+                    edits: changes,
+                    document_id: buffer.document_id.clone(),
+                });
+            }
+        }
+        return Ok(ReplacePreview {
+            files,
+            skipped,
+            limited: limited || total >= max_results,
+            canceled: token.load(Ordering::Relaxed),
+        });
+    }
 
     if !targets.is_empty() {
         let mut files = Vec::new();
@@ -332,7 +403,21 @@ pub fn preview(
                 limited = true;
                 break;
             }
-            let file = preview_single_file(roots, target, query, replacement, remaining, &token, &mut size)?;
+            let file = match preview_single_file(
+                roots,
+                target,
+                query,
+                replacement,
+                remaining,
+                &token,
+                &mut size,
+            ) {
+                Ok(file) => file,
+                Err(error) => {
+                    skipped.push(format!("{target}：{error}"));
+                    continue;
+                }
+            };
             if let Some(file) = file {
                 if file.edits.len() >= remaining {
                     limited = true;
@@ -351,10 +436,11 @@ pub fn preview(
     }
 
     let mut hits = Vec::new();
-    WorkspaceSearcher::execute_search_roots(roots, query, token.clone(), |batch| {
-        hits.extend(batch)
-    })?;
-    let mut limited = hits.len() >= max_results;
+    let searched =
+        WorkspaceSearcher::execute_search_detailed(roots, query, token.clone(), |batch| {
+            hits.extend(batch)
+        })?;
+    let mut limited = searched.limited;
     let mut seen = HashSet::new();
     let mut hit_counts = HashMap::new();
     for hit in &hits {
@@ -362,6 +448,15 @@ pub fn preview(
     }
     let mut files = Vec::new();
     let mut skipped = Vec::new();
+    if searched.skipped > 0 {
+        skipped.push(format!(
+            "搜索阶段跳过 {} 个不可读取、二进制或超预算条目",
+            searched.skipped
+        ));
+    }
+    if let Some(reason) = searched.reason {
+        skipped.push(reason);
+    }
     let mut size = 0;
     for hit in hits {
         if token.load(Ordering::Relaxed) {
@@ -382,7 +477,15 @@ pub fn preview(
         let remaining = max_results
             .saturating_sub(count)
             .min(hit_counts.get(&hit.path).copied().unwrap_or(0));
-        match preview_single_file(roots, &hit.path, query, replacement, remaining, &token, &mut size) {
+        match preview_single_file(
+            roots,
+            &hit.path,
+            query,
+            replacement,
+            remaining,
+            &token,
+            &mut size,
+        ) {
             Ok(Some(file)) => files.push(file),
             Ok(None) => {}
             Err(error) => skipped.push(format!("{}：{error}", hit.path)),

@@ -83,6 +83,7 @@
         @move-node="$emit('move-node', $event)"
         @copy-path="$emit('copy-path', $event)"
         @reveal-node="$emit('reveal-node', $event)"
+        @search-directory="$emit('search-directory',$event)"
       />
     </div>
     <ContextMenu ref="contextMenu" />
@@ -127,6 +128,7 @@ const emit = defineEmits<{
   (e: 'move-node', node: WorkspaceNode): void
   (e: 'copy-path', path: string): void
   (e: 'reveal-node', path: string): void
+  (e:'search-directory',request:{path:string;replace:boolean}):void
 }>()
 
 const isCompact = computed(() => !!(props.compactChain && props.compactChain.length > 1))
@@ -305,13 +307,15 @@ function openMenu(event: MouseEvent | KeyboardEvent) {
 function openMenuForNode(event: MouseEvent | KeyboardEvent, target: WorkspaceNode) {
   const registry = new CommandRegistry([
     { id:'node-new-file',title:'新建文件…',enabled:target.isDirectory,run:()=>emit('create-file',target.path) },
+    {id:'node-search',title:'在此目录中查找…',enabled:target.isDirectory,run:()=>emit('search-directory',{path:target.path,replace:false})},
+    {id:'node-replace',title:'在此目录中替换…',enabled:target.isDirectory,run:()=>emit('search-directory',{path:target.path,replace:true})},
     { id:'node-rename',title:'重命名…',enabled:true,run:()=>emit('rename-node',target) },
     { id:'node-move',title:'移动到…',enabled:true,run:()=>emit('move-node',target) },
     { id:'node-delete',title:'删除…',enabled:true,run:()=>emit('delete-node',target) },
     { id:'node-copy-path',title:'复制文件路径',enabled:true,run:()=>emit('copy-path',target.path) },
     { id:'node-reveal',title:'在文件管理器中显示',enabled:!!props.desktop,run:()=>emit('reveal-node',target.path) },
   ])
-  contextMenu.value?.open(event,[...(target.isDirectory ? [cmd('node-new-file'),separator('node-create-section')] : []),cmd('node-rename'),cmd('node-move'),cmd('node-delete'),separator('node-path-section'),cmd('node-copy-path'),cmd('node-reveal')],registry,'文件与目录操作')
+  contextMenu.value?.open(event,[...(target.isDirectory ? [cmd('node-new-file'),cmd('node-search'),cmd('node-replace'),separator('node-create-section')] : []),cmd('node-rename'),cmd('node-move'),cmd('node-delete'),separator('node-path-section'),cmd('node-copy-path'),cmd('node-reveal')],registry,'文件与目录操作')
 }
 </script>
 

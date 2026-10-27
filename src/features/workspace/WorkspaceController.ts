@@ -1,4 +1,5 @@
 import { markRaw } from 'vue'
+import { bufferPreview, defaultSearchWindow, globPatterns, searchMatchId, type GlobalSearchStatus } from './searchModel'
 import type { DocumentManager } from '../../editor/core/DocumentManager'
 import type { FileController } from '../files/FileController'
 import { displayPathKey, readablePath } from '../shell/pathDisplay'
@@ -8,6 +9,7 @@ import type {
   SearchMatch,
   SearchQuery,
   ReplaceFile,
+  SearchSourcePreview,
   WorkspaceGateway,
   WorkspaceInfo,
   WorkspaceNode,
@@ -73,6 +75,33 @@ export class WorkspaceController {
   searching = false
   searchTotal = 0
   searchResults: FileSearchGroup[] = []
+  searchDialogOpen=false
+  searchRestoreFocus=true
+  searchScope:'workspace'|'directory'|'opened'='workspace'
+  searchStatus:GlobalSearchStatus='idle'
+  searchMessage=''
+  searchLimited=false
+  searchSkipped=0
+  searchInclude=''
+  searchExclude=''
+  searchIncludeIgnored=false
+  searchSort:'path'|'name'|'count'='path'
+  searchHistory:string[]=[]
+  replacementHistory:string[]=[]
+  searchWindow=defaultSearchWindow()
+  selectedMatchId=''
+  selectedMatches=new Set<string>()
+  searchPreview:SearchSourcePreview|null=null
+  searchPreviewError=''
+  searchPreviewLoading=false
+  searchComposing=false
+  private previewEpoch=0
+  private searchTimer:ReturnType<typeof setTimeout>|undefined
+  private batchTimer:ReturnType<typeof setTimeout>|undefined
+  private pendingBatch:SearchMatch[]=[]
+  private searchDirty=false
+  private searchSnapshots=new Map<string,{id:string;text:NonNullable<ReturnType<DocumentManager['getState']>>['doc']}>()
+  private stopSearchDocuments:(()=>void)|undefined
   isCaseSensitive = false
   isWholeWord = false
   isRegex = false
@@ -81,6 +110,7 @@ export class WorkspaceController {
   replacementText = ''
   replaceFiles: (ReplaceFile & { selected: Set<number>; expanded: boolean; status: string })[] = []
   replaceMessage = ''
+  replacementReport:string[]=[]
   replaceBusy = false
   replaceApplying = false
   replaceProgress = 0
@@ -91,7 +121,8 @@ export class WorkspaceController {
   private replaceSearchId = ''
   private replaceQuery: SearchQuery | null = null
   private previewReplacement = ''
-  private replaceSnapshots = new Map<string, { id: string; token: string | undefined; text: NonNullable<ReturnType<DocumentManager['getState']>>['doc'] }>()
+  private replaceSkipped:string[]=[]
+  private replaceSnapshots = new Map<string, { id: string; token: string | undefined; version:string|null; text: NonNullable<ReturnType<DocumentManager['getState']>>['doc'] }>()
 
   private listeners = new Set<() => void>()
   private searchBatchUnsub: (() => void) | null = null
@@ -104,6 +135,7 @@ export class WorkspaceController {
     private readonly notify: (msg: string) => void,
     autoConnect = true,
   ) {
+    this.loadSearchMetadata()
     if (autoConnect) this.connect()
   }
 
@@ -111,6 +143,13 @@ export class WorkspaceController {
     if (this.searchBatchUnsub || this.disposed) return
     this.searchBatchUnsub = this.gateway.onSearchBatch(batch => this.onSearchBatch(batch))
     this.searchDoneUnsub = this.gateway.onSearchDone(payload => this.onSearchDone(payload))
+    this.stopSearchDocuments=this.documentManager.subscribe(()=>{
+      if(!this.searchQuery||this.replaceApplying)return
+      const documents=this.textSearchDocuments()
+      const ids=new Set(documents.map(doc=>doc.id))
+      const changed=documents.some(doc=>{const before=this.searchSnapshots.get(doc.id);return before?this.documentManager.getState(doc.id)?.doc!==before.text:doc.dirty||this.searchScope==='opened'}) || [...this.searchSnapshots.keys()].some(id=>!ids.has(id))
+      if(changed){this.searchDirty=true;if(this.searchDialogOpen)this.scheduleSearch();else this.searchSnapshots=new Map(documents.map(doc=>[doc.id,{id:doc.id,text:markRaw(this.documentManager.getState(doc.id)!.doc)}]))}
+    })
     void this.loadRecents()
   }
 
@@ -183,7 +222,7 @@ export class WorkspaceController {
     this.openRevision++
     if (!this.roots.some(root => root.rootPath === info.rootPath)) this.roots.push(info)
     if (info.warning) this.notify(info.warning)
-    this.cancelSearch(); this.searchResults = []; this.searchTotal = 0; this.searchQuery = ''
+    this.resetSearchContext()
     this.quickGeneration++; this.quickFiles = []; this.invalidateFileIndex(); void this.loadRecents(); this.emit()
   }
 
@@ -199,7 +238,7 @@ export class WorkspaceController {
       this.roots = this.roots.filter(root => root.rootPath !== path)
       const first = this.roots[0]
       this.rootPath = first?.rootPath || null; this.rootName = first?.name || ''; this.entries = first?.entries || []
-      this.cancelSearch(); this.searchResults = []; this.searchTotal = 0; this.searchQuery = ''
+      this.resetSearchContext()
       this.quickGeneration++; this.quickFiles = []; this.invalidateFileIndex(); this.emit()
     } catch (error) { this.notify(`移除工作区文件夹失败：${error}`) }
     finally { this.operationBusy = false; this.fileController.workspaceBusy = false }
@@ -246,9 +285,7 @@ export class WorkspaceController {
     this.entries = info.entries
     this.roots = [info]
     if (info.warning) this.notify(info.warning)
-    this.searchResults = []
-    this.searchTotal = 0
-    this.searchQuery = ''
+    this.resetSearchContext()
     void this.loadRecents()
     this.emit()
   }
@@ -785,7 +822,7 @@ export class WorkspaceController {
     }
     visit(this.roots.find(item => item.rootPath === root)?.entries || this.entries)
     this.cancelSearch()
-    this.searchResults = []; this.searchTotal = 0; this.searchQuery = ''
+    this.resetSearchContext()
     this.quickGeneration++; this.quickFiles = []
     this.invalidateFileIndex()
   }
@@ -824,7 +861,7 @@ export class WorkspaceController {
       if (this.selectedTreePath && this.isWithin(this.selectedTreePath, node.path)) this.selectedTreePath = null
       for (const root of this.roots) this.removeNodeFromTree(root.entries, node.path)
       this.cancelSearch()
-      this.searchResults = []; this.searchTotal = 0; this.searchQuery = ''
+      this.resetSearchContext()
       this.quickGeneration++; this.quickFiles = []
       this.invalidateFileIndex()
       this.emit()
@@ -870,11 +907,125 @@ export class WorkspaceController {
 
   // --- 全文搜索管理 ---
 
-  focusWorkspaceSearch(replace = false) {
-    if (replace) this.replaceExpanded = true
-    this.searchFocusReplace = replace
-    this.searchFocusRevision++
+  textSearchDocuments(){return this.documentManager.openedDocuments.filter(doc=>(!doc.kind||doc.kind==='text')&&doc.encoding!=='Hex'&&this.documentManager.getState(doc.id))}
+  searchRelativePath(path:string,name:string){
+    const root=this.roots.find(root=>this.isWithin(path,root.rootPath))
+    if(root){
+      const label=this.roots.some(other=>other!==root&&other.name===root.name)?readablePath(root.rootPath):root.name
+      return (this.roots.length>1?label+'/':'')+readablePath(path).replace(/\\/g,'/').slice(readablePath(root.rootPath).replace(/\\/g,'/').replace(/\/$/,'').length+1)
+    }
+    return path?readablePath(path).split(/[\\/]/).slice(-2).join('/'):name
+  }
+  searchDirectoryContext(){
+    const path=this.selectedTreePath||this.documentManager.activeDocument?.path
+    if(path){
+      const root=this.roots.find(root=>displayPathKey(root.rootPath)===displayPathKey(path));if(root)return root.rootPath
+      const node=this.roots.map(root=>this.findNodeByPath(root.entries,path)).find(Boolean)
+      if(node?.isDirectory)return node.path
+      if(this.rootForPath(path))return path.replace(/[\\/][^\\/]+$/,'')
+    }
+    return this.rootPath||undefined
+  }
+  private loadSearchMetadata(){
+    try{
+      const saved=JSON.parse(localStorage.getItem('markumo.globalSearch.v1')||'null')
+      if(!saved)return
+      const history=(values:unknown)=>Array.isArray(values)?values.filter((value):value is string=>typeof value==='string'&&value.length<=4096).slice(0,20):[]
+      this.searchHistory=history(saved.queries);this.replacementHistory=history(saved.replacements)
+      if(saved.window&&typeof saved.window==='object'){
+        for(const key of ['x','y','width','height','split'] as const){const value=saved.window[key];if(typeof value==='number'&&Number.isFinite(value))this.searchWindow[key]=value}
+        this.searchWindow.pinned=saved.window.pinned===true
+      }
+    }catch(error){this.searchMessage='搜索历史设置读取失败：'+String(error)}
+  }
+  persistSearchMetadata(){
+    try{localStorage.setItem('markumo.globalSearch.v1',JSON.stringify({queries:this.searchHistory,replacements:this.replacementHistory,window:this.searchWindow}))}
+    catch(error){this.searchMessage='搜索历史设置保存失败：'+String(error);this.emit()}
+  }
+  clearSearchHistory(replacements=false){if(replacements)this.replacementHistory=[];else this.searchHistory=[];this.persistSearchMetadata();this.emit()}
+  private rememberSearch(replacement=false){
+    const value=replacement?this.replacementText:this.searchQuery
+    if(!value||value.length>4096)return
+    const history=replacement?this.replacementHistory:this.searchHistory
+    const next=[value,...history.filter(item=>item!==value)].slice(0,20)
+    if(replacement)this.replacementHistory=next;else this.searchHistory=next
+    this.persistSearchMetadata()
+  }
+  focusWorkspaceSearch(replace=false,directory?:string){
+    this.replaceExpanded=replace;this.searchFocusReplace=replace
+    const changed=directory!==undefined&&(this.searchDirectory!==directory||this.searchScope!=='directory')
+    if(directory!==undefined){this.searchScope='directory';this.searchDirectory=directory}
+    else if(!this.roots.length)this.searchScope='opened'
+    this.searchDialogOpen=true;this.searchFocusRevision++
+    if((changed||this.searchDirty)&&this.searchQuery)this.scheduleSearch()
     this.emit()
+  }
+  closeSearchDialog(restoreFocus=true){
+    this.searchRestoreFocus=restoreFocus
+    this.searchDialogOpen=false;clearTimeout(this.searchTimer)
+    if(this.searching)this.cancelSearch()
+    if(!this.replaceApplying)this.invalidateReplace()
+    this.clearSearchPreview();this.persistSearchMetadata()
+    void this.gateway.clearSearchPreview?.().catch(error=>{this.searchMessage='释放预览缓存失败：'+String(error);this.emit()})
+    this.emit()
+  }
+  clearSearchPreview(){++this.previewEpoch;this.searchPreview=null;this.searchPreviewError='';this.searchPreviewLoading=false;this.selectedMatchId=''}
+  private resetSearchContext(){
+    clearTimeout(this.searchTimer);this.cancelSearch(false);this.invalidateReplace();this.clearSearchPreview()
+    this.searchResults=[];this.searchTotal=0;this.selectedMatches=new Set();this.searchStatus='idle';this.searchMessage='';this.searchLimited=false;this.searchSkipped=0;this.searchDirty=true
+    if(!this.roots.length)this.searchScope='opened'
+    if(this.searchDialogOpen&&this.searchQuery)this.scheduleSearch()
+  }
+  scheduleSearch(delay=250){
+    if(this.replaceApplying)return
+    clearTimeout(this.searchTimer);this.cancelSearch(false);this.invalidateReplace();this.clearSearchPreview()
+    this.searchResults=[];this.searchTotal=0;this.selectedMatches=new Set();this.searchStatus='idle';this.searchMessage='';this.searchDirty=true
+    this.searchTimer=setTimeout(()=>{
+      if(this.searchComposing)return
+      if(this.documentManager.isComposing){this.scheduleSearch();return}
+      void this.search(this.searchQuery)
+    },delay);this.emit()
+  }
+  setSearchComposition(active:boolean){this.searchComposing=active;if(active)clearTimeout(this.searchTimer)}
+  async chooseSearchDirectory(){
+    if(!this.gateway.chooseSearchDirectory){this.searchMessage='当前环境不支持目录选择';this.emit();return}
+    try{const directory=await this.gateway.chooseSearchDirectory();if(directory&&this.searchDialogOpen){this.searchDirectory=directory;this.searchScope='directory';this.scheduleSearch()}}
+    catch(error){this.searchMessage='目录选择失败：'+String(error);this.emit()}
+  }
+  setSearchExpanded(expanded:boolean){for(const group of this.searchResults)group.isExpanded=expanded;this.emit()}
+  toggleSearchSelection(match:SearchMatch){const id=searchMatchId(match);if(this.selectedMatches.has(id))this.selectedMatches.delete(id);else this.selectedMatches.add(id);this.emit()}
+  private searchDocument(match:SearchMatch){return this.textSearchDocuments().find(doc=>doc.id===match.document_id||displayPathKey(doc.path||doc.id)===displayPathKey(match.path))}
+  canRevealSearchMatch(match:SearchMatch){return !!this.rootForPath(match.path)||!!(this.gateway.revealOpenFile&&this.searchDocument(match)?.fileToken)}
+  async revealSearchMatch(match:SearchMatch){
+    try{
+      if(this.rootForPath(match.path))await this.gateway.revealNode?.(match.path)
+      else{const token=this.searchDocument(match)?.fileToken;if(!token||!this.gateway.revealOpenFile)throw Error('此结果没有可用的文件授权');await this.gateway.revealOpenFile(token)}
+    }catch(error){this.searchPreviewError='无法在文件管理器中显示：'+String(error);this.emit()}
+  }
+  async selectSearchMatch(match:SearchMatch){
+    if(!this.searchResults.some(group=>group.matches.some(item=>searchMatchId(item)===searchMatchId(match))))return
+    const id=searchMatchId(match),epoch=++this.previewEpoch
+    this.selectedMatchId=id;this.searchPreview=null;this.searchPreviewError='';this.searchPreviewLoading=true;this.emit()
+    try{
+      const doc=this.textSearchDocuments().find(doc=>doc.id===match.document_id||displayPathKey(doc.path)===displayPathKey(match.path))
+      let preview:SearchSourcePreview
+      if(doc){
+        const state=this.documentManager.getState(doc.id)!,snapshot=this.searchSnapshots.get(doc.id)
+        if(!snapshot||snapshot.text!==state.doc)throw Error('当前缓冲区与搜索时不一致，请重新搜索')
+        const matches=this.searchResults.find(group=>group.path===match.path)?.matches||[match]
+        preview=bufferPreview(state.doc,match,matches)
+      }else{
+        if(!this.gateway.previewSearch||!match.version)throw Error('当前环境无法提供有界文件预览，请重新搜索')
+        preview=await this.gateway.previewSearch({path:match.path,version:match.version,line:match.line_number,column:match.column_number,length:match.match_length,query:{...this.makeSearchQuery(this.searchId),buffers:[]}})
+      }
+      if(epoch!==this.previewEpoch||this.disposed||!this.searchDialogOpen)return
+      this.searchPreview=preview
+    }catch(error){if(epoch===this.previewEpoch)this.searchPreviewError=String(error)}
+    finally{if(epoch===this.previewEpoch){this.searchPreviewLoading=false;this.emit()}}
+  }
+  async previewSelectedMatches(){
+    const matches=this.searchResults.flatMap(group=>group.matches).filter(match=>this.selectedMatches.has(searchMatchId(match)))
+    if(matches.length)await this.previewReplace(undefined,undefined,matches)
   }
 
   invalidateReplace() {
@@ -882,6 +1033,7 @@ export class WorkspaceController {
     if (this.replaceSearchId) void this.gateway.cancelSearch(this.replaceSearchId).catch(() => {})
     this.replaceSearchId = ''
     this.replaceFiles = []
+    this.replaceSkipped=[]
     this.replaceMessage = ''
     this.replaceSnapshots.clear()
     this.replaceQuery = null
@@ -893,32 +1045,36 @@ export class WorkspaceController {
     return {
       search_id: id, query: text, is_case_sensitive: this.isCaseSensitive,
       is_whole_word: this.isWholeWord, is_regex: this.isRegex, max_results: 1000,
-      include_ignored: this.showIgnored, directory: this.searchDirectory || null,
-      buffers: this.documentManager.openedDocuments.filter(doc => doc.fileToken && !doc.readOnly && doc.encoding !== 'Hex' && (!doc.kind || doc.kind === 'text') && this.roots.some(root => this.isWithin(doc.path, root.rootPath)))
-        .filter(doc => !this.searchDirectory || this.isWithin(doc.path, this.searchDirectory))
-        .map(doc => ({ path: doc.path, text: this.documentManager.getText(doc.id) ?? '', encoding: doc.encoding })),
+      scope:this.searchScope,include_globs:globPatterns(this.searchInclude),exclude_globs:globPatterns(this.searchExclude),
+      include_ignored: this.searchIncludeIgnored, directory: this.searchScope==='directory'?this.searchDirectory || null:null,
+      buffers: this.textSearchDocuments().filter(doc => this.searchScope==='opened'||this.roots.some(root => this.isWithin(doc.path, root.rootPath)))
+        .filter(doc => this.searchScope!=='directory'||!this.searchDirectory || this.isWithin(doc.path, this.searchDirectory))
+        .map(doc => ({ path: doc.path||doc.id, document_id:doc.id,relative_path:this.searchRelativePath(doc.path,doc.name),read_only:doc.readOnly,text: this.documentManager.getText(doc.id) ?? '', encoding: doc.encoding })),
     }
   }
 
-  async previewReplace(path?: string, match?: SearchMatch) {
+  async previewReplace(path?: string, match?: SearchMatch, selection?:SearchMatch[]) {
     if (this.replaceApplying || !this.searchQuery || this.searching || this.documentManager.isComposing) return
     if (!this.gateway.previewReplace) { this.notify('当前环境不支持工作区替换预览。'); return }
+    if(!path&&!selection&&this.searchStatus!=='complete'&&this.searchStatus!=='empty'){this.replaceMessage='搜索结果不完整；请缩小范围，或明确选择文件/匹配后核对替换预览';this.emit();return}
     this.invalidateReplace()
+    this.rememberSearch(true)
     const epoch = this.replaceEpoch
     const query = this.makeSearchQuery(`replace-${Date.now()}-${++this.searchSequence}`)
     const replacement = this.replacementText
-    const snapshots = new Map<string, { id: string; token: string | undefined; text: NonNullable<ReturnType<DocumentManager['getState']>>['doc'] }>()
+    const snapshots:typeof this.replaceSnapshots = new Map()
     for (const doc of this.documentManager.openedDocuments) {
       const state = this.documentManager.getState(doc.id)
-      if (state) snapshots.set(displayPathKey(doc.path), { id: doc.id, token: doc.fileToken, text: markRaw(state.doc) })
+      if (state) snapshots.set(displayPathKey(doc.path||doc.id), { id: doc.id, token: doc.fileToken,version:doc.lastDiskVersion, text: markRaw(state.doc) })
     }
     this.replaceBusy = true; this.replaceSearchId = query.search_id; this.replaceMessage = '正在生成替换预览…'; this.emit()
     try {
-      const preview = await this.gateway.previewReplace(query, replacement, path ? [path] : [])
+      const preview = await this.gateway.previewReplace(query, replacement, path ? [path] : selection?[...new Set(selection.map(item=>item.path))]:[])
       if (epoch !== this.replaceEpoch || this.disposed) return
       this.replaceQuery = query; this.previewReplacement = replacement; this.replaceSnapshots = snapshots
+      this.replaceSkipped=preview.skipped.map(reason=>'跳过：'+reason)
       this.replaceFiles = preview.canceled ? [] : preview.files.map(file => ({ ...file, expanded: true, status: '',
-        selected: new Set(file.edits.flatMap((edit, index) => !match || (edit.line === match.line_number && edit.column === match.column_number) ? [index] : [])),
+        selected: new Set(file.edits.flatMap((edit, index) => selection?selection.some(item=>item.path===file.path&&item.line_number===edit.line&&item.column_number===edit.column)?[index]:[]:!match || (edit.line === match.line_number && edit.column === match.column_number) ? [index] : [])),
       }))
       const total = this.replaceFiles.reduce((sum, file) => sum + file.edits.length, 0)
       this.replaceMessage = `${this.replaceFiles.length} 个文件，${total} 处匹配${preview.limited ? '；达到预览预算（最多 1000 处/32 MiB/10 秒），仅预览当前有界结果，请缩小范围' : ''}${preview.canceled ? '；已取消' : ''}${preview.skipped.length ? `；跳过 ${preview.skipped.length} 项：${preview.skipped.join('；')}` : ''}`
@@ -947,7 +1103,7 @@ export class WorkspaceController {
     if (!query || this.replaceBusy || !this.gateway.applyReplace || this.operationBusy || this.fileController.activeOperationCount || this.documentManager.isComposing) return
     // Inputs must still describe exactly the preview presented to the user.
     const current = this.makeSearchQuery(query.search_id)
-    if (this.previewReplacement !== this.replacementText || ['query','directory','is_regex','is_whole_word','is_case_sensitive','include_ignored'].some(key => current[key as keyof SearchQuery] !== query[key as keyof SearchQuery])) {
+    if (this.previewReplacement !== this.replacementText || ['query','scope','directory','is_regex','is_whole_word','is_case_sensitive','include_ignored','include_globs','exclude_globs'].some(key => JSON.stringify(current[key as keyof SearchQuery]) !== JSON.stringify(query[key as keyof SearchQuery]))) {
       this.invalidateReplace(); this.replaceMessage = '搜索或替换条件已变化，请重新预览'; return
     }
     const files = this.replaceFiles.filter(file => file.selected.size && !file.status)
@@ -961,16 +1117,22 @@ export class WorkspaceController {
         if (this.replaceCancel || this.disposed) { file.status = '已取消（未执行）'; canceled++; continue }
         const selected = [...file.selected].sort((a,b) => a-b)
         try {
-          const doc = this.documentManager.openedDocuments.find(doc => displayPathKey(doc.path) === displayPathKey(file.path))
+          const doc = this.documentManager.openedDocuments.find(doc => doc.id===file.document_id||displayPathKey(doc.path||doc.id) === displayPathKey(file.path))
           if (file.buffer) {
             const snapshot = this.replaceSnapshots.get(displayPathKey(file.path))
             if (!snapshot || doc?.id !== snapshot.id || doc.fileToken !== snapshot.token || this.fileController.external.blocked(doc.id) || this.fileController.saving.has(doc.id)) throw new Error('打开文档的身份或状态已变化，请重新预览')
             // Revalidate current workspace authorization/ignore rules and disk version.
-            if (!this.gateway.validateReplace) throw new Error('缺少替换授权校验')
-            await this.gateway.validateReplace(file.path, file.version, query)
+            if(doc.fileToken&&snapshot.version){
+              if(!this.fileController.gateway.checkExternal)throw Error('缺少打开文件版本校验')
+              if(await this.fileController.gateway.checkExternal(doc.fileToken)!==snapshot.version)throw Error('磁盘文件发生外部变化，请先处理冲突再重新预览')
+            }
+            if(query.scope!=='opened'){
+              if (!this.gateway.validateReplace) throw new Error('缺少替换授权校验')
+              await this.gateway.validateReplace(file.path, file.version, query)
+            }
             if (this.replaceCancel || this.disposed) { file.status = '已取消（未执行）'; canceled++; continue }
             const current = this.documentManager.metadata(doc.id)
-            if (!current || current.fileToken !== snapshot.token || displayPathKey(current.path) !== displayPathKey(file.path)) throw new Error('验证期间文档身份已变化，请重新预览')
+            if (!current || current.fileToken !== snapshot.token || displayPathKey(current.path||current.id) !== displayPathKey(file.path)) throw new Error('验证期间文档身份已变化，请重新预览')
             if (!this.documentManager.applyWorkspaceReplacement(doc.id, snapshot.text, selected.map(index => file.edits[index]))) throw new Error('编辑缓冲区已变化或正在输入，请重新预览')
             file.status = `已修改缓冲区 ${selected.length} 处（可撤销，待保存）`
           } else {
@@ -984,108 +1146,84 @@ export class WorkspaceController {
         await new Promise<void>(resolve => setTimeout(resolve, 0))
       }
       this.replaceMessage = `完成：成功 ${success} 个文件，失败 ${failure} 个，取消 ${canceled} 个。打开文件待保存；关闭文件已分别保存。`
+      this.replacementReport=[...files.map(file=>`${this.searchRelativePath(file.path,file.path)}：${file.status}`),...this.replaceSkipped]
     } finally {
       this.replaceBusy = false; this.replaceApplying = false; this.operationBusy = false; this.fileController.workspaceBusy = false
       this.replaceQuery = null; this.replaceSnapshots.clear(); this.emit()
+      if(!this.searchDialogOpen)this.replaceFiles=[]
       // Keep the per-file report while refreshing search, including modified buffers.
-      if (!this.disposed) await this.search(this.searchQuery, true)
+      if (!this.disposed&&this.searchDialogOpen) await this.search(this.searchQuery, true)
+      else this.searchDirty=true
     }
   }
 
-  async search(queryText: string, keepReplaceReport = false) {
-    if (this.replaceApplying) return
-    if (!keepReplaceReport) this.invalidateReplace()
-    const q = queryText
-    if (!q) {
-      this.cancelSearch()
-      this.searchResults = []
-      this.searchTotal = 0
-      this.searchQuery = ''
-      this.searching = false
-      this.emit()
-      return
-    }
-
-    if (!this.rootPath) {
-      this.notify('请先打开工作区，再执行工作区搜索。')
-      return
-    }
-
-    // 取消旧搜索
-    this.cancelSearch()
-
-    this.searchId = `search-${Date.now()}-${++this.searchSequence}`
-    const searchId = this.searchId
-    this.searchQuery = q
-    this.searching = true
-    this.searchResults = []
-    this.searchTotal = 0
-    this.emit()
-
-    const query = this.makeSearchQuery(this.searchId, q)
-
-    try {
-      await this.gateway.searchWorkspace(query)
-    } catch (e) {
-      if (this.searchId !== searchId || this.disposed) return
-      this.searching = false
-      this.notify(`搜索失败: ${e}`)
-      this.emit()
-    }
+  async search(queryText:string,keepReplaceReport=false){
+    if(this.replaceApplying)return
+    clearTimeout(this.searchTimer)
+    if(!keepReplaceReport)this.invalidateReplace()
+    this.cancelSearch(false);this.clearSearchPreview();this.searchResults=[];this.searchTotal=0;this.selectedMatches=new Set();this.searchLimited=false;this.searchSkipped=0;this.searchMessage=''
+    this.searchQuery=queryText;this.searchDirty=false
+    if(!queryText){this.searchId='';this.searchStatus='idle';this.emit();return}
+    if(this.searchScope!=='opened'&&!this.roots.length){this.searchStatus='error';this.searchMessage='未打开工作区；请选择已打开文件范围或打开文件夹';this.emit();return}
+    this.searchId='search-'+Date.now()+'-'+(++this.searchSequence);const id=this.searchId
+    this.searchSnapshots=new Map(this.textSearchDocuments().map(doc=>[doc.id,{id:doc.id,text:markRaw(this.documentManager.getState(doc.id)!.doc)}]))
+    this.searching=true;this.searchStatus='searching';this.rememberSearch();this.emit()
+    try{await this.gateway.searchWorkspace(this.makeSearchQuery(id))}
+    catch(error){if(id!==this.searchId||this.disposed||!this.searching)return;this.flushSearchBatch();this.searching=false;this.searchStatus='error';this.searchMessage='搜索失败：'+String(error);this.emit()}
   }
-
-  cancelSearch() {
-    if (this.searchId) {
-      const id = this.searchId
-      this.searchId = ''
-      void this.gateway.cancelSearch(id).catch(() => {})
-      this.searching = false
-      this.emit()
+  cancelSearch(markCanceled=true){
+    clearTimeout(this.searchTimer)
+    if(this.searching&&this.searchId){
+      const id=this.searchId;this.flushSearchBatch();this.searching=false
+      if(markCanceled){this.searchStatus='canceled';this.searchMessage='搜索已取消；当前结果不完整'}
+      void this.gateway.cancelSearch(id).catch(error=>{this.searchMessage='取消请求失败：'+String(error);this.emit()})
     }
+    clearTimeout(this.batchTimer);this.pendingBatch=[];this.emit()
   }
-
-  private onSearchBatch(batch: SearchMatch[]) {
-    if (!batch.length) return
-    if (this.disposed || !this.searching || batch[0].search_id !== this.searchId) return
-
-    this.searchTotal += batch.length
-    for (const item of batch) {
-      let group = this.searchResults.find(g => g.path === item.path)
-      if (!group) {
-        group = {
-          path: item.path,
-          relativePath: item.relative_path,
-          matches: [],
-          isExpanded: true,
-        }
-        this.searchResults.push(group)
-      }
-      group.matches.push(item)
+  private onSearchBatch(batch:SearchMatch[]){
+    if(this.disposed||!this.searching)return
+    this.pendingBatch.push(...batch.filter(match=>match.search_id===this.searchId).slice(0,Math.max(0,1000-this.searchTotal-this.pendingBatch.length)))
+    if(!this.batchTimer)this.batchTimer=setTimeout(()=>{this.batchTimer=undefined;this.flushSearchBatch()},50)
+  }
+  private flushSearchBatch(){
+    clearTimeout(this.batchTimer);this.batchTimer=undefined
+    const incoming=this.pendingBatch;this.pendingBatch=[]
+    if(!incoming.length)return
+    const groups=new Map(this.searchResults.map(group=>[displayPathKey(group.path),group]))
+    for(const item of incoming){
+      if(item.search_id!==this.searchId)continue
+      const key=displayPathKey(item.path);let group=groups.get(key)
+      if(!group){group={path:item.path,relativePath:item.relative_path,matches:[],isExpanded:true};groups.set(key,group);this.searchResults.push(group)}
+      if(!group.matches.some(match=>searchMatchId(match)===searchMatchId(item))){group.matches.push(item);this.searchTotal++}
     }
     this.emit()
   }
-
-  private onSearchDone(payload: SearchDonePayload) {
-    if (payload.search_id === this.searchId) {
-      this.searching = false
-      this.emit()
-    }
+  private onSearchDone(payload:SearchDonePayload){
+    if(payload.search_id!==this.searchId||!this.searching||this.disposed)return
+    this.flushSearchBatch();this.searching=false;this.searchLimited=!!payload.limited||payload.total>=1000;this.searchSkipped=payload.skipped||0
+    this.searchStatus=payload.error?'error':payload.canceled?'canceled':this.searchLimited?'limited':this.searchSkipped?'partial':this.searchTotal?'complete':'empty'
+    this.searchMessage=payload.error||payload.reason||(payload.canceled?'搜索已取消；当前结果不完整':this.searchLimited?'结果达到上限，请缩小范围':this.searchSkipped?'部分文件因大小、二进制、权限或解码限制被跳过':'')
+    this.emit()
   }
-
-  async locateMatch(match: SearchMatch) {
-    try {
-      const node = this.roots.map(root => this.findNodeByPath(root.entries, match.path)).find(Boolean) || {
-        id: match.path, path: match.path, name: match.path.split(/[\\/]/).pop() || '', relativePath: match.relative_path,
-        isDirectory: false, isSymlink: false, isReadOnly: false, size: 0, mtime: null, hasChildren: false,
+  async locateMatch(match:SearchMatch,mode:'preview'|'pinned'|'split'='pinned'){
+    const pane=this.documentManager.activePane
+    try{
+      await this.selectSearchMatch(match)
+      if(this.searchPreviewError||this.selectedMatchId!==searchMatchId(match))return
+      const existing=this.textSearchDocuments().find(doc=>doc.id===match.document_id||displayPathKey(doc.path||doc.id)===displayPathKey(match.path))
+      if(existing){
+        this.documentManager.open(existing.id,mode==='preview',pane)
+        if(mode!=='preview')this.documentManager.pin(existing.id,pane)
+        if(mode==='split')this.documentManager.splitPane('right',pane,existing.id)
+      }else{
+        await this.openWorkspaceFileInPane({path:match.path,paneId:pane,pin:mode!=='preview',zone:mode==='split'?'right':'center'})
       }
-      await this.openFile(node, false)
-      const doc = this.documentManager.activeDocument
-      if (doc && displayPathKey(doc.path) === displayPathKey(match.path) && !this.documentManager.isComposing) {
-        this.documentManager.revealPosition(doc.id, match.line_number, match.column_number)
-      }
-    } catch (e) {
-      this.notify(`定位匹配位置失败: ${e}`)
-    }
+      const document=this.documentManager.activeDocument
+      if(!document||this.documentManager.isComposing)return
+      if(!match.document_id&&match.version&&document.lastDiskVersion!==match.version)throw Error('打开时文件版本已变化，请重新搜索')
+      this.documentManager.revealPosition(document.id,match.line_number,match.column_number)
+      if(!this.searchWindow.pinned)this.closeSearchDialog(false)
+    }catch(error){this.searchPreviewError='打开匹配失败：'+String(error);this.emit()}
   }
 
   // 获取工作区所有已知的文件列表（供 Quick Open 快速打开）
@@ -1182,6 +1320,8 @@ export class WorkspaceController {
   }
 
   destroy() {
+    this.stopSearchDocuments?.();clearTimeout(this.searchTimer);clearTimeout(this.batchTimer);this.clearSearchPreview()
+    void this.gateway.clearSearchPreview?.().catch(error=>{this.searchMessage='释放预览失败：'+String(error)})
     this.cancelReplace()
     this.cancelOpens()
     this.cancelExpand();this.revealSequence++

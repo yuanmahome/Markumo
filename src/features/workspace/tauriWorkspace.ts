@@ -6,6 +6,7 @@ import type {
   SearchMatch,
   SearchQuery,
   ReplacePreview,
+  SearchSourcePreview,
   WorkspaceGateway,
   WorkspaceInfo,
   WorkspaceNode,
@@ -58,16 +59,22 @@ export function mapInfo(raw: RawWorkspaceInfo): WorkspaceInfo {
   }
 }
 
+const pendingSubscriptions=new Set<Promise<unknown>>()
+let searchSubscriptionError=''
 function subscribe<T>(name: string, listener: (payload: T) => void): () => void {
   if (!isTauri()) return () => {}
   let disposed = false, unlistenFn: (() => void) | undefined
-  void getCurrentWindow().listen<T>(name, event => { if (!disposed) listener(event.payload) }).then(unlisten => {
+  const ready=getCurrentWindow().listen<T>(name, event => { if (!disposed) listener(event.payload) }).then(unlisten => {
     if (disposed) unlisten(); else unlistenFn = unlisten
-  }).catch(error => console.error(`工作区事件注册失败: ${String(error)}`))
+  }).catch(error => {searchSubscriptionError=`工作区事件注册失败: ${String(error)}`;console.error(searchSubscriptionError)})
+  pendingSubscriptions.add(ready);void ready.finally(()=>pendingSubscriptions.delete(ready))
   return () => { disposed = true; unlistenFn?.() }
 }
 
 export const tauriWorkspace: WorkspaceGateway = {
+  previewSearch(request) {return invoke<SearchSourcePreview>('preview_workspace_search',{request})},
+  clearSearchPreview() {return invoke<void>('clear_workspace_search_preview')},
+  chooseSearchDirectory() {return invoke<string|null>('choose_workspace_search_directory')},
   previewReplace(query, replacement, targets) { return invoke<ReplacePreview>('preview_workspace_replace', { query, replacement, targets }) },
   applyReplace(request) { return invoke<number>('apply_workspace_replace', { request }) },
   validateReplace(path, version, query) { return invoke<void>('validate_workspace_replace', { path, version, query: { ...query, buffers: [] } }) },
@@ -78,6 +85,7 @@ export const tauriWorkspace: WorkspaceGateway = {
   },
   async removeWorkspaceFolder(path) { await invoke('remove_workspace_folder', { path }) },
   async revealNode(path) { await invoke('reveal_workspace_node',{path}) },
+  async revealOpenFile(token) { await invoke('reveal_in_explorer',{token}) },
   async restoreWorkspaces() { return (await invoke<RawWorkspaceInfo[]>('restore_workspace_folders')).map(mapInfo) },
 
   async openWorkspacePath(path: string, add = false): Promise<WorkspaceInfo> {
@@ -133,6 +141,8 @@ export const tauriWorkspace: WorkspaceGateway = {
   },
 
   async searchWorkspace(query: SearchQuery): Promise<number> {
+    await Promise.all([...pendingSubscriptions])
+    if(searchSubscriptionError)throw Error(searchSubscriptionError)
     return invoke<number>('search_workspace', { query })
   },
 

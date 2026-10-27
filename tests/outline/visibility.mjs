@@ -164,7 +164,7 @@ try {
     assert.equal((await snapshot()).position, 'left')
     await page.evaluate(() => window.__outlineShell.setMode('workspace')); await shown(true)
     assert.equal((await snapshot()).position, 'right')
-    await page.evaluate(() => window.__outlineShell.handleSelectPanel('search')); await settle(); assert.equal((await snapshot()).position, 'right')
+    await page.evaluate(() => {window.__outlineShell.handleSelectPanel('search');window.__outlineShell.workspace.closeSearchDialog(false)}); await settle(); assert.equal((await snapshot()).position, 'right')
     await page.evaluate(() => window.__outlineShell.toggleSidebar()); await settle(); assert.equal((await snapshot()).position, 'left')
     await page.evaluate(() => window.__outlineShell.outlineWidth.value = 330); await settle()
     const before = await snapshot()

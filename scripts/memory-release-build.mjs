@@ -218,6 +218,11 @@ await build({
         if (cleanId.endsWith('/src/main.ts')) {
           return PROBE_BOOTSTRAP + '\n' + code
         }
+        if (label==='global-search' && cleanId.endsWith('/app/useAppShell.ts')) {
+          const anchor='  workspace.connect()'
+          assert(code.includes(anchor),'Workspace search probe anchor missing')
+          return code.replace(anchor,`${anchor}\n  ;(window as any).__nativeWorkspace = workspace;\n  ;(window as any).__nativeSearchShell = { appMode, sidebarVisible, sidebarPanel };`)
+        }
         if (cleanId.endsWith('/editor/core/DocumentManager.ts')) {
           const ctorAnchor = 'constructor(seeds: DocumentSeed[] = [], private readonly languageLoader = loadLanguage) {'
           const extRegex = /extensions:\s*\[\s*coreExtensions,/

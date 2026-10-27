@@ -24,6 +24,10 @@ export interface WorkspaceInfo {
 }
 
 export interface SearchMatch {
+  id?: string
+  document_id?: string | null
+  version?: string
+  snippet_column?: number
   search_id: string
   path: string
   relative_path: string
@@ -34,6 +38,9 @@ export interface SearchMatch {
 }
 
 export interface SearchQuery {
+  scope?: 'workspace' | 'directory' | 'opened'
+  include_globs?: string[]
+  exclude_globs?: string[]
   search_id: string
   query: string
   is_case_sensitive: boolean
@@ -42,7 +49,7 @@ export interface SearchQuery {
   max_results?: number
   include_ignored?: boolean
   directory?: string | null
-  buffers?: { path: string; text: string; encoding?: string }[]
+  buffers?: { path: string; text: string; encoding?: string; document_id?:string;relative_path?:string;read_only?:boolean }[]
 }
 
 export interface ReplaceEdit {
@@ -54,7 +61,7 @@ export interface ReplaceEdit {
   insert: string
   context: string
 }
-export interface ReplaceFile { path: string; version: string; buffer: boolean; edits: ReplaceEdit[] }
+export interface ReplaceFile { path: string; version: string; buffer: boolean; edits: ReplaceEdit[]; document_id?:string|null }
 export interface ReplacePreview { files: ReplaceFile[]; skipped: string[]; limited: boolean; canceled: boolean }
 export interface ReplaceApply { query: SearchQuery; replacement: string; path: string; version: string; selected: number[] }
 
@@ -62,11 +69,21 @@ export interface SearchDonePayload {
   search_id: string
   total: usize
   canceled: boolean
+  limited?: boolean
+  skipped?: number
+  reason?: string | null
+  error?: string | null
 }
+
+export interface SearchPreviewRequest {path:string;version:string;line:number;column:number;length:number;query:SearchQuery}
+export interface SearchSourcePreview {path:string;version:string;text:string;start_line:number;selection_from:number;selection_to:number;hits:{from:number;to:number}[];truncated:boolean}
 
 type usize = number
 
 export interface WorkspaceGateway {
+  previewSearch?(request:SearchPreviewRequest):Promise<SearchSourcePreview>
+  clearSearchPreview?():Promise<void>
+  chooseSearchDirectory?():Promise<string|null>
   previewReplace?(query: SearchQuery, replacement: string, targets: string[]): Promise<ReplacePreview>
   applyReplace?(request: ReplaceApply): Promise<number>
   validateReplace?(path: string, version: string, query: SearchQuery): Promise<void>
@@ -87,6 +104,7 @@ export interface WorkspaceGateway {
   setShowIgnored(show: boolean): Promise<WorkspaceNode[]>
   getRecentWorkspaces(): Promise<string[]>
   revealNode?(path:string):Promise<void>
+  revealOpenFile?(token:string):Promise<void>
   searchWorkspace(query: SearchQuery): Promise<number>
   cancelSearch(searchId: string): Promise<void>
   onSearchBatch(listener: (batch: SearchMatch[]) => void): () => void

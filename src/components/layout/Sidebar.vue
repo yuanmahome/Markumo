@@ -58,6 +58,7 @@
                 @move-node="handleMoveNode"
                 @copy-path="copyPath"
                 @reveal-node="workspace.revealNode($event)"
+                @search-directory="workspace.focusWorkspaceSearch($event.replace,$event.path)"
               />
               </template>
               <div role="presentation" :style="{ height: `${Math.max(0, flatTree.length - treeStart - visibleTree.length) * rowHeight}px` }"></div>
@@ -77,157 +78,7 @@
 
         </div>
 
-        <!-- 2. 全文搜索面板 (Phase 4 真实实现) -->
-        <div v-else-if="activePanel === 'search'" class="search-panel">
-          <div class="search-input-wrapper">
-            <div class="search-box">
-              <input
-                ref="searchInputRef"
-                v-model="searchQueryText"
-                :disabled="workspace.replaceApplying"
-                type="text"
-                placeholder="搜索整个工作区 (回车或输入检索)…"
-                class="search-input"
-                @input="triggerSearchDebounced"
-                @keydown.enter="triggerSearchNow"
-              />
-              <button
-                v-if="searchQueryText"
-                :disabled="workspace.replaceApplying"
-                class="clear-btn"
-                title="清除"
-                @click="clearSearch"
-              >
-                ✕
-              </button>
-            </div>
-
-            <button class="replace-toggle" :disabled="workspace.replaceApplying" :aria-expanded="workspace.replaceExpanded" @click="workspace.replaceExpanded = !workspace.replaceExpanded">
-              {{ workspace.replaceExpanded ? '▾' : '▸' }} 替换 (Ctrl+Shift+R)
-            </button>
-            <div v-if="workspace.replaceExpanded" class="replace-controls">
-              <input ref="replaceInputRef" v-model="workspace.replacementText" :disabled="workspace.replaceApplying" class="search-input" aria-label="替换为" placeholder="替换为（留空则删除）" @input="workspace.invalidateReplace()" />
-              <span v-if="workspace.isRegex" class="tip">捕获组：$1、${name}；$$ 表示 $。按行匹配。</span>
-              <button :disabled="workspace.replaceBusy || workspace.searching || !workspace.searchQuery || searchQueryText !== workspace.searchQuery" @click="workspace.previewReplace()">预览全部替换</button>
-            </div>
-            <input v-model="workspace.searchDirectory" :disabled="workspace.replaceApplying" class="search-input search-directory" aria-label="搜索目录范围" placeholder="搜索目录（绝对路径，留空为全部工作区）" @input="triggerSearchDebounced" @keydown.enter="triggerSearchNow" />
-
-            <!-- 搜索修饰选项 -->
-            <div class="search-options" :class="{ 'replace-locked': workspace.replaceApplying }">
-              <button
-                class="opt-btn"
-                :class="{ on: workspace.isCaseSensitive }"
-                :disabled="workspace.replaceApplying"
-                title="区分大小写"
-                @click="workspace.isCaseSensitive = !workspace.isCaseSensitive; triggerSearchNow()"
-              >
-                Aa
-              </button>
-              <button
-                class="opt-btn"
-                :class="{ on: workspace.isWholeWord }"
-                :disabled="workspace.replaceApplying"
-                title="全词匹配"
-                @click="workspace.isWholeWord = !workspace.isWholeWord; triggerSearchNow()"
-              >
-                \b
-              </button>
-              <button
-                class="opt-btn"
-                :class="{ on: workspace.isRegex }"
-                :disabled="workspace.replaceApplying"
-                title="正则表达式"
-                @click="workspace.isRegex = !workspace.isRegex; triggerSearchNow()"
-              >
-                .*
-              </button>
-
-              <button
-                v-if="workspace.searching"
-                class="cancel-btn"
-                title="取消当前搜索"
-                @click="workspace.cancelSearch()"
-              >
-                取消
-              </button>
-            </div>
-          </div>
-
-          <div v-if="workspace.replaceExpanded && (workspace.replaceMessage || workspace.replaceFiles.length)" class="replace-preview" aria-label="替换预览">
-            <p role="status">{{ workspace.replaceMessage }}</p>
-            <div class="replace-actions">
-              <button :disabled="workspace.replaceBusy" @click="workspace.selectReplacements(true)">全选</button>
-              <button :disabled="workspace.replaceBusy" @click="workspace.selectReplacements(false)">取消全选</button>
-              <button :disabled="workspace.replaceBusy || !workspace.replaceFiles.some(file => file.selected.size && !file.status)" @click="workspace.applyReplacements()">应用已选择的替换</button>
-              <button v-if="workspace.replaceBusy" @click="workspace.cancelReplace()">取消未执行部分</button>
-            </div>
-            <p v-if="workspace.replaceApplying">进度：{{ workspace.replaceProgress }} / {{ workspace.replaceFiles.filter(file => file.selected.size).length }} 文件</p>
-            <p class="tip">打开文件修改缓冲区，可 Undo/Redo，需保存；关闭文件逐个保存，无跨文件全局撤销。</p>
-            <div class="replace-preview-files">
-              <div v-for="file in workspace.replaceFiles" :key="file.path" class="replace-preview-file">
-                <div class="replace-file-header">
-                  <button :aria-expanded="file.expanded" @click="file.expanded = !file.expanded">{{ file.expanded ? '▾' : '▸' }}</button>
-                  <input type="checkbox" :aria-label="`选择文件 ${file.path}`" :disabled="workspace.replaceBusy || !!file.status" :checked="file.selected.size === file.edits.length" :indeterminate="file.selected.size > 0 && file.selected.size < file.edits.length" @change="workspace.selectReplacements(($event.target as HTMLInputElement).checked, file.path)" />
-                  <span :title="readablePath(file.path)">{{ readablePath(file.path).split(/[\\/]/).pop() }} · {{ file.edits.length }} 处</span>
-                </div>
-                <p v-if="file.status" role="status">{{ file.status }}</p>
-                <div v-if="file.expanded">
-                  <label v-for="(edit, index) in file.edits" :key="index" class="replace-match">
-                    <input type="checkbox" :disabled="workspace.replaceBusy || !!file.status" :checked="file.selected.has(index)" :aria-label="`选择 ${edit.line}:${edit.column}`" @change="workspace.toggleReplacement(file, index)" />
-                    <span class="replace-diff"><small>{{ edit.line }}:{{ edit.column }} · {{ edit.context }}</small><del>− {{ edit.before.slice(0, 500) || '∅（零宽）' }}{{ edit.before.length > 500 ? '…（显示前 500 字符）' : '' }}</del><ins>+ {{ edit.insert.slice(0, 500) || '∅（删除）' }}{{ edit.insert.length > 500 ? '…（显示前 500 字符）' : '' }}</ins></span>
-                  </label>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 搜索状态与结果数 -->
-          <div class="search-status-bar">
-            <span class="tip" title="搜索 UTF-8 与带 BOM 的 UTF-16 文本；跳过二进制及大于 10 MiB 的文件，最多 1000 处匹配，遍历限 10 秒/10 万条目。">ⓘ</span>
-            <span v-if="workspace.searching" class="searching-spin">
-              正在检索中…
-            </span>
-            <span v-else-if="workspace.searchQuery">
-              找到 {{ workspace.searchTotal }} 处结果 ({{ workspace.searchResults.length }} 个文件)
-            </span>
-            <span v-else class="tip">
-              {{ workspace.rootPath ? '输入关键词开始工作区全文检索' : '请先打开工作区' }}
-            </span>
-          </div>
-
-          <!-- 搜索结果列表 -->
-          <div class="search-results-list">
-            <div
-              v-for="group in workspace.searchResults"
-              :key="group.path"
-              class="search-file-group"
-            >
-              <div
-                class="group-header"
-                @click="group.isExpanded = !group.isExpanded"
-              >
-                <span class="twisty">{{ group.isExpanded ? '▾' : '▸' }}</span>
-                <FileIcon :name="group.relativePath" />
-                <span class="group-file-name">{{ group.relativePath }}</span>
-                <span class="group-count">{{ group.matches.length }}</span>
-                <button v-if="workspace.replaceExpanded" :disabled="workspace.replaceBusy || workspace.searching || searchQueryText !== workspace.searchQuery" title="预览此文件全部替换" @click.stop="workspace.previewReplace(group.path)">替换</button>
-              </div>
-
-              <div v-if="group.isExpanded" class="group-matches">
-                <div
-                  v-for="(match, mIdx) in group.matches"
-                  :key="`${match.path}-${match.line_number}-${mIdx}`"
-                  class="match-row"
-                  @click="workspace.locateMatch(match)"
-                >
-                  <span class="match-line-num">{{ match.line_number }}</span>
-                  <span class="match-text">{{ match.line_text.trim() }}</span>
-                  <button v-if="workspace.replaceExpanded" :disabled="workspace.replaceBusy || workspace.searching || searchQueryText !== workspace.searchQuery" title="预览替换此匹配" @click.stop="workspace.previewReplace(group.path, match)">替换</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <div v-else-if="activePanel === 'search'" class="search-panel"><button @click="workspace.focusWorkspaceSearch()">打开在文件中查找…</button></div>
 
       </div>
 
@@ -254,7 +105,6 @@
 
 <script setup lang="ts">
 import { ref, computed, onUnmounted, nextTick, watch } from 'vue'
-import FileIcon from '../common/FileIcon.vue'
 import Icon from '../common/Icon.vue'
 import TreeNodeItem from './TreeNodeItem.vue'
 import WorkspaceOperationDialog from '../modals/WorkspaceOperationDialog.vue'
@@ -300,8 +150,6 @@ const emit = defineEmits<{
   (e: 'open-recent', path: string): void
 }>()
 
-const searchInputRef = ref<HTMLInputElement | null>(null)
-const replaceInputRef = ref<HTMLInputElement | null>(null)
 const operationDialog = ref<InstanceType<typeof WorkspaceOperationDialog> | null>(null)
 const contextMenu = ref<InstanceType<typeof ContextMenu> | null>(null)
 async function copyPath(path: string) {
@@ -314,12 +162,14 @@ function rootMenu(event: MouseEvent | KeyboardEvent, root: WorkspaceInfo) {
   const registry = new CommandRegistry([
     {id:'root-new-file',title:'新建文件…',enabled:true,run:()=>handleCreateFile(root.rootPath)},
     {id:'root-new-folder',title:'新建文件夹…',enabled:true,run:()=>handleCreateDir(root.rootPath)},
+    {id:'root-search',title:'在此目录中查找…',enabled:true,run:()=>props.workspace.focusWorkspaceSearch(false,root.rootPath)},
+    {id:'root-replace',title:'在此目录中替换…',enabled:true,run:()=>props.workspace.focusWorkspaceSearch(true,root.rootPath)},
     {id:'root-copy-path',title:'复制文件夹路径',enabled:true,run:()=>copyPath(root.rootPath)},
     {id:'root-reveal',title:'在文件管理器中显示',enabled:props.desktop,run:()=>props.workspace.revealNode(root.rootPath)},
     {id:'root-remove',title:'移除工作区根目录',enabled:true,run:()=>props.workspace.removeFolder(root.rootPath)},
     {id:'root-ignored',title:'显示忽略文件',enabled:props.desktop,run:()=>props.workspace.toggleIgnored()},
   ])
-  contextMenu.value?.open(event,[cmd('root-new-file'),cmd('root-new-folder'),separator('root-path-section'),cmd('root-copy-path'),cmd('root-reveal'),{type:'checkbox',id:'root-ignored',commandId:'root-ignored',checked:props.workspace.showIgnored},separator('root-remove-section'),cmd('root-remove')],registry,'工作区根目录操作')
+  contextMenu.value?.open(event,[cmd('root-new-file'),cmd('root-new-folder'),cmd('root-search'),cmd('root-replace'),separator('root-path-section'),cmd('root-copy-path'),cmd('root-reveal'),{type:'checkbox',id:'root-ignored',commandId:'root-ignored',checked:props.workspace.showIgnored},separator('root-remove-section'),cmd('root-remove')],registry,'工作区根目录操作')
 }
 function newMenu(event:MouseEvent) {
   const parent=(activeFilePath.value&&props.workspace.rootForPath(activeFilePath.value))||props.workspace.rootPath
@@ -430,11 +280,7 @@ watch(() => props.workspace.openRevision, () => {
   collapsedRoots.value = collapsedRoots.value.filter(path => props.workspace.roots.some(root => root.rootPath === path))
   treeScrollTop.value = 0
   if (treeContainer.value) { treeContainer.value.scrollTop = 0; expectedScrollTop = 0 }
-  searchQueryText.value = ''
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
 })
-const searchQueryText = ref(props.workspace.searchQuery)
-let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const panelTitle = computed(() => {
   switch (props.activePanel) {
@@ -596,39 +442,8 @@ async function handleRenameNode(node: WorkspaceNode) {
   if (name?.trim()) void props.workspace.renameNode(node, name.trim())
 }
 
-function triggerSearchDebounced() {
-  if (!props.workspace.replaceApplying) props.workspace.invalidateReplace()
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
-  searchDebounceTimer = setTimeout(() => {
-    void props.workspace.search(searchQueryText.value)
-  }, 250)
-}
-
-function triggerSearchNow() {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
-  void props.workspace.search(searchQueryText.value)
-}
-
-function clearSearch() {
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
-  searchQueryText.value = ''
-  props.workspace.cancelSearch()
-  void props.workspace.search('')
-}
-
-function focusSearchInput() {
-  nextTick(() => {
-    searchInputRef.value?.focus()
-  })
-}
-
-defineExpose({ focusSearchInput, locateCurrentFile })
-watch(() => [props.activePanel, props.workspace.searchFocusRevision], () => {
-  if (props.activePanel === 'search') nextTick(() => {
-    if (props.workspace.searchFocusReplace) replaceInputRef.value?.focus()
-    else searchInputRef.value?.focus()
-  })
-}, { immediate: true })
+function focusSearchInput(){props.workspace.focusWorkspaceSearch()}
+defineExpose({focusSearchInput,locateCurrentFile})
 
 // --- 拖拽调宽 ---
 let resizing = false
@@ -664,7 +479,6 @@ onUnmounted(() => {
   if (resizing) document.body.style.cursor = ''
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
-  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
 })
 </script>
 
@@ -857,174 +671,6 @@ onUnmounted(() => {
 }
 
 /* 搜索面板样式 */
-.search-panel {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-.replace-controls { display: grid; gap: 6px; }
-.replace-toggle { text-align: left; margin: 6px 0; }
-.search-directory { margin-top: 8px; width: 100%; box-sizing: border-box; }
-.replace-preview { flex: 0 1 auto; min-height: 90px; max-height: 55%; overflow: auto; padding: 8px; border-bottom: 1px solid var(--border-color); font-size: 12px; }
-.replace-preview p { margin: 5px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.replace-actions { display: flex; flex-wrap: wrap; gap: 5px; }
-.replace-actions button, .replace-controls button { padding: 4px 6px; border: 1px solid var(--border-color); border-radius: 4px; }
-.replace-file-header { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
-.replace-file-header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.replace-match { display: flex; align-items: flex-start; gap: 4px; padding: 5px 0; }
-.replace-diff { display: grid; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; font-family: monospace; }
-.replace-diff del { color: var(--text-primary); background: rgba(220, 60, 60, .16); text-decoration: none; }
-.replace-diff ins { color: var(--text-primary); background: rgba(40, 180, 80, .16); text-decoration: none; }
-.replace-locked { pointer-events: none; opacity: .5; }
-
-.search-input-wrapper {
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  border-bottom: 1px solid var(--line);
-}
-
-.search-box {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.search-input {
-  width: 100%;
-  background: var(--editor);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 6px 24px 6px 8px;
-  font-size: var(--ui-font-size);
-  color: var(--bright);
-  outline: none;
-}
-
-.search-input:focus {
-  border-color: var(--accent);
-}
-
-.clear-btn {
-  position: absolute;
-  right: 6px;
-  color: var(--muted);
-  font-size: var(--ui-small-font-size);
-  cursor: pointer;
-}
-
-.search-options {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.opt-btn {
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: var(--ui-small-font-size);
-  font-family: var(--font-mono);
-  background: var(--soft);
-  color: var(--muted);
-  border: 1px solid transparent;
-}
-
-.opt-btn.on {
-  background: var(--accentbg);
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.cancel-btn {
-  margin-left: auto;
-  font-size: var(--ui-small-font-size);
-  color: var(--yellow);
-  padding: 2px 6px;
-}
-
-.search-status-bar {
-  padding: 6px 12px;
-  font-size: var(--ui-small-font-size);
-  color: var(--muted);
-}
-
-.search-results-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 0;
-}
-
-.search-file-group {
-  margin-bottom: 6px;
-}
-
-.group-header {
-  height: 24px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 10px;
-  cursor: pointer;
-  background: var(--bar);
-  font-size: var(--ui-small-font-size);
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.group-header:hover {
-  background: var(--hover);
-}
-
-.group-file-name {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.group-count {
-  font-size: var(--ui-small-font-size);
-  background: var(--soft);
-  padding: 1px 5px;
-  border-radius: 10px;
-  color: var(--muted);
-}
-
-.group-matches {
-  display: flex;
-  flex-direction: column;
-}
-
-.match-row {
-  height: 24px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 10px 0 24px;
-  cursor: pointer;
-  font-size: var(--ui-small-font-size);
-  font-family: var(--font-mono);
-  color: var(--muted);
-}
-
-.match-row:hover {
-  background: var(--hover);
-  color: var(--bright);
-}
-
-.match-line-num {
-  color: var(--accent);
-  font-weight: 500;
-  width: 24px;
-  text-align: right;
-  flex: none;
-}
-
-.match-text {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+.search-panel{padding:16px;color:var(--sub)}
+.search-panel button{padding:8px;background:var(--soft);border-radius:4px}
 </style>

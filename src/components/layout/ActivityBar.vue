@@ -12,7 +12,7 @@
     <button
       class="ib"
       :class="{ on: activePanel === 'search' && sidebarVisible }"
-      title="工作区全文搜索 (Ctrl+Shift+F)"
+      :title="`在文件中查找 (${shortcutLabel(searchShortcut || '')})`"
       @click="$emit('select-panel', 'search')"
     >
       <Icon name="search" />
@@ -44,12 +44,14 @@
 <script setup lang="ts">
 import Icon from '../common/Icon.vue'
 import type { SidebarPanel } from '../../types'
+import {shortcutLabel} from '../../features/shell/editorSettings'
 
 defineProps<{
   activePanel: SidebarPanel
   sidebarVisible: boolean
   outlineVisible?: boolean
   outlineSupported?: boolean
+  searchShortcut?: string
 }>()
 
 defineEmits<{

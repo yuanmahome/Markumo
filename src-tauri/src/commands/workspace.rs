@@ -47,6 +47,10 @@ pub struct SearchDonePayload {
     pub search_id: String,
     pub total: usize,
     pub canceled: bool,
+    pub limited: bool,
+    pub skipped: usize,
+    pub reason: Option<String>,
+    pub error: Option<String>,
 }
 
 #[tauri::command]
@@ -398,7 +402,7 @@ pub async fn search_workspace(
     let roots = {
         let svc = store.lock().map_err(|e| e.to_string())?;
         let roots = svc.roots();
-        if roots.is_empty() {
+        if roots.is_empty() && query.scope != "opened" {
             return Err("当前未打开工作区".into());
         }
         roots
@@ -412,7 +416,7 @@ pub async fn search_workspace(
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut total = 0;
-        let result = WorkspaceSearcher::execute_search_roots(
+        let result = WorkspaceSearcher::execute_search_detailed(
             &roots,
             &query,
             cancel_token.clone(),
@@ -424,17 +428,22 @@ pub async fn search_workspace(
 
         let canceled = cancel_token.load(std::sync::atomic::Ordering::Relaxed);
 
+        let summary = result.as_ref().ok();
         let _ = win.emit(
             "workspace-search-done",
             SearchDonePayload {
                 search_id: search_id.clone(),
                 total,
                 canceled,
+                limited: summary.is_some_and(|s| s.limited),
+                skipped: summary.map_or(0, |s| s.skipped),
+                reason: summary.and_then(|s| s.reason.clone()),
+                error: result.as_ref().err().cloned(),
             },
         );
 
         sm.cleanup(&scoped_id, &cancel_token);
-        result
+        result.map(|summary| summary.total)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -492,6 +501,77 @@ pub async fn cancel_workspace_search(
 ) -> Result<(), String> {
     search_manager.cancel(&format!("{}:{}", window.label(), search_id));
     Ok(())
+}
+
+#[tauri::command]
+pub async fn preview_workspace_search(
+    window: Window,
+    request: crate::workspace::preview::PreviewRequest,
+    store: State<'_, WorkspaceStore>,
+    search_manager: State<'_, SearchManager>,
+) -> Result<crate::workspace::preview::SourcePreview, String> {
+    let service = store.for_window(window.label())?;
+    let cache = search_manager.previews.clone();
+    let owner = window.label().to_string();
+    let scoped_id = format!("preview:{owner}");
+    let canceled = search_manager.shared_token(&scoped_id);
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = (|| {
+            let roots = service.lock().map_err(|e| e.to_string())?.roots();
+            let mut cache = cache.lock().map_err(|e| e.to_string())?;
+            if canceled.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err("源码预览请求已取消".into());
+            }
+            let result = cache.read(&owner, &roots, &request);
+            if canceled.load(std::sync::atomic::Ordering::Relaxed) {
+                // Closing/switching while I/O was in flight must not repopulate
+                // the owner's otherwise released decoded-source cache.
+                cache.clear(&owner);
+                return Err("源码预览请求已取消".into());
+            }
+            result
+        })();
+        result
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+pub async fn clear_workspace_search_preview(
+    window: Window,
+    search_manager: State<'_, SearchManager>,
+) -> Result<(), String> {
+    let cache = search_manager.previews.clone();
+    let owner = window.label().to_string();
+    search_manager.cancel(&format!("preview:{owner}"));
+    tauri::async_runtime::spawn_blocking(move || {
+        cache.lock().map_err(|e| e.to_string())?.clear(&owner);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+pub async fn choose_workspace_search_directory(
+    app: AppHandle,
+    window: Window,
+    store: State<'_, WorkspaceStore>,
+) -> Result<Option<String>, String> {
+    let service = store.for_window(window.label())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let picked = app.dialog().file().blocking_pick_folder();
+        let Some(picked) = picked else {
+            return Ok(None);
+        };
+        let path = picked.into_path().map_err(|e| e.to_string())?;
+        let workspace = service.lock().map_err(|e| e.to_string())?;
+        let root = workspace.root_for_path(&path)?;
+        let valid =
+            crate::workspace::guard::validate_under_root(root, &path).map_err(|e| e.to_string())?;
+        Ok(Some(crate::display::display_path(&valid)))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]

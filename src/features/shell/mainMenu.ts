@@ -45,7 +45,7 @@ export function mainMenu(state: MainMenuState): MenuGroup[] {
       ], state.canExport ?? state.markdown),
       sep('close-section'),cmd('close-current','关闭文件'),cmd('quit','退出')]},
     {id:'edit',title:'编辑',items:[cmd('undo'),cmd('redo'),sep('clipboard-section'),cmd('cut'),cmd('copy'),cmd('paste'),cmd('select-all'),
-      sep('search-section'),cmd('find','查找'),cmd('replace','替换'),cmd('goto-line','跳转行…')]},
+      sep('search-section'),cmd('find','查找'),cmd('replace','替换'),cmd('workspace-search','在文件中查找…'),cmd('workspace-replace','在文件中替换…'),cmd('directory-search','在此目录中查找…'),cmd('directory-replace','在此目录中替换…'),cmd('goto-line','跳转行…')]},
     {id:'format',title:'格式',items:[cmd('bold'),cmd('italic'),cmd('strike'),cmd('inline-code'),sep('structure-section'),
       submenu('headings','标题',Array.from({length:6},(_,i) => heading(i+1,`H${i+1} · ${['一级','二级','三级','四级','五级','六级'][i]}标题`)),state.markdown && !state.composing),
       submenu('lists','列表',[menuOnlyFormat('bullet'),menuOnlyFormat('ordered'),menuOnlyFormat('task')],state.markdown && !state.composing),

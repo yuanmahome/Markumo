@@ -771,6 +771,7 @@ export function useAppShell() {
   }
 
   function handleSelectPanel(panel: SidebarPanel) {
+    if(panel==='search'){workspace.focusWorkspaceSearch();return}
     if (panel === 'outline') { toggleOutline(); return }
     if (sidebarPanel.value === panel && sidebarVisible.value) sidebarVisible.value = false
     else {
@@ -822,6 +823,7 @@ export function useAppShell() {
   }
 
   function openSettings(section?: string) {
+    if(workspace.searchDialogOpen)workspace.closeSearchDialog(false)
     if (discardRef.value?.visible) return
     paletteRef.value?.close()
     if (section && settingsRef.value?.openSection) {
@@ -832,6 +834,7 @@ export function useAppShell() {
   }
 
   function openPalette(category: 'action' | 'file' | 'all' = 'all') {
+    if(workspace.searchDialogOpen)workspace.closeSearchDialog(false)
     if (discardRef.value?.visible) return
     settingsRef.value?.close()
     if (category !== 'action') void workspace.ensureFileIndex()

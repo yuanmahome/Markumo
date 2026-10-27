@@ -2288,6 +2288,7 @@ dependencies = [
  "base64 0.22.1",
  "encoding_rs",
  "getrandom 0.4.3",
+ "globset",
  "ignore",
  "image",
  "notify",

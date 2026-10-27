@@ -34,6 +34,7 @@
         :sidebar-visible="sidebarVisible"
         :outline-visible="showOutline"
         :outline-supported="outlineSupported"
+        :search-shortcut="shortcuts['workspace-search']"
         @select-panel="handleSelectPanel"
         @toggle-outline="toggleOutline"
         @open-settings="openSettings"
@@ -114,6 +115,7 @@
       @open-recovery="openRecovery"
     />
 
+    <GlobalSearchDialog v-if="workspace.searchDialogOpen" :workspace="workspace" :shortcuts="shortcuts" />
     <!-- 命令面板模态框 -->
     <CommandPalette
       ref="paletteRef"
@@ -237,7 +239,8 @@ import UpdatePanel from './components/common/UpdatePanel.vue'
 import UpdateConfirm from './components/modals/UpdateConfirm.vue'
 import RecoveryDialog from './components/modals/RecoveryDialog.vue'
 import HistoryDialog from './components/layout/HistoryDialog.vue'
-import { computed, nextTick, provide, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, provide, ref } from 'vue'
+const GlobalSearchDialog=defineAsyncComponent(()=>import('./components/search/GlobalSearchDialog.vue'))
 import { workspaceNavigationKey } from './features/workspace/navigation'
 import { useAppShell } from './app/useAppShell'
 const { autoCheckUpdates,autoDownloadUpdates,updateStatus,updatePanelOpen,updateConfirmRef,updateManager,openUpdatePanel,openUpdateRelease,openUpdateLink,caretAnimation,outlineWidth,markdownClipboard,markdownTypography,appMode, sidebarVisible, sidebarWidth, sidebarPanel, focusMode, theme, uiFontSize, fontSize, fontFamily, indentSize, useTabs, shortcuts, updateShortcuts, updateKeymap, keymapPreset, wordWrap, showOutline, typewriterMode, defaultMdMode, liveToolbar, externalFileMonitoring, autoReloadExternal, autoSave, autoSaveDelay, treeClickMode, autoFollowActiveFile, smartExpand, compactFolders, syntaxStyle, bracketMode, imageRules,currentDocumentImageRules,updateDocumentImageRules,
