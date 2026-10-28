@@ -40,6 +40,7 @@ jobs:
           node tests/lifecycle/ownership.mjs
           node tests/workspace/delete-open-files.mjs
           node tests/recovery/browser.mjs
+          node tests/phase042/bold-input.mjs
 
   # Rust quality
   rust:

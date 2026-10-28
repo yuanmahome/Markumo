@@ -14,6 +14,7 @@ import { LiveTableToolbar, type TableToolbarCommand } from './LiveTableToolbar'
 import { markdownSchema as s } from './MarkdownSchema'
 import { MarkdownSourceBridge, textPatch, type SourcePatch } from './MarkdownSourceBridge'
 import { setSourceBlockType } from './setSourceBlockType'
+import { strongInputRule } from './strongInputRule'
 import { mathBlockParts, mapMathSelection, mergeMathComposition, type MathSelection } from './MathSource'
 import { markdownTypographyStyle } from '../typography'
 import { InlineSourceView, inlineSourceRange } from './InlineSourceView'
@@ -212,6 +213,7 @@ export class MarkdownEditorController implements LiveEditor {
     // Input Rules
     const rules = inputRules({
       rules: [
+        strongInputRule(() => this.bridge),
         new InputRule(/!\[[^\n]*\]\([^\n]*\)$/, (state, match, start, end) => {
           const parsed = markdownParser.parse(match[0], this.bridge.environment).firstChild
           if (parsed?.childCount !== 1 || parsed.firstChild?.type !== s.nodes.image) return null
