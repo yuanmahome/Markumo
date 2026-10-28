@@ -596,10 +596,20 @@ export class DocumentManager {
   }
 
   close(id: string, discard = false, pane: Pane = this.activePane): 'closed' | 'dirty' | 'composing' | 'missing' {
+    return this.closeTab(id,discard,pane,false)
+  }
+
+  /** Native deletion is already committed: remove every view, including an
+   * in-progress composition in another window, without saving it back. */
+  closeDeletedFile(id:string) {
+    for(const pane of [...this.layout.getAllLeafIds()])this.closeTab(id,true,pane,true)
+  }
+
+  private closeTab(id:string,discard:boolean,pane:Pane,deleted:boolean): 'closed' | 'dirty' | 'composing' | 'missing' {
     const targetPane = this.resolvePaneId(pane)
     const group = this.paneGroup(targetPane)
     if ((!this.records.has(id) && !this.media.has(id)) || !group.tabs.some(t => t.documentId === id)) return 'missing'
-    if (this.isComposing) return 'composing'
+    if (!deleted && this.isComposing) return 'composing'
 
     const isLastRef = !this.layout.getAllPanes().some(p => p.id !== targetPane && p.group.tabs.some(t => t.documentId === id))
     if (isLastRef && this.records.get(id)?.meta.dirty && !discard) return 'dirty'

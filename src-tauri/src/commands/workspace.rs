@@ -318,6 +318,7 @@ pub async fn rename_workspace_node(
 
 #[tauri::command]
 pub async fn delete_workspace_node(
+    app: AppHandle,
     window: Window,
     path: String,
     store: State<'_, WorkspaceStore>,
@@ -328,19 +329,24 @@ pub async fn delete_workspace_node(
     let target = PathBuf::from(path);
     let service = Arc::clone(&store);
     let f_service = Arc::clone(&file_store);
-    tauri::async_runtime::spawn_blocking(move || {
+    let (relative, deleted, owners) = tauri::async_runtime::spawn_blocking(move || {
         let svc = service.lock().map_err(|e| e.to_string())?;
         let root = svc.root_for_path(&target)?;
         let valid = crate::workspace::guard::validate_under_root(root, &target)
             .map_err(|e| e.to_string())?;
-        let files = f_service.lock().map_err(|e| e.to_string())?;
-        if files.has_grants_under(&valid) {
-            return Err("请先保存并关闭此条目内的已打开文件，再删除".into());
-        }
-        svc.delete_node(&target)
+        let mut files = f_service.lock().map_err(|e| e.to_string())?;
+        let relative = svc.delete_node(&target)?;
+        let owners = files.revoke_deleted_path(&valid);
+        Ok::<_, String>((relative, valid.to_string_lossy().into_owned(), owners))
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    for owner in owners {
+        if owner != window.label() {
+            let _ = app.emit_to(owner.as_str(), "workspace-node-deleted", deleted.clone());
+        }
+    }
+    Ok(relative)
 }
 
 #[tauri::command]

@@ -621,6 +621,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn delete_open_directory_revokes_all_owners_and_prevents_stale_saves() {
+        let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-results/workspace/rust");
+        fs::create_dir_all(&parent).unwrap();
+        let parent = parent.canonicalize().unwrap();
+        let temp = tempfile::Builder::new().prefix("delete-").tempdir_in(&parent).unwrap();
+        assert!(temp.path().canonicalize().unwrap().starts_with(&parent));
+        let target = temp.path().join("target");
+        let sibling = temp.path().join("target-other.txt");
+        fs::create_dir_all(target.join("nested")).unwrap();
+        let a = target.join("a.txt");
+        let b = target.join("nested/b.txt");
+        for path in [&a, &b, &sibling] { fs::write(path, "original").unwrap(); }
+        let mut workspace = WorkspaceService::default();
+        workspace.open_workspace(temp.path().to_path_buf()).unwrap();
+        let mut files = crate::files::FileService::default();
+        files.set_owner("main");
+        let opened_a = files.open_selected(a.clone(), None).unwrap();
+        let keep = files.open_selected(sibling.clone(), None).unwrap();
+        files.set_owner("other");
+        let opened_b = files.open_selected(b.clone(), None).unwrap();
+        assert!(workspace.delete_node(temp.path()).is_err());
+        assert!(files.grant_owner(&opened_a.metadata.token).is_some());
+        let valid = target.canonicalize().unwrap();
+        workspace.delete_node(&target).unwrap();
+        assert_eq!(files.revoke_deleted_path(&valid), vec!["main", "other"]);
+        assert!(files.grant_owner(&opened_a.metadata.token).is_none());
+        assert!(files.grant_owner(&opened_b.metadata.token).is_none());
+        files.set_owner("main");
+        assert!(files.save(&opened_a.metadata.token, "stale save", Some(&opened_a.metadata.version), "UTF-8", false).is_err());
+        assert!(!target.exists());
+        files.save(&keep.metadata.token, "kept", Some(&keep.metadata.version), "UTF-8", false).unwrap();
+        assert_eq!(fs::read_to_string(sibling).unwrap(), "kept");
+    }
+
+    #[test]
     fn remove_workspace_supports_display_and_canonical_paths() {
         let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../test-results/workspace/rust");
         fs::create_dir_all(&parent).unwrap();

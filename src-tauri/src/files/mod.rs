@@ -1027,6 +1027,22 @@ impl FileService {
     pub fn has_grants_under(&self, path: &Path) -> bool {
         self.grants.values().any(|g| g.canonical.starts_with(path))
     }
+    /// Called only after an authorized workspace deletion has succeeded, while
+    /// holding the file-service lock. Stale saves must not recreate the path.
+    pub fn revoke_deleted_path(&mut self, path: &Path) -> Vec<String> {
+        let removed: Vec<_> = self.grants.iter()
+            .filter(|(_, grant)| grant.canonical.starts_with(path))
+            .map(|(token, grant)| (token.clone(), grant.owner.clone())).collect();
+        let mut owners = std::collections::BTreeSet::new();
+        for (token, owner) in removed {
+            if let Some(watcher) = &mut self.external_watcher { watcher.release(&owner, Some(&token)); }
+            self.grants.remove(&token);
+            self.image_reads.remove(&token);
+            self.image_directories.remove(&token);
+            owners.insert(owner);
+        }
+        owners.into_iter().collect()
+    }
     /// The window that currently owns an open document for this canonical path,
     /// if any. Used by the external open router to focus an existing tab instead
     /// of creating another window. Matching uses the canonical path key and, as

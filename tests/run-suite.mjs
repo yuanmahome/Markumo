@@ -17,6 +17,7 @@ const smokeScripts = [
   'tests/search/browser.mjs',
   'tests/drag/browser.mjs',
   'tests/workspace/open-visibility.mjs',
+  'tests/workspace/delete-open-files.mjs',
   'tests/phase042/render-tasks-phase2.mjs',
   'tests/phase042/pane-tab-lifecycle-phase4.mjs',
   'tests/lifecycle/ownership.mjs',

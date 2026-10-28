@@ -52,6 +52,7 @@ export class WorkspaceController {
   private quickGeneration = 0
   private operationBusy = false
   private disposed = false
+  private deletedDocumentHandler:((ids:string[])=>Promise<void>)|null=null
   private searchSequence = 0
   private revealSequence = 0
   private expandSequence = 0
@@ -881,23 +882,27 @@ export class WorkspaceController {
   }
 
   async deleteNode(node: WorkspaceNode) {
-    if (this.documentManager.openedDocuments.some(doc => this.isWithin(doc.path, node.path))) {
-      this.notify('请先保存并关闭此条目内的已打开文件，再删除。'); return
-    }
     if (!this.beginMutation()) return
     try {
       await this.gateway.deleteNode(node.path)
-      this.cancelOpens(); this.cancelReveal()
-      if (this.selectedTreePath && this.isWithin(this.selectedTreePath, node.path)) this.selectedTreePath = null
-      for (const root of this.roots) this.removeNodeFromTree(root.entries, node.path)
-      this.cancelSearch()
-      this.resetSearchContext()
-      this.quickGeneration++; this.quickFiles = []
-      this.invalidateFileIndex()
-      this.emit()
+      await this.acceptDeletedPath(node.path)
     } catch (e) {
       this.notify(`删除失败: ${e}`)
     } finally { this.operationBusy = false; this.fileController.workspaceBusy = false }
+  }
+
+  setDeletedDocumentHandler(handler:(ids:string[])=>Promise<void>){this.deletedDocumentHandler=handler}
+
+  async acceptDeletedPath(path:string) {
+    if(this.disposed)return
+    this.cancelOpens();this.cancelReveal()
+    const ids=this.documentManager.openedDocuments.filter(doc=>this.isWithin(doc.path,path)).map(doc=>doc.id)
+    for(const id of ids)this.documentManager.closeDeletedFile(id)
+    if(this.selectedTreePath&&this.isWithin(this.selectedTreePath,path))this.selectedTreePath=null
+    for(const root of this.roots)this.removeNodeFromTree(root.entries,path)
+    this.cancelSearch();this.resetSearchContext()
+    this.quickGeneration++;this.quickFiles=[];this.invalidateFileIndex();this.emit()
+    if(ids.length)try{await this.deletedDocumentHandler?.(ids)}catch(error){this.notify('文件已删除，清理恢复快照失败：'+String(error))}
   }
 
   private removeNodeFromTree(list: WorkspaceNode[], path: string): boolean {
@@ -1357,6 +1362,7 @@ export class WorkspaceController {
     this.cancelOpens()
     this.cancelExpand();this.revealSequence++
     this.disposed = true
+    this.deletedDocumentHandler=null
     this.quickGeneration++
     this.invalidateFileIndex()
     this.cancelSearch()

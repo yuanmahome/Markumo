@@ -424,7 +424,7 @@ async function handleCreateDir(parentDir: string) {
 }
 
 async function handleDeleteNode(node: WorkspaceNode) {
-  const result = await operationDialog.value?.ask({ title: '删除条目', description: `确定删除 ${node.isDirectory ? '目录及其全部内容' : '文件'} "${node.name}"？此操作无法撤销。`, confirmLabel: '删除' })
+  const result = await operationDialog.value?.ask({ title: '删除条目', description: `确定删除 ${node.isDirectory ? '目录及其全部内容' : '文件'} "${node.name}"？对应标签将关闭，未保存的修改会丢弃。此操作无法撤销。`, confirmLabel: '删除' })
   if (result !== null && result !== undefined) {
     void props.workspace.deleteNode(node)
   }

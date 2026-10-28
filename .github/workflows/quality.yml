@@ -38,6 +38,7 @@ jobs:
         run: |
           node tests/lossless/browser.mjs
           node tests/lifecycle/ownership.mjs
+          node tests/workspace/delete-open-files.mjs
 
   # Rust quality
   rust:

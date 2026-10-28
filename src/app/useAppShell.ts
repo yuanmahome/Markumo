@@ -109,6 +109,12 @@ export function useAppShell() {
 
   const recentFiles = ref<Preferences['recent']>([])
   const fileBusy = ref(false)
+  const deletedRecoveryPending=ref(0)
+  workspace.setDeletedDocumentHandler(async ids=>{
+    deletedRecoveryPending.value++
+    try{for(const id of ids)await recovery.discardDocument(id)}
+    finally{deletedRecoveryPending.value--}
+  })
   const updateInstalling = ref(false)
 
   const autoSaver = new AutoSaveController(
@@ -413,7 +419,7 @@ export function useAppShell() {
       reportTimer = undefined
       const status = computeUpdateReportStatus({
         dirtyCount: manager.openedDocuments.filter(doc => doc.dirty).length,
-        fileBusy: fileBusy.value,
+        fileBusy: fileBusy.value||deletedRecoveryPending.value>0,
         workspaceBusy: files.workspaceBusy,
         savingCount: files.activeOperationCount,
         composing: manager.isComposing,
@@ -428,7 +434,7 @@ export function useAppShell() {
     }, 150)
   }
 
-  watch([revision, fileBusy, updateInstalling, startupLoading], reportUpdateWindow)
+  watch([revision, fileBusy, deletedRecoveryPending, updateInstalling, startupLoading], reportUpdateWindow)
   // The palette's file pool is intentionally assembled only while it is open.
   // Recompute the command/file projection when visibility changes so the first
   // Ctrl+P already sees the workspace index instead of an empty file list.
@@ -452,7 +458,7 @@ export function useAppShell() {
   const windowClose = new WindowCloseGuard({
     status: () =>
       computeWindowCloseStatus({
-        fileBusy: fileBusy.value,
+        fileBusy: fileBusy.value||deletedRecoveryPending.value>0,
         workspaceBusy: files.workspaceBusy,
         updateInstalling: updateInstalling.value,
         updateConfirmVisible: Boolean(updateConfirmRef.value?.visible),
@@ -1332,8 +1338,8 @@ export function useAppShell() {
   async function adoptDetachedDocument(): Promise<EditorDocument | null> {
     return adoptIncomingDocument()
   }
-  const emptyDetached=new EmptyDetachedWindow(()=>({detached:currentLaunchKind==='detached',ready:alive&&launchReady&&!startupLoading.value,documents:manager.openedDocuments.length,busy:fileBusy.value||files.workspaceBusy||files.activeOperationCount>0||manager.isComposing}),()=>windowClose.request('native'))
-  watch([revision,startupLoading,fileBusy],()=>emptyDetached.refresh(),{flush:'post'})
+  const emptyDetached=new EmptyDetachedWindow(()=>({detached:currentLaunchKind==='detached',ready:alive&&launchReady&&!startupLoading.value,documents:manager.openedDocuments.length,busy:fileBusy.value||deletedRecoveryPending.value>0||files.workspaceBusy||files.activeOperationCount>0||manager.isComposing}),()=>windowClose.request('native'))
+  watch([revision,startupLoading,fileBusy,deletedRecoveryPending],()=>emptyDetached.refresh(),{flush:'post'})
   const disposeEmptyDetached=()=>emptyDetached.dispose()
   window.addEventListener('markumo:dispose-window',disposeEmptyDetached,{once:true})
   function outgoingCommitted(event:{handoffId:string;documentId:string}){
@@ -1434,6 +1440,10 @@ export function useAppShell() {
       await startup.start()
       if (!alive || !launchReady) return
       try {
+        await startup.listeners.register('workspace-deleted',async()=> (await import('@tauri-apps/api/window')).getCurrentWindow().listen<string>('workspace-node-deleted',event=>{
+          void workspace.acceptDeletedPath(event.payload).catch(error=>toast(fileError(error)))
+        }))
+        if(!alive)return
         await startup.listeners.register('tab-drag',async()=> (await import('@tauri-apps/api/window')).getCurrentWindow().listen<{id:string;point:{x:number;y:number;ctrlKey:boolean;altKey:boolean}|null}>('markumo:tab-drag-finished',event=>tabDragService.nativeFinished(event.payload.id,event.payload.point)))
         if(!alive)return
         tabDragService.configure({begin:id=>invoke<boolean>('begin_tab_drag',{id}),cancel:id=>{if(id)void invoke('cancel_tab_drag',{id}).catch(()=>{})}},result=>void commitWorkspaceDrop(result))
