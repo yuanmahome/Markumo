@@ -19,6 +19,8 @@ const smokeScripts = [
   'tests/workspace/open-visibility.mjs',
   'tests/phase042/render-tasks-phase2.mjs',
   'tests/phase042/pane-tab-lifecycle-phase4.mjs',
+  'tests/lifecycle/ownership.mjs',
+  'tests/lossless/browser.mjs',
 ]
 
 const regressionScripts = [...smokeScripts]

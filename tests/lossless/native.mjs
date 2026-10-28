@@ -102,6 +102,16 @@ try{
  const edit=cases.find(item=>item.name==='complex');await open(edit)
  const original=fs.readFileSync(edit.path),originalHash=sha(original)
  await page.evaluate(()=>{
+  const e=window.__nativeManager.activeLiveEditor;let at
+  e.view.state.doc.descendants((node,pos)=>{if(node.type.name==='heading'&&node.textContent==='ATX 标题')at=pos+1})
+  if(at===undefined)throw Error('Missing native heading target')
+  e.view.dispatch(e.view.state.tr.setSelection(e.view.state.selection.constructor.near(e.view.state.doc.resolve(at))));e.view.focus()
+ })
+ await page.keyboard.press('Control+3');await save()
+ assert.deepEqual(fs.readFileSync(edit.path),Buffer.from(edit.source.replace('##   ATX 标题  ##','###   ATX 标题  ##')),'heading shortcut preserves raw marker spacing')
+ await page.keyboard.press('Control+z');await save();assert.equal(sha(fs.readFileSync(edit.path)),originalHash,'heading Undo restores disk bytes')
+ results.push({name:'heading shortcut/save/undo',kind:'production Ctrl+3 and Ctrl+S preserve source IDs and exact bytes'});persist()
+ await page.evaluate(()=>{
   const m=window.__nativeManager,e=m.activeLiveEditor;let at=-1
   e.view.state.doc.descendants((node,pos)=>{if(at<0&&node.isText&&node.text.includes('LOCAL_EDIT_TARGET'))at=pos+node.text.indexOf('LOCAL_EDIT_TARGET')})
   e.view.dispatch(e.view.state.tr.insertText('新增',at));e.view.focus()

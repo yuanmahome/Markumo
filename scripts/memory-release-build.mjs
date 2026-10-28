@@ -14,8 +14,10 @@ const ref = arg('ref') || 'WORKTREE'
 const label = arg('label') || 'before'
 assert(/^[\w-]+$/.test(label), `Invalid label: ${label}`)
 
-const git = args => execFileSync('git', args, { encoding: 'utf8', windowsHide: true }).trim()
+const repository=process.cwd()
+const git = args => execFileSync('git', args, { cwd:repository, encoding: 'utf8', windowsHide: true }).trim()
 assert.equal(git(['branch', '--show-current']), 'main', 'Must stay on main branch')
+const dirtyAtStart=git(['status','--porcelain','--','src','src-tauri']).split(/\r?\n/).filter(Boolean)
 
 const root = path.resolve('test-results/phase042')
 const tmpDir = path.join(root, 'tmp')
@@ -35,13 +37,17 @@ if (ref !== 'WORKTREE') {
   )
   commit = git(['rev-parse', ref])
   changed = git(['diff', '--name-only', commit, '--', 'src']).split(/\r?\n/).filter(Boolean)
+  const historicalFiles=new Set(git(['ls-tree','-r','--name-only',commit,'--','src']).split(/\r?\n/))
   originals = new Map(
-    changed.map(file => [
+    changed.filter(file=>historicalFiles.has(file)).map(file => [
       path.resolve(file).replaceAll('\\', '/'),
       execFileSync('git', ['show', `${commit}:${file}`], { encoding: 'utf8', windowsHide: true }),
     ])
   )
 }
+const inputFiles=git(ref==='WORKTREE'?['ls-files','--cached','--others','--exclude-standard','--','src','src-tauri']:['ls-tree','-r','--name-only',commit,'--','src','src-tauri']).split(/\r?\n/).filter(Boolean).sort()
+const inputManifest=()=>inputFiles.map(file=>[file,createHash('sha256').update(originals.get(path.resolve(repository,file).replaceAll('\\','/'))??fs.readFileSync(path.resolve(repository,file))).digest('hex')])
+const sourceInputs=inputManifest()
 
 const PROBE_BOOTSTRAP = `
 ;(function initMarkumoMemoryProbe() {
@@ -369,6 +375,7 @@ const configPath = path.join(root, `config-${label}.json`)
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
 
 await run(['build', '--no-bundle', '--config', configPath], 'tauri')
+assert.deepEqual(inputManifest(),sourceInputs,'Source inputs changed during Release build')
 
 const targetDir = path.resolve('src-tauri/target')
 normalizeWindowsArtifacts(targetDir, 'markumo')
@@ -380,12 +387,13 @@ if (process.platform === 'win32') {
 }
 
 const sha256 = file => createHash('sha256').update(fs.readFileSync(file)).digest('hex')
-const dirtyFiles = ref === 'WORKTREE' ? git(['status', '--porcelain', '--', 'src', 'src-tauri']).split(/\r?\n/).filter(Boolean) : []
+const dirtyFiles = ref === 'WORKTREE' ? dirtyAtStart : []
 const buildInfo = {
   commit,
   ref,
   label,
   worktreeDirty: dirtyFiles,
+  sourceInputsSha256:createHash('sha256').update(JSON.stringify(sourceInputs)).digest('hex'),
   binary,
   sha256: sha256(binary),
   rustTree: git(['rev-parse', `${commit}:src-tauri`]),

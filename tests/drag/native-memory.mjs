@@ -6,7 +6,7 @@ import {promisify} from 'node:util'
 import {chromium} from 'playwright'
 const exec=promisify(execFile),wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 const label=process.argv.find(v=>v.startsWith('--label='))?.slice(8)||'dnd-after',baseline=label.endsWith('before')&&!process.argv.includes('--current-api')
-assert(/^dnd-(before|after)$/.test(label))
+assert(/^dnd-(before|after|final)$/.test(label))
 const functional=process.argv.includes('--functional'),recordName=process.argv.find(v=>v.startsWith('--record='))?.slice(9)||(functional?'native-functional':label)
 assert(/^[\w-]+$/.test(recordName))
 const rounds=Number(process.argv.find(v=>v.startsWith('--rounds='))?.slice(9)||20)
@@ -35,8 +35,9 @@ do{$added=$false;foreach($r in $rows){if($ids.Contains([int]$r.ParentProcessId)-
 $p=Get-Process -Id $RootPid -ErrorAction Stop
 $wv=@(Get-Process -Id @($ids) -ErrorAction SilentlyContinue|Where-Object ProcessName -eq 'msedgewebview2')
 [pscustomobject]@{rustPrivate=$p.PrivateMemorySize64;rustWorking=$p.WorkingSet64;webviewPrivate=[long](($wv|Measure-Object PrivateMemorySize64 -Sum).Sum);webviewWorking=[long](($wv|Measure-Object WorkingSet64 -Sum).Sum);webviewProcesses=$wv.Count;processes=$ids.Count;webviewPids=@($wv|ForEach-Object Id)}|ConvertTo-Json -Compress`)
-const results=[],errors=[],observations=[];let child,browser,main,previous
+const results=[],errors=[],observations=[],closeLogs=[],windowCycles={requested:rounds,attempted:0,completed:0,durationMs:0};let child,browser,main,previous
 const pages=()=>browser.contexts().flatMap(c=>c.pages()).filter(p=>!p.isClosed()&&!p.url().startsWith('devtools:'))
+function observeClose(page){page.on('console',message=>{if(message.text().startsWith('[Markumo close]')){const entry={time:Date.now(),text:message.text()};closeLogs.push(entry);if(closeLogs.length>256)closeLogs.shift();void message.args()[1]?.jsonValue().then(data=>entry.data=data).catch(()=>{})}})}
 async function sample(){
  await wait(1000)
  const {stdout}=await exec('powershell.exe',['-NoProfile','-Command',`& { ${fs.readFileSync(sampler,'utf8')} } -RootPid ${child.pid}`],{windowsHide:true})
@@ -47,7 +48,7 @@ async function sample(){
  return {...native,windows:views.length,views,time:Date.now()}
 }
 async function checkpoint(name,operation,cleanup=async()=>{}){
- const before=previous||await sample();await operation();const after=await sample();await cleanup();const cleaned=await sample();previous=cleaned;results.push({name,before,after,cleaned});fs.writeFileSync(path.join(out,`${recordName}.json`),JSON.stringify({label,baseline,results,observations,errors},null,2));console.log('PASS',name,JSON.stringify({rust:after.rustPrivate,webview:after.webviewPrivate,windows:after.windows,views:after.views.map(v=>({cm:v.cm,live:v.live,panes:v.panes,records:v.records,created:v.probe.mainCM.created}))}))
+ const before=previous||await sample();await operation();const after=await sample();await cleanup();const cleaned=await sample();previous=cleaned;results.push({name,before,after,cleaned});fs.writeFileSync(path.join(out,`${recordName}.json`),JSON.stringify({label,baseline,results,observations,errors,closeLogs,windowCycles},null,2));console.log('PASS',name,JSON.stringify({rust:after.rustPrivate,webview:after.webviewPrivate,windows:after.windows,views:after.views.map(v=>({cm:v.cm,live:v.live,panes:v.panes,records:v.records,created:v.probe.mainCM.created}))}))
 }
 async function open(name){await main.evaluate(async file=>window.__dndShell.files.accept(await window.__TAURI_INTERNALS__.invoke(window.__nativeWorkspace.roots.length?'open_workspace_file':'open_recent',{path:file,encoding:null}),false),path.join(fixtures,name));await wait(150)}
 async function detach(source,targetPoint={x:-4000,y:-4000}){
@@ -75,7 +76,7 @@ async function returnTab(p){
 try{
  const tmp=path.join(out,'tmp');fs.mkdirSync(tmp,{recursive:true});child=spawn(path.join(root,`markumo-${label}.exe`),[],{windowsHide:true,env:{...process.env,TEMP:tmp,TMP:tmp,WEBVIEW2_USER_DATA_FOLDER:path.join(profile,'wv'),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`}})
  const deadline=Date.now()+45000;while(true){assert(child.exitCode===null);try{if((await fetch(`http://127.0.0.1:${port}/json/version`)).ok)break}catch{}assert(Date.now()<deadline,'WebView2 timeout');await wait(200)}
- browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`);main=pages()[0];main.setDefaultTimeout(15000);main.on('pageerror',e=>errors.push(e.message));await main.waitForFunction(()=>window.__dndShell&&!document.querySelector('.startup-overlay'))
+ browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`);browser.on('page',observeClose);main=pages()[0];observeClose(main);main.setDefaultTimeout(15000);main.on('pageerror',e=>errors.push(e.message));await main.waitForFunction(()=>window.__dndShell&&!document.querySelector('.startup-overlay'))
  if(process.argv.includes('--foreground')){const ready=path.join(out,'foreground-ready');if(fs.existsSync(ready))fs.unlinkSync(ready);console.log('WAITING FOR TEST WINDOW ACTIVATION',child.pid);while(!fs.existsSync(ready))await wait(200)}
  if(functional){await (await import('./native-functional-scenarios.mjs')).run({browser,main,open,detach,target,pages,fixtures,out,wait})}else{
  await checkpoint('A blank startup',async()=>{})
@@ -87,10 +88,20 @@ try{
  let detached
  await checkpoint('G create one detached window',async()=>{const started=await detach(main);detached=await target(started.label);await main.waitForFunction(()=>!window.__nativeManager.openedDocuments.some(d=>d.name==='large.md'));assert.equal(pages().length,2)})
  await checkpoint('H return document and close detached window',()=>returnTab(detached))
- await checkpoint(`I detach and return ${rounds} times`,async()=>{if(baseline&&!await main.evaluate(()=>!!window.__nativeManager.activeDocument)){observations.push({scenario:'I',unmeasured:'Baseline return handoff incorrectly closed the received source document; cannot continue repeated detach safely'});return}for(let i=0;i<rounds;i++){const started=await detach(main),p=await target(started.label);await main.waitForFunction(()=>!window.__nativeManager.openedDocuments.some(d=>d.name==='large.md'));await returnTab(p);if(i%5===4)observations.push({round:i+1,snapshot:await sample()})}assert.equal(pages().length,1)})
+ await checkpoint(`I detach and return ${rounds} times`,async()=>{
+  if(baseline&&!await main.evaluate(()=>!!window.__nativeManager.activeDocument)){observations.push({scenario:'I',unmeasured:'Baseline return handoff incorrectly closed the received source document; cannot continue repeated detach safely'});return}
+  const startedAt=performance.now()
+  try{for(let i=0;i<rounds;i++){
+   windowCycles.attempted=i+1
+   const started=await detach(main),p=await target(started.label)
+   await main.waitForFunction(()=>!window.__nativeManager.openedDocuments.some(d=>d.name==='large.md'))
+   await returnTab(p);windowCycles.completed=i+1
+   if(i%5===4){observations.push({round:i+1,snapshot:await sample()});console.log('WINDOW CYCLES',windowCycles.completed,'/',rounds)}
+  }assert.equal(pages().length,1)}finally{windowCycles.durationMs=performance.now()-startedAt}
+ })
  await checkpoint('J open/close search and settings 20 times',async()=>{for(let i=0;i<20;i++){await main.evaluate(()=>window.__nativeWorkspace.focusWorkspaceSearch());await main.getByRole('dialog',{name:'全局搜索与替换'}).waitFor();await main.evaluate(()=>window.__nativeWorkspace.closeSearchDialog());await main.evaluate(()=>window.__dndShell.openSettings());await main.waitForTimeout(20);await main.keyboard.press('Escape')}assert.equal(pages().length,1)})
  await checkpoint('K Markdown code, local image, formula and diagram',()=>open('rich.md'),async()=>{await main.evaluate(()=>{const m=window.__nativeManager;m.close(m.activeId,true);m.select(window.__largeId)})})
  }
- assert.deepEqual(errors,[]);console.log(`NATIVE MEMORY ${label} ${results.length}/11 measured; observations=${JSON.stringify(observations.map(item=>({sortPluginCreates:item.sortPluginCreates,scenario:item.scenario,unmeasured:item.unmeasured})))}`)
+ assert.deepEqual(errors,[]);if(!functional)console.log(`NATIVE MEMORY ${label} ${results.length}/11 measured; observations=${JSON.stringify(observations.map(item=>({sortPluginCreates:item.sortPluginCreates,scenario:item.scenario,unmeasured:item.unmeasured})))}`)
  if(process.argv.includes('--hold')){const stop=path.join(out,'stop-native-host');if(fs.existsSync(stop))fs.unlinkSync(stop);console.log('NATIVE HOST READY',child.pid);while(!fs.existsSync(stop))await wait(500)}
-}catch(error){console.error(await Promise.all(pages().map(p=>p.evaluate(()=>({label:window.__TAURI_INTERNALS__?.metadata.currentWindow.label,docs:window.__nativeManager?.openedDocuments.map(d=>({id:d.id,name:d.name,dirty:d.dirty})),busy:window.__dndShell?.files.workspaceBusy,started:window.__dndLastDetach,toast:document.querySelector('.toast')?.textContent,startup:document.querySelector('.startup-overlay')?.textContent})).catch(()=>null))));errors.push(String(error));fs.writeFileSync(path.join(out,`${recordName}.json`),JSON.stringify({label,baseline,results,observations,errors},null,2));throw error}finally{if(child?.exitCode===null)await exec('taskkill',['/PID',String(child.pid),'/T','/F'],{windowsHide:true}).catch(()=>{});await browser?.close().catch(()=>{})}
+}catch(error){console.error(await Promise.all(pages().map(p=>p.evaluate(()=>({label:window.__TAURI_INTERNALS__?.metadata.currentWindow.label,docs:window.__nativeManager?.openedDocuments.map(d=>({id:d.id,name:d.name,dirty:d.dirty})),busy:window.__dndShell?.files.workspaceBusy,started:window.__dndLastDetach,toast:document.querySelector('.toast')?.textContent,startup:document.querySelector('.startup-overlay')?.textContent})).catch(()=>null))));errors.push(String(error));fs.writeFileSync(path.join(out,`${recordName}.json`),JSON.stringify({label,baseline,results,observations,errors,closeLogs,windowCycles},null,2));throw error}finally{if(child?.exitCode===null)await exec('taskkill',['/PID',String(child.pid),'/T','/F'],{windowsHide:true}).catch(()=>{});await browser?.close().catch(()=>{})}

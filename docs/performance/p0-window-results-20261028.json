@@ -1,0 +1,2014 @@
+{
+  "generatedAt": "2026-10-28T07:52:06.309Z",
+  "builds": {
+    "before": {
+      "commit": "93890445a0d4bc13f72df16aac6d980b00964c99",
+      "ref": "9389044",
+      "label": "dnd-before",
+      "worktreeDirty": [],
+      "sha256": "7eb917c1d171f07d65bb3f18b37b1195be65487953e4ef21a1bf6f2f69bfea06",
+      "rustTree": "fdf567c9e7fd421bf49e1593c9b9f69c2605a8cd",
+      "overlay": [
+        "src/editor/markdown/renderVisibility.ts",
+        "src/features/recovery/RecoveryController.ts",
+        "src/features/workspace/WorkspaceController.ts"
+      ],
+      "instrumentation": "Identical non-invasive counters for PM, main CM, embedded CM, Workers, render tasks, Blob URLs/bytes, decoded DOM pixels, and production DocumentManager reference.",
+      "builtAt": "2026-10-28T02:34:06.592Z"
+    },
+    "after": {
+      "commit": "734d9be0953589563338b97ab2f001a579b93666",
+      "ref": "WORKTREE",
+      "label": "dnd-after",
+      "worktreeDirty": [
+        "M src/editor/markdown/wysiwyg/MarkdownSourceBridge.ts",
+        " M src/editor/markdown/wysiwyg/patchSourceBlock.ts"
+      ],
+      "sourceInputsSha256": "cc4b88f6de9da548badb9ab5d4adb7920357390976fe87d66a8039875af3aec6",
+      "sha256": "053a6e4bdcc52d24f6e7aadcf83e4111dcf8ae083e59dabad89e6c38d43176a7",
+      "rustTree": "fdf567c9e7fd421bf49e1593c9b9f69c2605a8cd",
+      "overlay": [],
+      "instrumentation": "Identical non-invasive counters for PM, main CM, embedded CM, Workers, render tasks, Blob URLs/bytes, decoded DOM pixels, and production DocumentManager reference.",
+      "builtAt": "2026-10-28T06:38:54.357Z"
+    }
+  },
+  "records": [
+    {
+      "version": "before",
+      "run": 1,
+      "cycles": {
+        "requested": 120,
+        "attempted": 50,
+        "completed": 49,
+        "durationMs": null
+      },
+      "countsDerivedFromGeometry": true,
+      "errors": [
+        "AssertionError [ERR_ASSERTION]: Empty detached window should close after handoff"
+      ],
+      "evidence": {
+        "path": "test-results/drag/p0-windows-before-foreground-r1.json",
+        "sha256": "56f8655574a34dab94784c5b98c4f8bc838ec8f121e5093bf101ebdc9c024aa8"
+      },
+      "start": {
+        "rustPrivate": 6746112,
+        "rustWorking": 33251328,
+        "webviewPrivate": 189255680,
+        "webviewWorking": 376012800,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          3180,
+          19996,
+          23608,
+          37288,
+          39116,
+          47728
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 5852696,
+            "dom": {
+              "documents": 2,
+              "nodes": 532,
+              "jsEventListeners": 96
+            },
+            "documents": 0,
+            "records": 0,
+            "panes": 1,
+            "cm": 0,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              },
+              "mainCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793155787290
+      },
+      "lastObserved": {
+        "rustPrivate": 12242944,
+        "rustWorking": 39026688,
+        "webviewPrivate": 389038080,
+        "webviewWorking": 577929216,
+        "webviewProcesses": 7,
+        "processes": 9,
+        "webviewPids": [
+          3180,
+          15780,
+          19996,
+          23608,
+          37288,
+          39116,
+          47728
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 35364764,
+            "dom": {
+              "documents": 2,
+              "nodes": 4993,
+              "jsEventListeners": 835
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 2,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 2,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 150,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793155876218
+      },
+      "end": {
+        "rustPrivate": 8048640,
+        "rustWorking": 35377152,
+        "webviewPrivate": 287629312,
+        "webviewWorking": 463265792,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          3180,
+          19996,
+          23608,
+          37288,
+          39116,
+          47728
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 14824328,
+            "dom": {
+              "documents": 2,
+              "nodes": 3700,
+              "jsEventListeners": 631
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 2,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 2,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 105,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793155819028
+      },
+      "checkpoints": [
+        {
+          "round": 30,
+          "snapshot": {
+            "rustPrivate": 11128832,
+            "rustWorking": 37924864,
+            "webviewPrivate": 353767424,
+            "webviewWorking": 533024768,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              3180,
+              19996,
+              23608,
+              37288,
+              39116,
+              47728
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 34958472,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 4993,
+                  "jsEventListeners": 835
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 2,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 135,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793155857280
+          }
+        }
+      ],
+      "closeStages": {}
+    },
+    {
+      "version": "before",
+      "run": 2,
+      "cycles": {
+        "requested": 120,
+        "attempted": 120,
+        "completed": 120,
+        "durationMs": 163214.55169999998
+      },
+      "countsDerivedFromGeometry": false,
+      "errors": [],
+      "evidence": {
+        "path": "test-results/drag/p0-windows-before-foreground-r2.json",
+        "sha256": "683c24c7196cecf51bd3747f8f6147b2a2c9b1c6ba2e76a6d90f75c44032b369"
+      },
+      "start": {
+        "rustPrivate": 6586368,
+        "rustWorking": 33046528,
+        "webviewPrivate": 202063872,
+        "webviewWorking": 377778176,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          23708,
+          26488,
+          31836,
+          35260,
+          36060,
+          47232
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 6678240,
+            "dom": {
+              "documents": 5,
+              "nodes": 558,
+              "jsEventListeners": 97
+            },
+            "documents": 0,
+            "records": 0,
+            "panes": 1,
+            "cm": 0,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              },
+              "mainCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793171333741
+      },
+      "afterI": {
+        "rustPrivate": 18210816,
+        "rustWorking": 46940160,
+        "webviewPrivate": 491040768,
+        "webviewWorking": 673607680,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          23708,
+          26488,
+          31836,
+          35260,
+          36060,
+          47232
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 23093740,
+            "dom": {
+              "documents": 2,
+              "nodes": 3661,
+              "jsEventListeners": 619
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 1,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 2,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 346,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793171533604
+      },
+      "lastObserved": {
+        "rustPrivate": 18210816,
+        "rustWorking": 46940160,
+        "webviewPrivate": 491040768,
+        "webviewWorking": 673607680,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          23708,
+          26488,
+          31836,
+          35260,
+          36060,
+          47232
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 23093740,
+            "dom": {
+              "documents": 2,
+              "nodes": 3661,
+              "jsEventListeners": 619
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 1,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 2,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 346,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793171533604
+      },
+      "end": {
+        "rustPrivate": 18321408,
+        "rustWorking": 48099328,
+        "webviewPrivate": 558538752,
+        "webviewWorking": 720416768,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          23708,
+          26488,
+          31836,
+          35260,
+          36060,
+          47232
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 25721784,
+            "dom": {
+              "documents": 3,
+              "nodes": 7884,
+              "jsEventListeners": 1233
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 1,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 3,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 347,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793171544327
+      },
+      "checkpoints": [
+        {
+          "round": 30,
+          "snapshot": {
+            "rustPrivate": 10199040,
+            "rustWorking": 40235008,
+            "webviewPrivate": 451973120,
+            "webviewWorking": 631844864,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              23708,
+              26488,
+              31836,
+              35260,
+              36060,
+              47232
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 30674332,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 5041,
+                  "jsEventListeners": 892
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 1,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 166,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793171409403
+          }
+        },
+        {
+          "round": 60,
+          "snapshot": {
+            "rustPrivate": 15036416,
+            "rustWorking": 43831296,
+            "webviewPrivate": 469762048,
+            "webviewWorking": 649920512,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              23708,
+              26488,
+              31836,
+              35260,
+              36060,
+              47232
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 30558808,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 5041,
+                  "jsEventListeners": 892
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 1,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 226,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793171449832
+          }
+        },
+        {
+          "round": 120,
+          "snapshot": {
+            "rustPrivate": 18210816,
+            "rustWorking": 46940160,
+            "webviewPrivate": 491831296,
+            "webviewWorking": 673935360,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              23708,
+              26488,
+              31836,
+              35260,
+              36060,
+              47232
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 23046864,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 3661,
+                  "jsEventListeners": 619
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 1,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 346,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793171531959
+          }
+        }
+      ],
+      "closeStages": {}
+    },
+    {
+      "version": "before",
+      "run": 3,
+      "cycles": {
+        "requested": 120,
+        "attempted": 22,
+        "completed": 21,
+        "durationMs": 38536.6126
+      },
+      "countsDerivedFromGeometry": false,
+      "errors": [
+        "AssertionError [ERR_ASSERTION]: Empty detached window should close after handoff"
+      ],
+      "evidence": {
+        "path": "test-results/drag/p0-windows-before-foreground-r3.json",
+        "sha256": "9807f79a6f88b4bd848f5422f2ee33b0eda1bf574b95b36086004ba43f5c05a1"
+      },
+      "start": {
+        "rustPrivate": 7454720,
+        "rustWorking": 33263616,
+        "webviewPrivate": 199077888,
+        "webviewWorking": 370642944,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          8320,
+          11160,
+          23388,
+          37792,
+          44700,
+          46444
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 6711724,
+            "dom": {
+              "documents": 5,
+              "nodes": 556,
+              "jsEventListeners": 97
+            },
+            "documents": 0,
+            "records": 0,
+            "panes": 1,
+            "cm": 0,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              },
+              "mainCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793171613767
+      },
+      "lastObserved": {
+        "rustPrivate": 9768960,
+        "rustWorking": 39575552,
+        "webviewPrivate": 357326848,
+        "webviewWorking": 539078656,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          8320,
+          11160,
+          23388,
+          37792,
+          44700,
+          46444
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 20903860,
+            "dom": {
+              "documents": 2,
+              "nodes": 3700,
+              "jsEventListeners": 631
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 2,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 2,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 125,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793171675386
+      },
+      "end": {
+        "rustPrivate": 8712192,
+        "rustWorking": 37896192,
+        "webviewPrivate": 309116928,
+        "webviewWorking": 492662784,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          8320,
+          11160,
+          23388,
+          37792,
+          44700,
+          46444
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 14782128,
+            "dom": {
+              "documents": 2,
+              "nodes": 3700,
+              "jsEventListeners": 631
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 2,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 2,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 105,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793171648477
+      },
+      "checkpoints": [],
+      "closeStages": {}
+    },
+    {
+      "version": "after",
+      "run": 1,
+      "cycles": {
+        "requested": 120,
+        "attempted": 120,
+        "completed": 120,
+        "durationMs": 163729.5791
+      },
+      "countsDerivedFromGeometry": false,
+      "errors": [],
+      "evidence": {
+        "path": "test-results/drag/p0-windows-after-foreground-r1.json",
+        "sha256": "e86bc42e16163cd11ffc8ce1b4e42baf41a961575155d1bf19c7a4f1db870c20"
+      },
+      "start": {
+        "rustPrivate": 6983680,
+        "rustWorking": 45776896,
+        "webviewPrivate": 200740864,
+        "webviewWorking": 374046720,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          8756,
+          13316,
+          15204,
+          25232,
+          30120,
+          51552
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 6748196,
+            "dom": {
+              "documents": 5,
+              "nodes": 556,
+              "jsEventListeners": 98
+            },
+            "documents": 0,
+            "records": 0,
+            "panes": 1,
+            "cm": 0,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              },
+              "mainCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793171758763
+      },
+      "afterI": {
+        "rustPrivate": 16822272,
+        "rustWorking": 57860096,
+        "webviewPrivate": 461361152,
+        "webviewWorking": 642711552,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          8756,
+          13316,
+          15204,
+          25232,
+          30120,
+          51552
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 22695556,
+            "dom": {
+              "documents": 2,
+              "nodes": 3661,
+              "jsEventListeners": 620
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 1,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 2,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 346,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793171958734
+      },
+      "lastObserved": {
+        "rustPrivate": 16822272,
+        "rustWorking": 57860096,
+        "webviewPrivate": 461361152,
+        "webviewWorking": 642711552,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          8756,
+          13316,
+          15204,
+          25232,
+          30120,
+          51552
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 22695556,
+            "dom": {
+              "documents": 2,
+              "nodes": 3661,
+              "jsEventListeners": 620
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 1,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 2,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 346,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793171958734
+      },
+      "end": {
+        "rustPrivate": 15925248,
+        "rustWorking": 57749504,
+        "webviewPrivate": 523939840,
+        "webviewWorking": 714317824,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          8756,
+          13316,
+          15204,
+          25232,
+          30120,
+          51552
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 45699696,
+            "dom": {
+              "documents": 4,
+              "nodes": 23615,
+              "jsEventListeners": 3709
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 1,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 3,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 347,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793171969892
+      },
+      "checkpoints": [
+        {
+          "round": 30,
+          "snapshot": {
+            "rustPrivate": 10866688,
+            "rustWorking": 52383744,
+            "webviewPrivate": 417071104,
+            "webviewWorking": 598978560,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              8756,
+              13316,
+              15204,
+              25232,
+              30120,
+              51552
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 21309244,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 3661,
+                  "jsEventListeners": 620
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 1,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 166,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793171834482
+          }
+        },
+        {
+          "round": 60,
+          "snapshot": {
+            "rustPrivate": 13869056,
+            "rustWorking": 55128064,
+            "webviewPrivate": 432205824,
+            "webviewWorking": 613146624,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              8756,
+              13316,
+              15204,
+              25232,
+              30120,
+              51552
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 35752704,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 5041,
+                  "jsEventListeners": 893
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 1,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 226,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793171875420
+          }
+        },
+        {
+          "round": 120,
+          "snapshot": {
+            "rustPrivate": 16822272,
+            "rustWorking": 57860096,
+            "webviewPrivate": 458588160,
+            "webviewWorking": 640094208,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              8756,
+              13316,
+              15204,
+              25232,
+              30120,
+              51552
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 22648696,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 3661,
+                  "jsEventListeners": 620
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 1,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 346,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793171957112
+          }
+        }
+      ],
+      "closeStages": {}
+    },
+    {
+      "version": "after",
+      "run": 2,
+      "cycles": {
+        "requested": 120,
+        "attempted": 120,
+        "completed": 120,
+        "durationMs": 162091.84850000002
+      },
+      "countsDerivedFromGeometry": false,
+      "errors": [],
+      "evidence": {
+        "path": "test-results/drag/p0-windows-after-foreground-r2.json",
+        "sha256": "37a4bdf4fd876f6564df93bfaede85491bb720163df0bbd2527918998cf5f73d"
+      },
+      "start": {
+        "rustPrivate": 6680576,
+        "rustWorking": 33132544,
+        "webviewPrivate": 198144000,
+        "webviewWorking": 371544064,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          4496,
+          4968,
+          26648,
+          33700,
+          41728,
+          46864
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 6721384,
+            "dom": {
+              "documents": 5,
+              "nodes": 556,
+              "jsEventListeners": 98
+            },
+            "documents": 0,
+            "records": 0,
+            "panes": 1,
+            "cm": 0,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              },
+              "mainCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793172006193
+      },
+      "afterI": {
+        "rustPrivate": 18935808,
+        "rustWorking": 47767552,
+        "webviewPrivate": 449355776,
+        "webviewWorking": 629264384,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          4496,
+          4968,
+          26648,
+          33700,
+          41728,
+          46864
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 37068700,
+            "dom": {
+              "documents": 2,
+              "nodes": 5041,
+              "jsEventListeners": 893
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 1,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 2,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 346,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793172204493
+      },
+      "lastObserved": {
+        "rustPrivate": 18935808,
+        "rustWorking": 47767552,
+        "webviewPrivate": 449355776,
+        "webviewWorking": 629264384,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          4496,
+          4968,
+          26648,
+          33700,
+          41728,
+          46864
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 37068700,
+            "dom": {
+              "documents": 2,
+              "nodes": 5041,
+              "jsEventListeners": 893
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 1,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 2,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 346,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793172204493
+      },
+      "end": {
+        "rustPrivate": 19046400,
+        "rustWorking": 48451584,
+        "webviewPrivate": 497721344,
+        "webviewWorking": 686313472,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          4496,
+          4968,
+          26648,
+          33700,
+          41728,
+          46864
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 30767920,
+            "dom": {
+              "documents": 4,
+              "nodes": 18477,
+              "jsEventListeners": 2897
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 1,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 3,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 347,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793172215027
+      },
+      "checkpoints": [
+        {
+          "round": 30,
+          "snapshot": {
+            "rustPrivate": 11911168,
+            "rustWorking": 40677376,
+            "webviewPrivate": 417394688,
+            "webviewWorking": 596574208,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              4496,
+              4968,
+              26648,
+              33700,
+              41728,
+              46864
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 21359072,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 3661,
+                  "jsEventListeners": 620
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 1,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 166,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793172081391
+          }
+        },
+        {
+          "round": 60,
+          "snapshot": {
+            "rustPrivate": 14204928,
+            "rustWorking": 43102208,
+            "webviewPrivate": 433758208,
+            "webviewWorking": 613031936,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              4496,
+              4968,
+              26648,
+              33700,
+              41728,
+              46864
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 21886584,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 3661,
+                  "jsEventListeners": 620
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 1,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 226,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793172121984
+          }
+        },
+        {
+          "round": 120,
+          "snapshot": {
+            "rustPrivate": 18935808,
+            "rustWorking": 47767552,
+            "webviewPrivate": 455708672,
+            "webviewWorking": 634077184,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              4496,
+              4968,
+              26648,
+              33700,
+              41728,
+              46864
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 37023040,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 5041,
+                  "jsEventListeners": 893
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 1,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 346,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793172202857
+          }
+        }
+      ],
+      "closeStages": {}
+    },
+    {
+      "version": "after",
+      "run": 3,
+      "cycles": {
+        "requested": 120,
+        "attempted": 120,
+        "completed": 120,
+        "durationMs": 164488.44230000002
+      },
+      "countsDerivedFromGeometry": false,
+      "errors": [],
+      "evidence": {
+        "path": "test-results/drag/p0-windows-after-foreground-r3.json",
+        "sha256": "431201c36575f23abb5c11566da3d1443f3b4dff6618ccdc2273c45edd6faed3"
+      },
+      "start": {
+        "rustPrivate": 6496256,
+        "rustWorking": 33181696,
+        "webviewPrivate": 196001792,
+        "webviewWorking": 372568064,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          17736,
+          26348,
+          41336,
+          42088,
+          47204,
+          54136
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 6706776,
+            "dom": {
+              "documents": 5,
+              "nodes": 557,
+              "jsEventListeners": 98
+            },
+            "documents": 0,
+            "records": 0,
+            "panes": 1,
+            "cm": 0,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              },
+              "mainCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793172298671
+      },
+      "afterI": {
+        "rustPrivate": 15982592,
+        "rustWorking": 44449792,
+        "webviewPrivate": 457359360,
+        "webviewWorking": 640319488,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          17736,
+          26348,
+          41336,
+          42088,
+          47204,
+          54136
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 18785756,
+            "dom": {
+              "documents": 2,
+              "nodes": 3700,
+              "jsEventListeners": 632
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 2,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 2,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 225,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793172499173
+      },
+      "lastObserved": {
+        "rustPrivate": 15982592,
+        "rustWorking": 44449792,
+        "webviewPrivate": 457359360,
+        "webviewWorking": 640319488,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          17736,
+          26348,
+          41336,
+          42088,
+          47204,
+          54136
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 18785756,
+            "dom": {
+              "documents": 2,
+              "nodes": 3700,
+              "jsEventListeners": 632
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 2,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 2,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 225,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793172499173
+      },
+      "end": {
+        "rustPrivate": 18055168,
+        "rustWorking": 46956544,
+        "webviewPrivate": 549117952,
+        "webviewWorking": 733540352,
+        "webviewProcesses": 6,
+        "processes": 7,
+        "webviewPids": [
+          17736,
+          26348,
+          41336,
+          42088,
+          47204,
+          54136
+        ],
+        "windows": 1,
+        "views": [
+          {
+            "label": "main",
+            "heap": 36480412,
+            "dom": {
+              "documents": 4,
+              "nodes": 46392,
+              "jsEventListeners": 7138
+            },
+            "documents": 1,
+            "records": 1,
+            "panes": 2,
+            "cm": 1,
+            "live": 0,
+            "probe": {
+              "pm": {
+                "created": 3,
+                "live": 0,
+                "peak": 2
+              },
+              "mainCM": {
+                "created": 226,
+                "live": 1,
+                "peak": 2
+              },
+              "embeddedCM": {
+                "created": 0,
+                "live": 0,
+                "peak": 0
+              }
+            },
+            "ghosts": 0
+          }
+        ],
+        "time": 1793172510292
+      },
+      "checkpoints": [
+        {
+          "round": 30,
+          "snapshot": {
+            "rustPrivate": 12619776,
+            "rustWorking": 41291776,
+            "webviewPrivate": 412418048,
+            "webviewWorking": 593043456,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              17736,
+              26348,
+              41336,
+              42088,
+              47204,
+              54136
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 21346792,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 3700,
+                  "jsEventListeners": 632
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 2,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 135,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793172373316
+          }
+        },
+        {
+          "round": 60,
+          "snapshot": {
+            "rustPrivate": 14114816,
+            "rustWorking": 42250240,
+            "webviewPrivate": 426168320,
+            "webviewWorking": 608972800,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              17736,
+              26348,
+              41336,
+              42088,
+              47204,
+              54136
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 36026476,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 4993,
+                  "jsEventListeners": 836
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 2,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 165,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793172414709
+          }
+        },
+        {
+          "round": 120,
+          "snapshot": {
+            "rustPrivate": 15982592,
+            "rustWorking": 44449792,
+            "webviewPrivate": 463142912,
+            "webviewWorking": 645816320,
+            "webviewProcesses": 6,
+            "processes": 7,
+            "webviewPids": [
+              17736,
+              26348,
+              41336,
+              42088,
+              47204,
+              54136
+            ],
+            "windows": 1,
+            "views": [
+              {
+                "label": "main",
+                "heap": 18737072,
+                "dom": {
+                  "documents": 2,
+                  "nodes": 3700,
+                  "jsEventListeners": 632
+                },
+                "documents": 1,
+                "records": 1,
+                "panes": 2,
+                "cm": 1,
+                "live": 0,
+                "probe": {
+                  "pm": {
+                    "created": 2,
+                    "live": 0,
+                    "peak": 2
+                  },
+                  "mainCM": {
+                    "created": 225,
+                    "live": 1,
+                    "peak": 2
+                  },
+                  "embeddedCM": {
+                    "created": 0,
+                    "live": 0,
+                    "peak": 0
+                  }
+                },
+                "ghosts": 0
+              }
+            ],
+            "time": 1793172497507
+          }
+        }
+      ],
+      "closeStages": {}
+    }
+  ]
+}

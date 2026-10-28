@@ -34,6 +34,10 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - name: Markdown link browser interactions
         run: pnpm test
+      - name: Lossless Markdown and resource ownership regressions
+        run: |
+          node tests/lossless/browser.mjs
+          node tests/lifecycle/ownership.mjs
 
   # Rust quality
   rust:
@@ -58,3 +62,5 @@ jobs:
 
       - name: Rust cargo check
         run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+      - name: Rust file safety and codec tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib

@@ -8,12 +8,14 @@ import { ensurePhase042Fixtures } from '../../scripts/memory-fixtures.mjs'
 
 const root = path.resolve('test-results/phase042')
 const label = process.argv.find(v => v.startsWith('--label='))?.slice(8) || 'after'
+assert(/^[\w-]+$/.test(label))
 const binary = path.join(root, `markumo-${label}.exe`)
 assert(fs.existsSync(binary), `Missing Release binary: ${binary}. Run memory-release-build.mjs --label=${label} first.`)
 
 const config = JSON.parse(fs.readFileSync(path.join(root, `config-${label}.json`), 'utf8'))
-const profile = config.app.appDirectoriesOverride
-fs.rmSync(profile, { recursive: true, force: true })
+const profile = path.resolve(config.app.appDirectoriesOverride)
+assert.equal(profile,path.join(root,'native-profile-'+label))
+if(fs.existsSync(profile))fs.renameSync(profile,profile+'-acceptance-backup-'+Date.now())
 fs.mkdirSync(profile, { recursive: true })
 
 const fixtureDir = path.join(root, 'fixtures')

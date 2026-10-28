@@ -1,0 +1,692 @@
+{
+  "generatedAt": "2026-10-28T07:52:06.383Z",
+  "browser": {
+    "before": {
+      "file": "test-results/lossless/browser-before.json",
+      "sha256": "6ef77748c9dad5ae24110304e73d88e852c87f3d9e50ecf6691c7fbb76293057",
+      "passed": 49,
+      "total": 73,
+      "failures": [
+        "bidirectional source offset entity",
+        "bidirectional source offset escaped",
+        "bidirectional source offset heading",
+        "bidirectional source offset indented",
+        "bidirectional source offset nested quote",
+        "localized paragraph insert",
+        "localized paragraph delete",
+        "localized nested list text",
+        "localized nested quote text",
+        "localized unclosed fence",
+        "localized nested code",
+        "localized indented code",
+        "localized entity prefix",
+        "localized escaped prefix",
+        "localized repeated text",
+        "localized inline mark text",
+        "localized literal punctuation",
+        "boundary deletion preserves entity and changes only touching emphasis delimiters",
+        "indented code newline uses existing source indentation",
+        "localized ATX marker only",
+        "heading keyboard command preserves source identity and undo bytes",
+        "heading format command preserves distinct IDs across multiple blocks",
+        "localized task toggle and Setext level preserve all other source",
+        "mode switching preserves caret across entities and emphasis"
+      ],
+      "parseInput": {
+        "name": "source mutation/undo/redo and multi-pane canonical ownership",
+        "ok": true,
+        "chars": 85116,
+        "calls": 160,
+        "samples": [
+          5.5,
+          4.200000047683716,
+          3.1999998092651367,
+          2.700000047683716,
+          2.6000001430511475,
+          2.5999999046325684,
+          2.700000047683716,
+          2.799999952316284,
+          2.700000047683716,
+          3.200000047683716,
+          2.299999952316284,
+          3.1999998092651367,
+          2.6000001430511475,
+          2.299999952316284,
+          2.200000047683716,
+          2.799999952316284,
+          2.299999952316284,
+          2.299999952316284,
+          2.6000001430511475,
+          2.299999952316284,
+          2.799999952316284,
+          3.1000001430511475,
+          3.299999952316284,
+          2.799999952316284,
+          2.799999952316284,
+          3.6000001430511475,
+          2.5,
+          2.5,
+          2.1999998092651367,
+          2.1000001430511475
+        ],
+        "livePanes": 2
+      }
+    },
+    "after": {
+      "file": "test-results/lossless/browser-after.json",
+      "sha256": "ed2e14b986bb4bdfd4204a32c89c8f97d325180290ea6455f1c8dc14d91f59cc",
+      "passed": 73,
+      "total": 73,
+      "failures": [],
+      "parseInput": {
+        "name": "source mutation/undo/redo and multi-pane canonical ownership",
+        "ok": true,
+        "chars": 13244,
+        "calls": 192,
+        "samples": [
+          2.8999998569488525,
+          3.200000047683716,
+          3.200000047683716,
+          2.0999999046325684,
+          1.7000000476837158,
+          1.6000001430511475,
+          1.8999998569488525,
+          1.7999999523162842,
+          1.8000001907348633,
+          1.8999998569488525,
+          1.2999999523162842,
+          1.3999998569488525,
+          1.4000000953674316,
+          1.4000000953674316,
+          1.2999999523162842,
+          1.2000000476837158,
+          1.2999999523162842,
+          1.3999998569488525,
+          1.4000000953674316,
+          2.200000047683716,
+          1.5,
+          1.2999999523162842,
+          1.5,
+          1.2999999523162842,
+          1.2999999523162842,
+          1.4000000953674316,
+          1.4000000953674316,
+          1.3999998569488525,
+          1.5,
+          2
+        ],
+        "livePanes": 2
+      }
+    }
+  },
+  "native": {
+    "before": [
+      {
+        "file": "test-results/lossless/native-p0-before-0/results.json",
+        "sha256": "0014b28a3e7ae1a7af56794b1ae0d8a9ab14be4a36b1c614ae0decdb7f9c6972",
+        "results": [
+          {
+            "name": "complex",
+            "encoding": "UTF-8",
+            "sha256": "88e2087b23659a1b6b5729fc4a7fea45058ba59453d1dda12e6cd14587dfc947",
+            "bytes": 1652,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "complex-crlf",
+            "encoding": "UTF-8",
+            "sha256": "71bf82dcf30374d18b2228b02473385864f6f0c9a39a1b6737c8b4507d8d1a2b",
+            "bytes": 1739,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "boundaries",
+            "encoding": "UTF-8",
+            "sha256": "ea3193f28662c678ecf756b8690f6c28f01b72c8e02cb016045dfaf3e3f17350",
+            "bytes": 158,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "boundaries-crlf",
+            "encoding": "UTF-8",
+            "sha256": "8bda722e995e35b9fd4b2c44fc5d4e3ab15522664c441d11453b9193c4f0be3f",
+            "bytes": 183,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "unclosed-fence",
+            "encoding": "UTF-8",
+            "sha256": "fd85e39cbdd1b9f9e40969694457913a90ef15433090db9eecfa4a9fcea0941e",
+            "bytes": 207,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "unclosed-fence-crlf",
+            "encoding": "UTF-8",
+            "sha256": "ad36cb4daa23d3f1c0449d1ca358a0a24720eaa6a8fb6afb6f496fdd226fb37d",
+            "bytes": 216,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "extensions",
+            "encoding": "UTF-8",
+            "sha256": "aa1ac799db83eec82fef0a5b08468ba0ba816807634a445ef6746e18a822de51",
+            "bytes": 374,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "extensions-crlf",
+            "encoding": "UTF-8",
+            "sha256": "9be44b80c77db1546c41120f84b9b802a7db6b3bcfca5d56e4363e829a085644",
+            "bytes": 398,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "empty",
+            "encoding": "UTF-8",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "empty-crlf",
+            "encoding": "UTF-8",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "newlines-only",
+            "encoding": "UTF-8",
+            "sha256": "7c370d9536d7d0d6a0f7cd7f9826692acd93e4fb05ba46f7b630b879740343d3",
+            "bytes": 5,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "newlines-only-crlf",
+            "encoding": "UTF-8",
+            "sha256": "9c28a83690b8fc6015bb21b820735507402d8869a7bae78c3133bcaad8622433",
+            "bytes": 10,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "spaces-tabs",
+            "encoding": "UTF-8",
+            "sha256": "56eb61cce5450a3eee3b33cf3681aa33f5d897ead3ec12f317240346aa97bfb0",
+            "bytes": 44,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "spaces-tabs-crlf",
+            "encoding": "UTF-8",
+            "sha256": "33efc28b016d3138db1f3889ddca22f4cd6b3b2e5364368c741cdae46f4275c1",
+            "bytes": 55,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "no-eof",
+            "encoding": "UTF-8",
+            "sha256": "e37a12c6e8438add1f1084f7071d0c4123b2b91e206002e1df18a64bf606bf9c",
+            "bytes": 43,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "no-eof-crlf",
+            "encoding": "UTF-8",
+            "sha256": "3d01ffd49e5c1dc4417af5f37c53ee21d964d417ddf2ffc1be1a54dc5dc94e52",
+            "bytes": 45,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "many-eof",
+            "encoding": "UTF-8",
+            "sha256": "d82caa44e912457243edaa52cc40e5e094f45ba031c78f990f55d4aaf325187e",
+            "bytes": 32,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "many-eof-crlf",
+            "encoding": "UTF-8",
+            "sha256": "75145911d8c1a28ae204d567b70397878778e5536d67e25628a2e22c2c4c31fb",
+            "bytes": 39,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "external conflict",
+            "kind": "native version-checked save rejected"
+          }
+        ]
+      },
+      {
+        "file": "test-results/lossless/native-p0-before-1/results.json",
+        "sha256": "f26db531d08b3f025e02bbf7aca59e895374fe95561bab8f7e9374507e8d0f69",
+        "results": [
+          {
+            "name": "nested-table",
+            "encoding": "UTF-8",
+            "sha256": "ca244f2328d46da8be156962cf3c99245d1bb0634b5768854c78040e8dad30b0",
+            "bytes": 106,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "nested-table-crlf",
+            "encoding": "UTF-8",
+            "sha256": "926441feb9736d6c6a67d1f138892e364371b79736db1aa6396720c3c7bd7509",
+            "bytes": 115,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "large-source-budget",
+            "encoding": "UTF-8",
+            "sha256": "e80d3e7b05b9536d76a63d22f74a62a5808cd508a6b71bd7d0372c5113422147",
+            "bytes": 1200009,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "utf8-bom",
+            "encoding": "UTF-8",
+            "sha256": "874254256f48588269e9c7e95e7ca6e26018a5c91bb2be2fafea1f66bcfffd69",
+            "bytes": 1655,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "mixed-eol",
+            "encoding": "UTF-8",
+            "sha256": "c76a2237e2f96c36800f03501817e567c421f9154c16d624fd3840a1de07403d",
+            "bytes": 1682,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "UTF-16LE-false",
+            "encoding": "UTF-16LE",
+            "sha256": "f80187d34f90a44ea80bd04311f98b4c48d3b5a279a3652241950baa90541473",
+            "bytes": 72,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "UTF-16LE-true",
+            "encoding": "UTF-16LE",
+            "sha256": "d724324c7bed626600ebbadae97d247bcfd4bcbe025149ef872c75af56de2a50",
+            "bytes": 74,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "UTF-16BE-false",
+            "encoding": "UTF-16BE",
+            "sha256": "9ee972e6be9950c1d94219d908b3732480eb258842eba28468ef76071c617f8c",
+            "bytes": 72,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "UTF-16BE-true",
+            "encoding": "UTF-16BE",
+            "sha256": "a76c18cdb3441dc563197af8ff930aad8d109af478d55830d804878c1e78c9c4",
+            "bytes": 74,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "GB18030",
+            "encoding": "GB18030",
+            "sha256": "fa7950d563dbb6d1e34e45823533feaeb47cbd951c03429da609025b0aedb31c",
+            "bytes": 34,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "windows-1252",
+            "encoding": "windows-1252",
+            "sha256": "10ca54142336c08e7e7977a4f01f8d2e4b7669238d8e8f047da22ee4fc9f8adf",
+            "bytes": 31,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "external conflict",
+            "kind": "native version-checked save rejected"
+          }
+        ]
+      }
+    ],
+    "after": [
+      {
+        "file": "test-results/lossless/native-p0-final-0/results.json",
+        "sha256": "274f619fd664881accac7b36c2413b68434863ff38d0414d94d3c64214e126b5",
+        "results": [
+          {
+            "name": "complex",
+            "encoding": "UTF-8",
+            "sha256": "88e2087b23659a1b6b5729fc4a7fea45058ba59453d1dda12e6cd14587dfc947",
+            "bytes": 1652,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "complex localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "complex-crlf",
+            "encoding": "UTF-8",
+            "sha256": "71bf82dcf30374d18b2228b02473385864f6f0c9a39a1b6737c8b4507d8d1a2b",
+            "bytes": 1739,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "complex-crlf localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "boundaries",
+            "encoding": "UTF-8",
+            "sha256": "ea3193f28662c678ecf756b8690f6c28f01b72c8e02cb016045dfaf3e3f17350",
+            "bytes": 158,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "boundaries-crlf",
+            "encoding": "UTF-8",
+            "sha256": "8bda722e995e35b9fd4b2c44fc5d4e3ab15522664c441d11453b9193c4f0be3f",
+            "bytes": 183,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "unclosed-fence",
+            "encoding": "UTF-8",
+            "sha256": "fd85e39cbdd1b9f9e40969694457913a90ef15433090db9eecfa4a9fcea0941e",
+            "bytes": 207,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "unclosed-fence localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "unclosed-fence-crlf",
+            "encoding": "UTF-8",
+            "sha256": "ad36cb4daa23d3f1c0449d1ca358a0a24720eaa6a8fb6afb6f496fdd226fb37d",
+            "bytes": 216,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "unclosed-fence-crlf localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "extensions",
+            "encoding": "UTF-8",
+            "sha256": "aa1ac799db83eec82fef0a5b08468ba0ba816807634a445ef6746e18a822de51",
+            "bytes": 374,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "extensions localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "extensions-crlf",
+            "encoding": "UTF-8",
+            "sha256": "9be44b80c77db1546c41120f84b9b802a7db6b3bcfca5d56e4363e829a085644",
+            "bytes": 398,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "extensions-crlf localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "empty",
+            "encoding": "UTF-8",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "empty-crlf",
+            "encoding": "UTF-8",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "newlines-only",
+            "encoding": "UTF-8",
+            "sha256": "7c370d9536d7d0d6a0f7cd7f9826692acd93e4fb05ba46f7b630b879740343d3",
+            "bytes": 5,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "newlines-only-crlf",
+            "encoding": "UTF-8",
+            "sha256": "9c28a83690b8fc6015bb21b820735507402d8869a7bae78c3133bcaad8622433",
+            "bytes": 10,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "spaces-tabs",
+            "encoding": "UTF-8",
+            "sha256": "56eb61cce5450a3eee3b33cf3681aa33f5d897ead3ec12f317240346aa97bfb0",
+            "bytes": 44,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "spaces-tabs localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "spaces-tabs-crlf",
+            "encoding": "UTF-8",
+            "sha256": "33efc28b016d3138db1f3889ddca22f4cd6b3b2e5364368c741cdae46f4275c1",
+            "bytes": 55,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "spaces-tabs-crlf localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "no-eof",
+            "encoding": "UTF-8",
+            "sha256": "e37a12c6e8438add1f1084f7071d0c4123b2b91e206002e1df18a64bf606bf9c",
+            "bytes": 43,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "no-eof localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "no-eof-crlf",
+            "encoding": "UTF-8",
+            "sha256": "3d01ffd49e5c1dc4417af5f37c53ee21d964d417ddf2ffc1be1a54dc5dc94e52",
+            "bytes": 45,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "no-eof-crlf localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "many-eof",
+            "encoding": "UTF-8",
+            "sha256": "d82caa44e912457243edaa52cc40e5e094f45ba031c78f990f55d4aaf325187e",
+            "bytes": 32,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "many-eof localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "many-eof-crlf",
+            "encoding": "UTF-8",
+            "sha256": "75145911d8c1a28ae204d567b70397878778e5536d67e25628a2e22c2c4c31fb",
+            "bytes": 39,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "many-eof-crlf localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "heading shortcut/save/undo",
+            "kind": "production Ctrl+3 and Ctrl+S preserve source IDs and exact bytes"
+          },
+          {
+            "name": "localized+undo+redo+reopen",
+            "kind": "real PM edit / production saves",
+            "sha256": "5c780e23cd98825204906415228c011dc9bcda2f770b369742b0e7a2706c654a"
+          },
+          {
+            "name": "external conflict",
+            "kind": "native version-checked save rejected"
+          }
+        ]
+      },
+      {
+        "file": "test-results/lossless/native-p0-final-1/results.json",
+        "sha256": "9d296c399f52c209d168ddb5e995879ad7169d20038324bc5d5137f05ba60f42",
+        "results": [
+          {
+            "name": "nested-table",
+            "encoding": "UTF-8",
+            "sha256": "ca244f2328d46da8be156962cf3c99245d1bb0634b5768854c78040e8dad30b0",
+            "bytes": 106,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "nested-table-crlf",
+            "encoding": "UTF-8",
+            "sha256": "926441feb9736d6c6a67d1f138892e364371b79736db1aa6396720c3c7bd7509",
+            "bytes": 115,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "large-source-budget",
+            "encoding": "UTF-8",
+            "sha256": "e80d3e7b05b9536d76a63d22f74a62a5808cd508a6b71bd7d0372c5113422147",
+            "bytes": 1200009,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "utf8-bom",
+            "encoding": "UTF-8",
+            "sha256": "874254256f48588269e9c7e95e7ca6e26018a5c91bb2be2fafea1f66bcfffd69",
+            "bytes": 1655,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "utf8-bom localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "mixed-eol",
+            "encoding": "UTF-8",
+            "sha256": "c76a2237e2f96c36800f03501817e567c421f9154c16d624fd3840a1de07403d",
+            "bytes": 1682,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "mixed-eol localized history",
+            "encoding": "UTF-8",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "UTF-16LE-false",
+            "encoding": "UTF-16LE",
+            "sha256": "f80187d34f90a44ea80bd04311f98b4c48d3b5a279a3652241950baa90541473",
+            "bytes": 72,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "UTF-16LE-false localized history",
+            "encoding": "UTF-16LE",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "UTF-16LE-true",
+            "encoding": "UTF-16LE",
+            "sha256": "d724324c7bed626600ebbadae97d247bcfd4bcbe025149ef872c75af56de2a50",
+            "bytes": 74,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "UTF-16LE-true localized history",
+            "encoding": "UTF-16LE",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "UTF-16BE-false",
+            "encoding": "UTF-16BE",
+            "sha256": "9ee972e6be9950c1d94219d908b3732480eb258842eba28468ef76071c617f8c",
+            "bytes": 72,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "UTF-16BE-false localized history",
+            "encoding": "UTF-16BE",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "UTF-16BE-true",
+            "encoding": "UTF-16BE",
+            "sha256": "a76c18cdb3441dc563197af8ff930aad8d109af478d55830d804878c1e78c9c4",
+            "bytes": 74,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "UTF-16BE-true localized history",
+            "encoding": "UTF-16BE",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "GB18030",
+            "encoding": "GB18030",
+            "sha256": "fa7950d563dbb6d1e34e45823533feaeb47cbd951c03429da609025b0aedb31c",
+            "bytes": 34,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "GB18030 localized history",
+            "encoding": "GB18030",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "windows-1252",
+            "encoding": "windows-1252",
+            "sha256": "10ca54142336c08e7e7977a4f01f8d2e4b7669238d8e8f047da22ee4fc9f8adf",
+            "bytes": 31,
+            "kind": "no-op/save/reopen"
+          },
+          {
+            "name": "windows-1252 localized history",
+            "encoding": "windows-1252",
+            "kind": "byte patch + undo/redo preserves encoding/BOM/EOL"
+          },
+          {
+            "name": "heading shortcut/save/undo",
+            "kind": "production Ctrl+3 and Ctrl+S preserve source IDs and exact bytes"
+          },
+          {
+            "name": "localized+undo+redo+reopen",
+            "kind": "real PM edit / production saves",
+            "sha256": "5c780e23cd98825204906415228c011dc9bcda2f770b369742b0e7a2706c654a"
+          },
+          {
+            "name": "external conflict",
+            "kind": "native version-checked save rejected"
+          }
+        ]
+      }
+    ]
+  }
+}

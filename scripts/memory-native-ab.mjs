@@ -19,7 +19,10 @@ assert(/^[\w-]+$/.test(label), `Invalid label: ${label}`)
 assert(Number.isInteger(rounds) && rounds >= 1 && rounds <= 5, `Invalid rounds: ${rounds}`)
 
 const root = path.resolve('test-results/phase042')
-const out = path.join(root, `native-${label}`)
+const workloads=process.argv.includes('--workloads-only')
+const syncWorkloads=process.argv.includes('--sync-only')
+assert(!(workloads&&syncWorkloads))
+const out = path.join(root, `native-${label}${workloads?'-workloads':syncWorkloads?'-sync':''}`)
 fs.mkdirSync(out, { recursive: true })
 
 const build = JSON.parse(fs.readFileSync(path.join(root, `build-${label}.json`), 'utf8'))
@@ -33,7 +36,7 @@ fs.mkdirSync(profile, { recursive: true })
 const fixtureDir = path.join(root, 'fixtures')
 const fixtureManifest = ensurePhase042Fixtures(fixtureDir)
 
-const SCENARIOS = [
+const SCENARIOS = syncWorkloads ? ['Z-mode-switch','Z-multipane-input'] : workloads ? ['Y-code-interactions','Y-txt-search','Y-pdf-navigation','Y-image-zoom'] : [
   'A-blank',
   'B-md-5kb-2img',
   'C-md-live',
@@ -76,6 +79,8 @@ for ($i = 1; $i -le $Samples; $i++) {
     webviewPrivate = [long](($wvProcs | Measure-Object PrivateMemorySize64 -Sum).Sum)
     webviewWorking = [long](($wvProcs | Measure-Object WorkingSet64 -Sum).Sum)
     webviewProcesses = [int]$wvProcs.Count
+    rustCpuMs = [double]$nativeProc.TotalProcessorTime.TotalMilliseconds
+    webviewCpuMs = [double](($wvProcs | ForEach-Object {$_.TotalProcessorTime.TotalMilliseconds} | Measure-Object -Sum).Sum)
   } | ConvertTo-Json -Compress
   if ($i -lt $Samples) { Start-Sleep -Milliseconds $DelayMs }
 }
@@ -174,6 +179,7 @@ try {
     })
     let stderr = ''
     child.stderr.on('data', chunk => { stderr += chunk })
+    child.once('exit',(code,signal)=>{report.lastProcessExit={run,pid:child?.pid,code,signal,stage:report.activeScenario,stderr:stderr.slice(-2000)}})
 
     const deadline = Date.now() + 45000
     while (true) {
@@ -295,11 +301,13 @@ try {
       page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 
     for (const scenario of SCENARIOS) {
+      report.activeScenario={run,scenario};persist()
       await closeAllDocs()
       await wait(120)
       await page.evaluate(() => window.__resetMemorySceneProbe())
 
       const timeline = []
+      const operationCpuStart=(await sampleNative(child.pid,1))[0]
       const startMs = performance.now()
       let extraScenarioNotes = {}
 
@@ -438,6 +446,91 @@ try {
         extraScenarioNotes = { loadedBeforeCloseJs, loadedBeforeCloseNative }
         await closeAllDocs()
         await waitNextFrame()
+      } else if(scenario==='Z-mode-switch'){
+        const id=await openFixtureFile('doc-ordinary.md'),switches=[]
+        await page.waitForFunction(()=>!!window.__nativeManager.activeLiveEditor)
+        const original=await page.evaluate(id=>window.__nativeManager.getText(id),id)
+        for(let cycle=0;cycle<30;cycle++)for(const mode of ['source','split','live']){
+          const start=performance.now()
+          await page.evaluate(({id,mode})=>window.__nativeManager.setMarkdownMode(id,mode),{id,mode})
+          await page.waitForFunction(mode=>{
+            const m=window.__nativeManager
+            if(mode==='live')return m.activeLiveEditor?.bridge.source===m.getText(m.activeId)&&!!document.querySelector('.markdown-live')
+            return !!document.querySelector('.editor-host > .cm-editor')&&(mode==='split'?!!document.querySelector('.split-preview-pane'):!document.querySelector('.split-preview-pane'))
+          },mode)
+          await waitNextFrame();switches.push({cycle:cycle+1,mode,ms:performance.now()-start})
+        }
+        assert.equal(await page.evaluate(id=>window.__nativeManager.getText(id),id),original)
+        assert.equal(await page.evaluate(id=>window.__nativeManager.metadata(id).dirty,id),false)
+        extraScenarioNotes={switches,cycles:30,includesDriverAndTwoAnimationFrames:true}
+      } else if(scenario==='Z-multipane-input'){
+        const id=await openFixtureFile('doc-ordinary.md')
+        await page.waitForFunction(()=>!!window.__nativeManager.activeLiveEditor)
+        await page.evaluate(id=>{const m=window.__nativeManager;m.splitPane('right',m.activePane,id)},id)
+        await page.waitForFunction(()=>window.__nativeManager.liveViews.size===2)
+        extraScenarioNotes=await page.evaluate(id=>{
+          const m=window.__nativeManager,original=m.getText(id),block=m.activeLiveEditor.bridge.blocks.find(b=>b.node.type.name==='paragraph'&&b.node.textContent.length>12)
+          if(!block)throw Error('Missing ordinary paragraph')
+          const at=block.from+2,inputMs=[]
+          for(let i=0;i<30;i++){const start=performance.now();m.dispatch(id,{changes:{from:at,insert:'中'}});inputMs.push(performance.now()-start)}
+          const expected=original.slice(0,at)+'中'.repeat(30)+original.slice(at)
+          if(m.getText(id)!==expected)throw Error('Native input source differs')
+          for(const live of m.liveViews.values())if(live.editor.bridge.source!==expected)throw Error('Native pane source differs')
+          m.command('undo');if(m.getText(id)!==original||m.metadata(id).dirty)throw Error('Native input Undo differs')
+          for(const live of m.liveViews.values())if(live.editor.bridge.source!==original)throw Error('Native pane Undo differs')
+          return{inputMs,livePanes:m.liveViews.size,undoRestoredOriginal:true}
+        },id)
+      } else if(scenario==='Y-code-interactions'){
+        const id=await openFixtureFile('code-200.md')
+        await page.waitForFunction(()=>document.querySelectorAll('.markdown-live .md-code-block').length===200)
+        const original=await page.evaluate(id=>window.__nativeManager.getText(id),id)
+        const latencies=[]
+        for(const index of [0,40,80,120,160,199]){
+          const block=page.locator('.markdown-live .md-code-block').nth(index)
+          await block.scrollIntoViewIfNeeded()
+          await block.locator('.md-code-placeholder').click({position:{x:36,y:16}})
+          const start=performance.now();await page.keyboard.type('abc');latencies.push(performance.now()-start)
+          assert.notEqual(await page.evaluate(id=>window.__nativeManager.getText(id),id),original,'Code input must reach the canonical document')
+          await page.evaluate(()=>window.__nativeManager.command('undo'))
+          assert.equal(await page.evaluate(id=>window.__nativeManager.getText(id),id),original,'Each code edit must undo exactly')
+          const heading=page.locator('.markdown-live h1').first();await heading.scrollIntoViewIfNeeded();await heading.click()
+          await page.waitForFunction(()=>window.__markumoMemoryProbe.editors.embeddedCM.live===0)
+        }
+        assert.equal(await page.evaluate(id=>window.__nativeManager.getText(id),id),original)
+        extraScenarioNotes={editRoundTripMs:latencies,scrollStops:6}
+      } else if(scenario==='Y-txt-search'){
+        const id=await openFixtureFile('large-2mb.txt')
+        await page.waitForFunction(()=>!!document.querySelector('.editor-host > .cm-editor .cm-content'))
+        const edit=await page.evaluate(id=>{const m=window.__nativeManager,t=performance.now();m.dispatch(id,{changes:{from:0,insert:'BENCH_SEARCH_TARGET\n'}});return performance.now()-t},id)
+        await page.locator('.cm-content').focus();await page.keyboard.press('Control+f')
+        const search=page.locator('.cm-search input[name="search"]');await search.waitFor()
+        const start=performance.now();await search.fill('BENCH_SEARCH_TARGET');await search.press('Enter')
+        await page.waitForFunction(()=>!!document.querySelector('.cm-searchMatch'))
+        assert.equal(await page.evaluate(()=>{const m=window.__nativeManager,s=m.getState(m.activeId),r=s.selection.main;return s.sliceDoc(r.from,r.to)}),'BENCH_SEARCH_TARGET')
+        extraScenarioNotes={editMs:edit,searchMs:performance.now()-start}
+        await search.press('Escape');await page.evaluate(()=>window.__nativeManager.command('undo'))
+      } else if(scenario==='Y-pdf-navigation'){
+        await openFixtureFile('sample-multi.pdf')
+        await page.waitForFunction(()=>{const c=document.querySelector('.pdf-page canvas');return c&&c.width>0})
+        const latencies=[],states=[]
+        for(const number of ['3','1','2']){
+          const input=page.getByRole('textbox',{name:'页码',exact:true});await input.fill(number)
+          const start=performance.now();await input.press('Enter')
+          await page.waitForTimeout(300)
+          await page.getByRole('combobox',{name:'PDF 缩放比例',exact:true}).selectOption('1.5')
+          await page.waitForFunction(number=>{const m=window.__nativeManager,s=m.mediaViewState(m.activeId,m.activePane),target=document.querySelector(`.pdf-page[aria-label="第 ${number} 页"] canvas`);return s.page===Number(number)&&s.scale===1.5&&target?.width>0&&target?.height>0},number)
+          states.push(await page.evaluate(()=>{const m=window.__nativeManager,s=m.mediaViewState(m.activeId,m.activePane);return{page:s.page,scale:s.scale}}))
+          latencies.push(performance.now()-start)
+        }
+        extraScenarioNotes={navigationZoomMs:latencies,states,includesSettleDelayMs:300}
+      } else if(scenario==='Y-image-zoom'){
+        await openFixtureFile('img-large-24mp.png')
+        await page.waitForFunction(()=>{const img=document.querySelector('.image-stage img');return img?.complete&&img.naturalWidth===6000})
+        const start=performance.now()
+        await page.getByRole('button',{name:'原始尺寸 100%',exact:true}).click()
+        await page.getByRole('button',{name:'放大',exact:true}).click()
+        await page.getByRole('button',{name:'适应窗口',exact:true}).click()
+        extraScenarioNotes={zoomSequenceMs:performance.now()-start}
       } else if (scenario === 'X-large-txt-2mb') {
         const id = await openFixtureFile('large-2mb.txt')
         await page.waitForFunction(() => !!document.querySelector('.editor-host > .cm-editor .cm-content'), null, { timeout: 20000 })
@@ -460,6 +553,13 @@ try {
         await wait(250)
       }
       const nativeSamples = await nativePromise
+      const cpuPeaks={rust:0,webview:0,normalizationCores:os.availableParallelism()}
+      const cpuSamples=[operationCpuStart,...nativeSamples]
+      for(let at=1;at<cpuSamples.length;at++){
+        const a=cpuSamples[at-1],b=cpuSamples[at],elapsed=b.time-a.time
+        if(elapsed>0)for(const name of ['rust','webview'])cpuPeaks[name]=Math.max(cpuPeaks[name],Math.max(0,b[name+'CpuMs']-a[name+'CpuMs'])/elapsed*100/os.availableParallelism())
+      }
+      extraScenarioNotes.sampledCpuPercent=cpuPeaks
       const preGcJs = await collectJsMetrics()
       const preGcNative = (await sampleNative(child.pid, 1))[0]
 
