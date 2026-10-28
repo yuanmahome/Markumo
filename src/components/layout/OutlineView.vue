@@ -27,6 +27,7 @@
         :aria-expanded="hasChildren(item) ? filtering || !collapsed.has(item.id) : undefined"
         :tabindex="item.id === focusedId || (!focusedId && index===0) ? 0 : -1"
         :style="{ paddingLeft: `${(item.level - 1) * 12 + 10}px` }"
+        :title="item.name"
         :draggable="isMarkdown"
         @dragstart="onDragStart($event, item)"
         @dragover="onDragOver($event, item)"
