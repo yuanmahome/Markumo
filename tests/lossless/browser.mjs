@@ -123,6 +123,27 @@ try {
     },complex)
     assert.equal(output,complex.replace('##   ATX 标题  ##','###   ATX 标题  ##'))
   })
+  await check('heading keyboard command preserves source identity and undo bytes',async()=>{
+    await page.evaluate(source=>window.f.reset(source),complex);await page.waitForFunction(()=>window.f.ready())
+    await page.evaluate(()=>window.f.caret('ATX 标题'))
+    await page.keyboard.press('Control+3')
+    const expected=complex.replace('##   ATX 标题  ##','###   ATX 标题  ##')
+    assert.equal(await page.evaluate(()=>window.f.manager.getText(window.f.id)),expected)
+    await page.keyboard.press('Control+z');assert.equal(await page.evaluate(()=>window.f.manager.getText(window.f.id)),complex)
+    assert.equal(await page.evaluate(()=>window.f.manager.metadata(window.f.id).dirty),false)
+    await page.keyboard.press('Control+y');assert.equal(await page.evaluate(()=>window.f.manager.getText(window.f.id)),expected)
+  })
+  await check('heading format command preserves distinct IDs across multiple blocks',async()=>{
+    const source='#   First #\n\n##  Second ##\n'
+    await page.evaluate(source=>window.f.reset(source),source);await page.waitForFunction(()=>window.f.ready())
+    const output=await page.evaluate(()=>{
+      const e=window.f.manager.activeLiveEditor,positions=[]
+      e.view.state.doc.forEach((node,pos)=>{if(node.type.name==='heading')positions.push({from:pos+1,to:pos+1+node.content.size})})
+      e.view.dispatch(e.view.state.tr.setSelection(window.lossless.TextSelection.create(e.view.state.doc,positions[0].from,positions[1].to)))
+      e.format('heading-3');return window.f.manager.getText(window.f.id)
+    })
+    assert.equal(output,'###   First #\n\n###  Second ##\n')
+  })
   await check('localized image destination preserves quotes and neighbors',async()=>{
     const output=await page.evaluate(source=>{
       const b=new window.lossless.MarkdownSourceBridge(source),state=window.lossless.EditorState.create({doc:b.doc});let target
@@ -149,8 +170,10 @@ try {
     await page.evaluate(source=>window.f.reset(source),complex)
     await page.waitForFunction(()=>window.f.ready())
     await page.evaluate(()=>window.f.split())
+    await page.waitForFunction(()=>window.f.ready()&&window.f.manager.liveViews.size===2)
     const metrics=await page.evaluate(async()=>{
       const m=window.f.manager,id=window.f.id,original=m.getText(id),at=original.indexOf('LOCAL_EDIT_TARGET')
+      if(m.liveViews.size!==2)throw Error('Both Live panes must be mounted before measuring')
       const samples=[],parse=window.lossless.tokenizer.parse;let chars=0,calls=0
       window.lossless.tokenizer.parse=function(text,...args){chars+=text.length;calls++;return parse.call(this,text,...args)}
       try{
@@ -158,9 +181,11 @@ try {
         const expected='中'.repeat(30)+original.slice(at)
         if(m.getText(id).slice(at)!==expected)throw Error('Cross-pane source differs')
         for(const live of m.liveViews.values())if(live.editor.bridge.source!==m.getText(id))throw Error('Live source mismatch')
-        m.command('undo');if(m.getText(id)!==original)throw Error('Undo did not restore original')
-        m.command('redo');if(m.getText(id).slice(at)!==expected)throw Error('Redo differs')
-        return{chars,calls,samples}
+        m.command('undo');if(m.getText(id)!==original||m.metadata(id).dirty)throw Error('Undo did not restore original clean state')
+        for(const live of m.liveViews.values())if(live.editor.bridge.source!==original)throw Error('Live Undo source mismatch')
+        m.command('redo');if(m.getText(id).slice(at)!==expected||!m.metadata(id).dirty)throw Error('Redo differs')
+        for(const live of m.liveViews.values())if(live.editor.bridge.source!==m.getText(id))throw Error('Live Redo source mismatch')
+        return{chars,calls,samples,livePanes:m.liveViews.size}
       }finally{window.lossless.tokenizer.parse=parse}
     })
     if(!baseline)assert(metrics.chars<complex.length*15,'ordinary edits must parse a bounded block, not each full pane document')

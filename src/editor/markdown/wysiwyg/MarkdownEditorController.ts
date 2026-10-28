@@ -13,6 +13,7 @@ import { gapCursor } from 'prosemirror-gapcursor'
 import { LiveTableToolbar, type TableToolbarCommand } from './LiveTableToolbar'
 import { markdownSchema as s } from './MarkdownSchema'
 import { MarkdownSourceBridge, textPatch, type SourcePatch } from './MarkdownSourceBridge'
+import { setSourceBlockType } from './setSourceBlockType'
 import { mathBlockParts, mapMathSelection, mergeMathComposition, type MathSelection } from './MathSource'
 import { markdownTypographyStyle } from '../typography'
 import { InlineSourceView, inlineSourceRange } from './InlineSourceView'
@@ -400,7 +401,7 @@ export class MarkdownEditorController implements LiveEditor {
               return false
             },
             ...Object.fromEntries(
-              [1, 2, 3, 4, 5, 6].map(level => [`Mod-Alt-${level}`, setBlockType(s.nodes.heading, { level })])
+              [1, 2, 3, 4, 5, 6].map(level => [`Mod-Alt-${level}`, setSourceBlockType(s.nodes.heading, { level })])
             ),
           }),
           keymap(baseKeymap),
@@ -1273,8 +1274,8 @@ export class MarkdownEditorController implements LiveEditor {
     if (this.options.readOnly?.() || this.composing) return false
     const marks = { bold: 'strong', italic: 'em', strike: 'strike', 'inline-code': 'code' } as const
     if (format in marks) return this.run(toggleMark(s.marks[marks[format as keyof typeof marks]]), true)
-    if (format === 'heading-0') return this.run(setBlockType(s.nodes.paragraph), true)
-    if (format.startsWith('heading-')) return this.run(setBlockType(s.nodes.heading, { level: +format.slice(-1) }), true)
+    if (format === 'heading-0') return this.run(setSourceBlockType(s.nodes.paragraph), true)
+    if (format.startsWith('heading-')) return this.run(setSourceBlockType(s.nodes.heading, { level: +format.slice(-1) }), true)
     if (format === 'quote') return this.run(wrapIn(s.nodes.blockquote), true)
     if (format === 'bullet' || format === 'task' || format === 'ordered') {
       const result = this.run(wrapInList(format === 'ordered' ? s.nodes.ordered_list : s.nodes.bullet_list), true)
@@ -2479,7 +2480,7 @@ export class MarkdownEditorController implements LiveEditor {
 
   private heading(level: number) {
     if (this.options.readOnly?.() || this.composing) return
-    this.run(level ? setBlockType(s.nodes.heading, { level }) : setBlockType(s.nodes.paragraph), true)
+    this.run(level ? setSourceBlockType(s.nodes.heading, { level }) : setSourceBlockType(s.nodes.paragraph), true)
   }
 
   private insertBlock(markdown: string, where: 'selection' | 'start' | 'end' = 'selection') {
