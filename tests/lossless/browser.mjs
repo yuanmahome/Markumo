@@ -12,9 +12,10 @@ const label = baseline ? 'before' : 'after'
 const originals=new Map()
 if(baseline){
   const files=execFileSync('git',['diff','--name-only','9389044','--','src'],{encoding:'utf8',windowsHide:true}).trim().split(/\r?\n/).filter(Boolean)
-  for(const file of files)try{originals.set(path.resolve(file).replaceAll('\\','/'),execFileSync('git',['show',`9389044:${file}`],{encoding:'utf8',windowsHide:true}))}catch{}
+  const historicalFiles=new Set(execFileSync('git',['ls-tree','-r','--name-only','9389044','--','src'],{encoding:'utf8',windowsHide:true}).trim().split(/\r?\n/))
+  for(const file of files)if(historicalFiles.has(file))originals.set(path.resolve(file).replaceAll('\\','/'),execFileSync('git',['show',`9389044:${file}`],{encoding:'utf8',windowsHide:true}))
 }
-const server = await createServer({ server: { host:'127.0.0.1', port:1501, strictPort:true, hmr:false, watch:null }, cacheDir:'node_modules/.vite-lossless',
+const server = await createServer({ server: { host:'127.0.0.1', port:1501, strictPort:true, hmr:false, watch:null }, cacheDir:'node_modules/.vite-lossless-'+label,
  plugins:baseline?[{name:'lossless-read-only-baseline-overlay',enforce:'pre',load(id){const [file,query]=id.split('?');if(query&&file.endsWith('.vue'))return;return originals.get(file.replaceAll('\\','/'))}}]:[] })
 await server.listen()
 const browser = await chromium.launch({ headless:true })
@@ -50,6 +51,23 @@ try {
     })
   }
   const complex=corpus.find(c=>c.name==='complex').source
+  for(const [name,source,needle,rawNeedle]of [
+    ['entity','alpha &amp; beta __bold__\n','beta','beta'],
+    ['entity atom','alpha &amp; beta\n','&','&amp;'],
+    ['escaped','alpha \\* beta\n','beta','beta'],
+    ['heading','##   标题 __bold__  ##\n','bold','bold'],
+    ['fence','```code\ncode\nsecond\n```\n','second','second'],
+    ['indented','    first\n    second\n','second','second'],
+    ['nested quote','> > first __bold__\n> > second\n','second','second'],
+  ])await check('bidirectional source offset '+name,async()=>{
+    const result=await page.evaluate(({source,needle})=>{
+      const b=new window.lossless.MarkdownSourceBridge(source);let at
+      b.doc.descendants((node,pos)=>{if(at===undefined&&node.isText&&node.text.includes(needle))at=pos+node.text.indexOf(needle)})
+      const offset=b.sourcePosition(at)
+      return{at,offset,back:b.documentPosition(offset)}
+    },{source,needle})
+    assert.equal(result.offset,source.indexOf(rawNeedle));assert.equal(result.back,result.at)
+  })
   const localized=[
     ['paragraph insert',complex,'LOCAL_EDIT_TARGET','LOCAL_EDIT_TARGET 新增中文😀'],
     ['paragraph delete',complex,'LOCAL_EDIT_TARGET','LOCAL_EDIT'],
@@ -65,6 +83,7 @@ try {
     ['repeated text','same __same__ same\n\nEND_SENTINEL\n','same','same changed'],
     ['inline mark text','prefix __bold__ _italic_ ~~strike~~ `code`\n\nEND_SENTINEL\n','bold','bold 新增'],
     ['literal punctuation','prefix __bold__ tail\n\nEND_SENTINEL\n','tail','tail *literal*'],
+    ['intraword underscore','prefix tail\n\nEND_SENTINEL\n','tail','BELOW_IMAGE'],
   ]
   for(const [name,source,needle,insert] of localized) await check('localized '+name,async()=>{
     const output=await page.evaluate(({source,needle,insert})=>{
@@ -146,6 +165,36 @@ try {
     })
     if(!baseline)assert(metrics.chars<complex.length*15,'ordinary edits must parse a bounded block, not each full pane document')
     return metrics
+  })
+  await check('mode switching preserves caret across entities and emphasis',async()=>{
+    const source='## Heading\n\nalpha &amp; beta __bold__ tail\n'
+    await page.evaluate(source=>window.f.reset(source),source);await page.waitForFunction(()=>window.f.ready())
+    await page.evaluate(()=>window.f.mode('source'))
+    const at=source.indexOf('bold')+2
+    await page.evaluate(at=>window.f.manager.dispatch(window.f.id,{selection:{anchor:at}}),at)
+    await page.evaluate(()=>window.f.mode('live'));await page.waitForFunction(()=>window.f.ready())
+    assert.equal(await page.evaluate(()=>window.f.manager.activeLiveEditor.selection.head),at)
+    await page.evaluate(()=>window.f.mode('source'));await page.waitForFunction(()=>window.f.ready())
+    assert.equal(await page.evaluate(()=>window.f.manager.activeEditorView.state.selection.main.head),at)
+    assert.equal(await page.evaluate(()=>window.f.manager.getText(window.f.id)),source)
+    assert.equal(await page.evaluate(()=>window.f.manager.metadata(window.f.id).dirty),false)
+  })
+  await check('incremental source synchronization equals a full parse at structural boundaries',async()=>{
+    await page.evaluate(source=>window.f.reset(source),complex);await page.waitForFunction(()=>window.f.ready())
+    const result=await page.evaluate(async()=>{
+      const m=window.f.manager,id=window.f.id,original=m.getText(id)
+      const normalize=node=>JSON.stringify(node.toJSON(),(key,value)=>key==='sourceId'?undefined:value)
+      let count=0
+      for(const [needle,insert]of [['LOCAL_EDIT_TARGET','中'],['LOCAL_EDIT_TARGET','*'],['LOCAL_EDIT_TARGET','\n\n## New\n\n'],['[ref]: <https://example.com/a%20b>','[ref]: <https://example.org/new>'],['##   ATX 标题  ##','ordinary paragraph'],['CELL_EDIT_TARGET','CELL_EDIT_TARGET\\| more']]){
+        const at=m.getText(id).indexOf(needle),to=at+(needle.startsWith('[ref]')||needle.startsWith('##')||needle.startsWith('CELL')?needle.length:0)
+        m.dispatch(id,{changes:{from:at,to,insert}})
+        await new Promise(r=>setTimeout(r,5))
+        const full=new window.lossless.MarkdownSourceBridge(m.getText(id))
+        if(normalize(m.activeLiveEditor.bridge.doc)!==normalize(full.doc))throw Error('Incremental parse differs for '+needle+' / '+insert)
+        count++;m.command('undo');if(m.getText(id)!==original)throw Error('Structural differential Undo differs')
+      }
+      return{cases:count}
+    });return result
   })
   await check('seeded edit/history/mode differential',async()=>{
     await page.evaluate(()=>window.f.reset('# Header\n\nLOCAL_EDIT_TARGET\n\n__unchanged__ [link](<a%20b> "title")\n'))

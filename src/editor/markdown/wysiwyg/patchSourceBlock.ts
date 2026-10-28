@@ -33,7 +33,15 @@ function decodedText(raw:string,verbatim=false,indent='') {
     size+=value.length;cursor=match.index+match[0].length
   }
   parts.push(raw.slice(cursor))
-  return {text:parts.join(''),indent,offset(position:number):number|null {
+  return {text:parts.join(''),indent,original(position:number){
+    let delta=0
+    for(const atom of atoms){
+      if(position<atom.from)break
+      if(position<atom.to)return atom.start
+      delta=atom.to-atom.end
+    }
+    return position-delta
+  },offset(position:number):number|null {
     let delta=0
     for(const atom of atoms){
       if(position<atom.start)break
@@ -44,6 +52,51 @@ function decodedText(raw:string,verbatim=false,indent='') {
     }
     return position+delta
   }}
+}
+
+/** Map source/display coordinates using the same sparse lexical boundaries as
+ * text patches. Delimiters and stripped indentation map to the nearest text
+ * edge; entities are indivisible. No map survives the current call/revision. */
+export function sourceTextPosition(node:Node,raw:string,position:number,reverse=false){
+  const ranges:{from:number;to:number;start:number;end:number;source:(n:number)=>number;display:(n:number)=>number}[]=[]
+  let cursor=0
+  const opening=node.type.name==='code_block'?/^ {0,3}(?:`{3,}|~{3,})[^\n]*\n/.exec(raw)?.[0].length||0:0
+  const body=raw.slice(opening),plain=decodedText(body),verbatim=decodedText(body,true)
+  node.descendants((child,pos,parent)=>{
+    if(child.type.name==='image_source'||child.type.name==='html_inline'){
+      const source=String(child.attrs.source??''),at=source?raw.indexOf(source,cursor):-1
+      if(at>=0){ranges.push({from:pos,to:pos+child.nodeSize,start:at,end:at+source.length,source:n=>n===pos?at:at+source.length,display:n=>n===at+source.length?pos+child.nodeSize:pos});cursor=at+source.length}
+    }
+    if(!child.isText)return
+    const code=parent?.type.name==='code_block'||child.marks.some(mark=>mark.type.name==='code')
+    const variants=[code?verbatim:plain],text=child.text!
+    if(code){
+      const line=text.split('\n').find(value=>value.trim())
+      if(line){let count=0;for(let at=body.indexOf(line);at>=0&&count++<16;at=body.indexOf(line,at+1)){
+        const prefix=body.slice(body.lastIndexOf('\n',at-1)+1,at)
+        if(/^[ \t>]+$/.test(prefix))variants.unshift(decodedText(body,true,prefix))
+      }}
+    }
+    for(const variant of variants){
+      const at=variant.text.indexOf(text,variant.original(Math.max(0,cursor-opening)))
+      if(at<0)continue
+      const start=variant.offset(at),end=variant.offset(at+text.length)
+      if(start===null||end===null)continue
+      ranges.push({from:pos,to:pos+text.length,start:opening+start,end:opening+end,
+        source:n=>opening+(variant.offset(at+n-pos)??start),display:n=>pos+variant.original(n-opening)-at})
+      cursor=opening+end;break
+    }
+  })
+  for(const range of ranges){
+    if(reverse&&position>=range.start&&position<=range.end)return Math.max(range.from,Math.min(range.to,range.display(position)))
+    if(!reverse&&position>=range.from&&position<range.to)return range.source(position)
+  }
+  if(!reverse){const end=ranges.find(range=>position===range.to);if(end)return end.source(position)}
+  let nearest:{distance:number;position:number}|undefined
+  for(const range of ranges)for(const edge of reverse?[[range.start,range.from],[range.end,range.to]]:[[range.from,range.start],[range.to,range.end]]){
+    const distance=Math.abs(position-edge[0]);if(!nearest||distance<nearest.distance)nearest={distance,position:edge[1]}
+  }
+  return nearest?.position??Math.max(0,Math.min(reverse?node.content.size:raw.length,position))
 }
 function literal(text:string,verbatim:boolean){
   return verbatim?text:text.replace(/&/g,'&amp;').replace(/[\\`*_[\]<>!#~+(){}=\-]/g,'\\$&')
@@ -87,9 +140,11 @@ export function patchSourceBlock(before:Node,after:Node,raw:string,environment:R
         const start=variant.offset(at+from),end=variant.offset(at+to)
         if(start===null||end===null)continue
         const insert=a.text!.slice(from,change.from)+change.insert+a.text!.slice(change.to,to)
+        const direct=raw.slice(0,start)+insert.replace(/\n/g,'\n'+variant.indent)+raw.slice(end)
+        if(accepts(direct))return direct
         const inserted=literal(insert,verbatim).replace(/\n/g,'\n'+variant.indent)
         const candidate=raw.slice(0,start)+inserted+raw.slice(end)
-        if(accepts(candidate))return candidate
+        if(candidate!==direct&&accepts(candidate))return candidate
         // Removing boundary whitespace can make underscore emphasis intraword.
         // Expand only to the touching delimiters; keep entities and all other
         // source untouched, and prove the resulting block semantics again.

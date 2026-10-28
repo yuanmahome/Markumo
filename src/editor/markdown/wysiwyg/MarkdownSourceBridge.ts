@@ -3,7 +3,7 @@ import { parseMarkdown, type SourceBlock } from './MarkdownParser'
 import { patchTable, serializeBlock } from './MarkdownSerializer'
 import { isTrailingParagraph, withoutTrailingParagraph } from './TrailingParagraph'
 import { isBlankParagraphNode } from '../blankLines'
-import { patchSourceBlock } from './patchSourceBlock'
+import { patchSourceBlock, sourceTextPosition } from './patchSourceBlock'
 import { textPatch, type SourcePatch } from './sourcePatch'
 export { textPatch, type SourcePatch } from './sourcePatch'
 export class MarkdownSourceBridge {
@@ -177,8 +177,7 @@ export class MarkdownSourceBridge {
     let offset=0
     for(const b of this.blocks){if(pos<offset+b.node.nodeSize){
       const local=Math.max(0,pos-offset-1)
-      if(b.node.type.name==='code_block'){const opening=/^ {0,3}(?:`{3,}|~{3,})[^\n]*\n/.exec(b.raw);return Math.min(b.to,b.from+(opening?.[0].length||0)+local)}
-      const mapped=inlineSourcePosition(b.node,b.raw,local)
+      const mapped=sourceTextPosition(b.node,b.raw,local)
       return Math.min(b.to,b.from+mapped)
     }offset+=b.node.nodeSize}
     return this.source.length
@@ -187,24 +186,9 @@ export class MarkdownSourceBridge {
     let offset=0
     for(const b of this.blocks){if(sourcePos<b.to || sourcePos===b.to&&!b.blank){
       let local=Math.max(0,sourcePos-b.from)
-      if(b.node.type.name==='code_block'){const opening=/^ {0,3}(?:`{3,}|~{3,})[^\n]*\n/.exec(b.raw);local=Math.max(0,local-(opening?.[0].length||0))}
+      local=sourceTextPosition(b.node,b.raw,local,true)
       return Math.min(offset+b.node.nodeSize-1,offset+1+local)
     }offset+=b.node.nodeSize}
     return Math.max(0,this.doc.content.size-1)
   }
-}
-function inlineSourcePosition(node:Node,raw:string,position:number){
-  let cursor=0,result:number|undefined
-  node.descendants((child,pos)=>{
-    if(result!==undefined)return false
-    if (child.type.name === 'image_source') {
-      const start = raw.indexOf(child.attrs.source, cursor)
-      if (start >= 0) { if (position >= pos && position <= pos + 1) result = start; cursor = start + child.attrs.source.length }
-    }
-    if(child.isText){
-      const text=child.text!,start=raw.indexOf(text,cursor)
-      if(start>=0){if(position>=pos&&position<=pos+text.length)result=start+position-pos;cursor=start+text.length}
-    }
-  })
-  return result??Math.min(raw.length,position)
 }

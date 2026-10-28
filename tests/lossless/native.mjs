@@ -80,6 +80,23 @@ try{
   await close();await open({...item,transcode:false});await save();await close()
   assert.equal(sha(fs.readFileSync(item.path)),originalHash,'reopen '+item.name)
   results.push({name:item.name,encoding:item.encoding,sha256:originalHash,bytes:original.length,kind:'no-op/save/reopen'});persist();console.log('PASS native byte round trip',item.name)
+  if(!process.argv.includes('--no-local')&&item.source.includes('LOCAL_EDIT_TARGET')){
+   await open({...item,transcode:false})
+   await page.evaluate(()=>{
+    const m=window.__nativeManager,e=m.activeLiveEditor;let at
+    e.view.state.doc.descendants((node,pos)=>{if(at===undefined&&node.isText&&node.text.includes('LOCAL_EDIT_TARGET'))at=pos+node.text.indexOf('LOCAL_EDIT_TARGET')})
+    if(at===undefined)throw Error('Missing localized target')
+    e.view.dispatch(e.view.state.tr.insertText('EDIT_',at));e.view.focus()
+   })
+   const encode=text=>{const data=Buffer.from(text,item.encoding.startsWith('UTF-16')?'utf16le':'utf8');if(item.encoding==='UTF-16BE')data.swap16();return data}
+   const offset=original.indexOf(encode('LOCAL_EDIT_TARGET'));assert(offset>=0)
+   const expected=Buffer.concat([original.subarray(0,offset),encode('EDIT_'),original.subarray(offset)])
+   await save();assert.deepEqual(fs.readFileSync(item.path),expected,'localized bytes '+item.name)
+   await page.keyboard.press('Control+z');await save();assert.deepEqual(fs.readFileSync(item.path),original,'encoded undo '+item.name)
+   await page.keyboard.press('Control+y');await save();assert.deepEqual(fs.readFileSync(item.path),expected,'encoded redo '+item.name)
+   await page.keyboard.press('Control+z');await save();await close()
+   results.push({name:item.name+' localized history',encoding:item.encoding,kind:'byte patch + undo/redo preserves encoding/BOM/EOL'});persist()
+  }
  }
  if(!process.argv.includes('--no-local')){
  const edit=cases.find(item=>item.name==='complex');await open(edit)
