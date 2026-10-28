@@ -13,6 +13,8 @@ assert.equal(process.platform, 'win32', 'Windows WebView2 Release measurement re
 const arg = name => process.argv.find(v => v.startsWith(`--${name}=`))?.slice(name.length + 3)
 const label = arg('label') || 'before'
 const rounds = Number(arg('rounds') || 3)
+const cycles = Number(arg('cycles') || 20)
+assert(Number.isInteger(cycles) && cycles >= 1 && cycles <= 120, 'Cycles must be 1..120')
 assert(/^[\w-]+$/.test(label), `Invalid label: ${label}`)
 assert(Number.isInteger(rounds) && rounds >= 1 && rounds <= 5, `Invalid rounds: ${rounds}`)
 
@@ -44,7 +46,7 @@ const SCENARIOS = [
   'J-large-image-viewer',
   'J2-md-large-image',
   'K-pdf-viewer',
-  'L-open-switch-close-20',
+  `L-open-switch-close-${cycles}`,
   'M-post-close-recovery',
   'X-large-txt-2mb',
 ]
@@ -87,6 +89,8 @@ const report = {
   kind: 'Windows WebView2 native Release (Phase 04.2)',
   label,
   rounds,
+  cycles,
+  startups: [],
   build,
   os: { release: os.release(), version: os.version(), arch: os.arch() },
   hardware: {
@@ -156,6 +160,7 @@ try {
     const tempDir = path.join(root, 'tmp')
     fs.mkdirSync(tempDir, { recursive: true })
 
+    const processStarted = performance.now()
     child = spawn(build.binary, [], {
       windowsHide: true,
       env: {
@@ -196,6 +201,7 @@ try {
       null,
       { timeout: 25000 }
     )
+    report.startups.push({run, processToObservedReadyMs: performance.now() - processStarted})
 
     const display = await page.evaluate(() => ({
       width: innerWidth,
@@ -231,6 +237,7 @@ try {
           workers: { ...p.workers },
           tasks: { ...p.tasks },
           blobs: { ...p.blobs },
+          observers: JSON.parse(JSON.stringify(p.observers || {})),
           longTasksCount,
           longTasksTotalMs: Number(longTasksTotalMs.toFixed(2)),
           domMedia,
@@ -388,8 +395,9 @@ try {
           return canvas && canvas.width > 0 && canvas.height > 0
         }, null, { timeout: 20000 })
         await waitNextFrame()
-      } else if (scenario === 'L-open-switch-close-20') {
-        for (let cycle = 1; cycle <= 20; cycle++) {
+      } else if (scenario.startsWith('L-open-switch-close-')) {
+        extraScenarioNotes.checkpoints = []
+        for (let cycle = 1; cycle <= cycles; cycle++) {
           const idCode = await openFixtureFile('code-50.md')
           await page.waitForFunction(() => document.querySelectorAll('.markdown-live .md-code-block').length === 50, null, { timeout: 15000 })
           const idImg = await openFixtureFile('doc-5kb-2img.md')
@@ -406,6 +414,10 @@ try {
             timeline.push(await collectJsMetrics())
           }
           await closeAllDocs()
+          if ([30,60,120].includes(cycle)) {
+            await wait(500)
+            extraScenarioNotes.checkpoints.push({cycle, js:await collectJsMetrics(), native:(await sampleNative(child.pid,1))[0]})
+          }
         }
         // Leave one final active document open briefly or keep settled post-20 state?
         // Scenario L measures the state right after 20 open/switch/close cycles.

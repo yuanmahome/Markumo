@@ -78,6 +78,43 @@ const PROBE_BOOTSTRAP = `
   };
   window.__markumoMemoryProbe = probe;
 
+  // Count outstanding explicit registrations without retaining observers or
+  // targets in the probe. These are registration counters, not GC reachability.
+  probe.observers = {};
+  for (const name of ['MutationObserver', 'ResizeObserver', 'IntersectionObserver']) {
+    const Native = window[name];
+    if (typeof Native !== 'function') continue;
+    const stats = probe.observers[name] = { created: 0, active: 0, targets: 0, peak: 0 };
+    const records = new WeakMap();
+    const Wrapped = function(...args) {
+      const observer = new Native(...args);
+      stats.created++;
+      records.set(observer, { targets: new WeakSet(), count: 0 });
+      return observer;
+    };
+    Wrapped.prototype = Native.prototype;
+    Object.setPrototypeOf(Wrapped, Native);
+    for (const method of ['observe', 'unobserve', 'disconnect']) {
+      const original = Native.prototype[method];
+      if (!original) continue;
+      Native.prototype[method] = function(...args) {
+        const result = original.apply(this, args), record = records.get(this);
+        if (!record) return result;
+        if (method === 'observe' && !record.targets.has(args[0])) {
+          record.targets.add(args[0]); if (!record.count++) stats.active++;
+          stats.targets++; stats.peak = Math.max(stats.peak, stats.targets);
+        } else if (method === 'unobserve' && record.targets.delete(args[0])) {
+          stats.targets--; if (!--record.count) stats.active--;
+        } else if (method === 'disconnect') {
+          stats.targets -= record.count; if (record.count) stats.active--;
+          record.count = 0; record.targets = new WeakSet();
+        }
+        return result;
+      };
+    }
+    window[name] = Wrapped;
+  }
+
   const NativeWorker = window.Worker;
   if (typeof NativeWorker === 'function') {
     const WrappedWorker = function(scriptURL, options) {
