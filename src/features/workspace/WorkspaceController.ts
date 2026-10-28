@@ -604,12 +604,19 @@ export class WorkspaceController {
     const manager = this.documentManager, targetPane = manager.activePaneId, targetPath = node.path
     const pane = manager.layout.getPane(targetPane)
     if (!pane) return
+    for (const request of this.inFlightOpens.values()) for (const [id, intent] of request.consumers) {
+      if (manager.layout.getPane(id) !== intent.pane) {
+        request.consumers.delete(id)
+        if (this.latestPaneSeq.get(id) === intent.seq) this.latestPaneSeq.delete(id)
+      }
+    }
     // Every intent counts, including an existing tab and A -> B -> pending A.
     const seq = ++this.openFileSeq, epoch = this.openEpoch, key = displayPathKey(targetPath)
     this.latestPaneSeq.set(targetPane, seq)
     const existingDoc = manager.openedDocuments.find(doc => doc.path && displayPathKey(doc.path) === key)
     if (existingDoc) {
       manager.open(existingDoc.id, preview, targetPane, false)
+      if (this.latestPaneSeq.get(targetPane) === seq) this.latestPaneSeq.delete(targetPane)
       return
     }
     const inFlight = this.inFlightOpens.get(key)
@@ -641,6 +648,7 @@ export class WorkspaceController {
         if ([...request.consumers].some(([id, intent]) => valid(id, intent))) this.notify(`打开工作区文件失败: ${e}`)
       } finally {
         if (this.inFlightOpens.get(key)?.requestId === request.requestId) this.inFlightOpens.delete(key)
+        for (const [id, intent] of request.consumers) if (this.latestPaneSeq.get(id) === intent.seq) this.latestPaneSeq.delete(id)
       }
     })()
     this.inFlightOpens.set(key, request)
@@ -1354,6 +1362,9 @@ export class WorkspaceController {
     this.cancelSearch()
     if (this.searchBatchUnsub) this.searchBatchUnsub()
     if (this.searchDoneUnsub) this.searchDoneUnsub()
+    this.searchSnapshots.clear();this.replaceSnapshots.clear();this.pendingReads.clear();this.folderLoads.clear()
+    this.searchResults=[];this.replaceFiles=[];this.selectedMatches.clear()
+    this.entries=[];this.roots=[];this.quickFiles=[];this.workspaceFiles=[]
     this.listeners.clear()
     this.openListeners.clear()
   }

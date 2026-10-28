@@ -5,11 +5,12 @@ import {spawn,execFile} from 'node:child_process'
 import {promisify} from 'node:util'
 import {chromium} from 'playwright'
 const exec=promisify(execFile),wait=ms=>new Promise(resolve=>setTimeout(resolve,ms))
-const label=process.argv.find(v=>v.startsWith('--label='))?.slice(8)||'dnd-after',baseline=label.endsWith('before')
+const label=process.argv.find(v=>v.startsWith('--label='))?.slice(8)||'dnd-after',baseline=label.endsWith('before')&&!process.argv.includes('--current-api')
 assert(/^dnd-(before|after)$/.test(label))
-const functional=process.argv.includes('--functional'),recordName=functional?'native-functional':label
+const functional=process.argv.includes('--functional'),recordName=process.argv.find(v=>v.startsWith('--record='))?.slice(9)||(functional?'native-functional':label)
+assert(/^[\w-]+$/.test(recordName))
 const rounds=Number(process.argv.find(v=>v.startsWith('--rounds='))?.slice(9)||20)
-assert(Number.isInteger(rounds)&&rounds>=1&&rounds<=100)
+assert(Number.isInteger(rounds)&&rounds>=1&&rounds<=120)
 const root=path.resolve('test-results/phase042'),out=path.resolve('test-results/drag'),fixtures=path.join(out,'fixtures'),port=9684
 fs.mkdirSync(fixtures,{recursive:true})
 const config=JSON.parse(fs.readFileSync(path.join(root,`config-${label}.json`),'utf8')),profile=path.resolve(config.app.appDirectoriesOverride)

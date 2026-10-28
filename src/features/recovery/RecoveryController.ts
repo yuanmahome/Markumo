@@ -45,7 +45,9 @@ export class RecoveryController {
   /** Canonical document id -> the one snapshot this session owns. Keying by
    * document (not pane or path) gives every pane a single recovery identity. */
   private readonly claims = new Map<string, RecoveryClaim>()
-  private readonly generations = new Map<string, number>()
+  // Tokens follow canonical metadata lifetime. Missing/replaced documents
+  // cannot match an old asynchronous token, even when their ids are reused.
+  private readonly generations = new WeakMap<EditorDocument, object>()
   private readonly pending = new Map<string, Pending>()
   private readonly failed = new Map<string, Text>()
   private readonly lastSaved = new Map<string, Text>()
@@ -126,7 +128,9 @@ export class RecoveryController {
       const current = this.pending.get(doc.id)
       if (!current || current.text !== text) this.pending.set(doc.id, { text, due: now + this.debounceMs })
     }
-    for (const id of [...this.pending.keys()]) if (!seen.has(id)) this.pending.delete(id)
+    for (const cache of [this.pending, this.failed, this.lastSaved, this.savedSummaries]) {
+      for (const id of cache.keys()) if (!seen.has(id)) cache.delete(id)
+    }
     this.schedule()
   }
 
@@ -184,6 +188,7 @@ export class RecoveryController {
     this.pending.delete(documentId)
     this.failed.delete(documentId)
     this.lastSaved.delete(documentId)
+    this.savedSummaries.delete(documentId)
     // Only a snapshot this session explicitly associated with this document
     // may be removed. Unclaimed same-path drafts are not touched.
     await this.releaseClaim(documentId)
@@ -191,10 +196,12 @@ export class RecoveryController {
 
   async discardDocument(documentId: string) {
     await this.flushing.catch(() => {})
+    if (this.disposed) return
     this.bumpGeneration(documentId)
     this.pending.delete(documentId)
     this.failed.delete(documentId)
     this.lastSaved.delete(documentId)
+    this.savedSummaries.delete(documentId)
     await this.releaseClaim(documentId)
   }
 
@@ -404,6 +411,7 @@ export class RecoveryController {
     this.timer = undefined
     this.pending.clear()
     this.failed.clear()
+    this.lastSaved.clear()
     this.claims.clear()
     this.savedSummaries.clear()
   }
@@ -434,6 +442,7 @@ export class RecoveryController {
     }
     const items = [...this.pending]
     for (const [documentId, item] of items) {
+      if (this.disposed) break
       const doc = this.manager.metadata(documentId)
       if (!doc || !this.eligible(doc)) { this.pending.delete(documentId); continue }
       if (item.due > Date.now()) continue
@@ -532,11 +541,16 @@ export class RecoveryController {
   }
 
   private generation(documentId: string) {
-    return this.generations.get(documentId) || 0
+    const doc = !this.disposed && this.manager.metadata(documentId)
+    if (!doc) return undefined
+    let token = this.generations.get(doc)
+    if (!token) { token = {}; this.generations.set(doc, token) }
+    return token
   }
 
   private bumpGeneration(documentId: string) {
-    this.generations.set(documentId, this.generation(documentId) + 1)
+    const doc = !this.disposed && this.manager.metadata(documentId)
+    if (doc) this.generations.set(doc, {})
   }
 
   private claimedRecordIds() {
