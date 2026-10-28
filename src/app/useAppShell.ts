@@ -42,6 +42,7 @@ import { readablePath } from '../features/shell/pathDisplay'
 import { textClipboard } from '../features/shell/clipboard'
 import { EditorView } from '@codemirror/view'
 import { WindowCloseGuard, type CloseSource } from '../features/shell/WindowCloseGuard'
+import { EmptyDetachedWindow } from '../features/shell/EmptyDetachedWindow'
 import { initializeLaunch, sessionInput, SessionWriter, restoreEditorLayout } from '../features/shell/launchSession'
 import { ImageImporter, imageGateway, clipboardImages, isImageFile, imageRuleKey, type ImageSource, type NativeImageInput } from '../editor/markdown/imageImport'
 import { UpdateManager, updateState, openProjectPage } from '../features/shell/AppUpdater'
@@ -1331,9 +1332,13 @@ export function useAppShell() {
   async function adoptDetachedDocument(): Promise<EditorDocument | null> {
     return adoptIncomingDocument()
   }
+  const emptyDetached=new EmptyDetachedWindow(()=>({detached:currentLaunchKind==='detached',ready:alive&&launchReady&&!startupLoading.value,documents:manager.openedDocuments.length,busy:fileBusy.value||files.workspaceBusy||files.activeOperationCount>0||manager.isComposing}),()=>windowClose.request('native'))
+  watch([revision,startupLoading,fileBusy],()=>emptyDetached.refresh(),{flush:'post'})
+  const disposeEmptyDetached=()=>emptyDetached.dispose()
+  window.addEventListener('markumo:dispose-window',disposeEmptyDetached,{once:true})
   function outgoingCommitted(event:{handoffId:string;documentId:string}){
     if(!receiveDetachCommitted(event))return
-    if(currentLaunchKind==='detached'&&manager.openedDocuments.length===0)void import('@tauri-apps/api/window').then(({getCurrentWindow})=>getCurrentWindow().close())
+    emptyDetached.refresh()
   }
 
   const startup = new DesktopStartup({
@@ -1413,7 +1418,7 @@ export function useAppShell() {
       if(fileBusy.value||files.workspaceBusy||files.activeOperationCount||manager.isComposing){toast('请等待当前文件操作或输入完成。');return}
       void detachDocumentToWindow(manager, documentId, paneId, drop, toast)
     })
-    setHandoffBusyHandler(busy=>{files.workspaceBusy=busy})
+    setHandoffBusyHandler(busy=>{files.workspaceBusy=busy;emptyDetached.refresh()})
     window.addEventListener('editor-notice', editorNotice)
     window.addEventListener('markdown-open-relative', openRelativeLink)
     window.addEventListener('paste', imagePaste, true)
@@ -1492,6 +1497,7 @@ export function useAppShell() {
   })
 
   onUnmounted(() => {
+    emptyDetached.dispose();window.removeEventListener('markumo:dispose-window',disposeEmptyDetached)
     tabDragService.dispose();setDetachRequestHandler(null);disposeHandoffs()
     window.removeEventListener('editor-notice', editorNotice)
     window.removeEventListener('markdown-open-relative', openRelativeLink)

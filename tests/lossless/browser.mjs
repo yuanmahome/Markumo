@@ -3,11 +3,19 @@ import fs from 'node:fs'
 import { createHash } from 'node:crypto'
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
+import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { corpus, eolVariants } from './corpus.mjs'
 
 const baseline = process.argv.includes('--baseline')
 const label = baseline ? 'before' : 'after'
-const server = await createServer({ server: { host:'127.0.0.1', port:1501, strictPort:true, hmr:false, watch:null }, cacheDir:'node_modules/.vite-lossless' })
+const originals=new Map()
+if(baseline){
+  const files=execFileSync('git',['diff','--name-only','9389044','--','src'],{encoding:'utf8',windowsHide:true}).trim().split(/\r?\n/).filter(Boolean)
+  for(const file of files)try{originals.set(path.resolve(file).replaceAll('\\','/'),execFileSync('git',['show',`9389044:${file}`],{encoding:'utf8',windowsHide:true}))}catch{}
+}
+const server = await createServer({ server: { host:'127.0.0.1', port:1501, strictPort:true, hmr:false, watch:null }, cacheDir:'node_modules/.vite-lossless',
+ plugins:baseline?[{name:'lossless-read-only-baseline-overlay',enforce:'pre',load(id){const [file,query]=id.split('?');if(query&&file.endsWith('.vue'))return;return originals.get(file.replaceAll('\\','/'))}}]:[] })
 await server.listen()
 const browser = await chromium.launch({ headless:true })
 const page = await browser.newPage({ viewport:{ width:1280, height:850 } })
@@ -50,9 +58,13 @@ try {
     ['table cell',complex,'CELL_EDIT_TARGET','CELL_EDIT_TARGET 新增'],
     ['code fence',complex,'CODE_EDIT_TARGET','CODE_EDIT_TARGET 新增'],
     ['unclosed fence',corpus.find(c=>c.name==='unclosed-fence').source,'print','print_new'],
-    ['entity prefix','alpha &amp; beta __bold__ and é 😀\n\nEND_SENTINEL\n','alpha & beta ','alpha & beta 新增'],
-    ['escaped prefix','alpha \\* beta __bold__\n\nEND_SENTINEL\n','alpha * beta ','alpha * beta 新增'],
+    ['nested code',complex,'const nested','const nested_changed'],
+    ['indented code',complex,'缩进代码第一行','缩进代码第一行新增'],
+    ['entity prefix','alpha &amp; beta __bold__ and é 😀\n\nEND_SENTINEL\n','alpha & beta ','alpha & beta 新增 '],
+    ['escaped prefix','alpha \\* beta __bold__\n\nEND_SENTINEL\n','alpha * beta ','alpha * beta 新增 '],
     ['repeated text','same __same__ same\n\nEND_SENTINEL\n','same','same changed'],
+    ['inline mark text','prefix __bold__ _italic_ ~~strike~~ `code`\n\nEND_SENTINEL\n','bold','bold 新增'],
+    ['literal punctuation','prefix __bold__ tail\n\nEND_SENTINEL\n','tail','tail *literal*'],
   ]
   for(const [name,source,needle,insert] of localized) await check('localized '+name,async()=>{
     const output=await page.evaluate(({source,needle,insert})=>{
@@ -62,9 +74,27 @@ try {
       const prepared=b.prepare(state.tr.insertText(insert,at,at+needle.length).doc);prepared.commit();return b.source
     },{source,needle,insert})
     const rawNeedle=name==='entity prefix'?'alpha &amp; beta ':name==='escaped prefix'?'alpha \\* beta ':needle
-    const rawInsert=name==='entity prefix'?'alpha &amp; beta 新增':name==='escaped prefix'?'alpha \\* beta 新增':insert
+    const rawInsert=name==='entity prefix'?'alpha &amp; beta 新增 ':name==='escaped prefix'?'alpha \\* beta 新增 ':name==='literal punctuation'?'tail \\*literal\\*':insert
     const expected=source.replace(rawNeedle,rawInsert)
     assert.equal(output,expected);return{sha256:sha(output)}
+  })
+  await check('boundary deletion preserves entity and changes only touching emphasis delimiters',async()=>{
+    const source='alpha &amp; beta __bold__ tail\n\nEND_SENTINEL\n'
+    const output=await page.evaluate(source=>{
+      const b=new window.lossless.MarkdownSourceBridge(source),state=window.lossless.EditorState.create({doc:b.doc});let at
+      b.doc.descendants((node,pos)=>{if(node.isText&&node.text==='alpha & beta ')at=pos+node.text.length-1})
+      return b.prepare(state.tr.delete(at,at+1).doc).source
+    },source)
+    assert.equal(output,'alpha &amp; beta**bold** tail\n\nEND_SENTINEL\n')
+  })
+  await check('indented code newline uses existing source indentation',async()=>{
+    const source='Before\n\n    first\n    second\n\nEND_SENTINEL\n'
+    const output=await page.evaluate(source=>{
+      const b=new window.lossless.MarkdownSourceBridge(source),state=window.lossless.EditorState.create({doc:b.doc});let at
+      b.doc.descendants((node,pos)=>{if(node.isText&&node.text.includes('first\nsecond'))at=pos+5})
+      return b.prepare(state.tr.insertText('\nnew',at).doc).source
+    },source)
+    assert.equal(output,source.replace('    first\n','    first\n    new\n'))
   })
   await check('localized ATX marker only',async()=>{
     const output=await page.evaluate(source=>{
@@ -73,6 +103,28 @@ try {
       return b.prepare(state.tr.setNodeMarkup(target.pos,undefined,{...target.node.attrs,level:3}).doc).source
     },complex)
     assert.equal(output,complex.replace('##   ATX 标题  ##','###   ATX 标题  ##'))
+  })
+  await check('localized image destination preserves quotes and neighbors',async()=>{
+    const output=await page.evaluate(source=>{
+      const b=new window.lossless.MarkdownSourceBridge(source),state=window.lossless.EditorState.create({doc:b.doc});let target
+      b.doc.descendants((node,pos)=>{if(node.type.name==='image'&&node.attrs.src==='./path%20space/image.png')target={node,pos}})
+      return b.prepare(state.tr.setNodeMarkup(target.pos,undefined,{...target.node.attrs,src:'./new%20path/image.png'}).doc).source
+    },complex)
+    assert.equal(output,complex.replace('./path%20space/image.png','./new%20path/image.png'))
+  })
+  await check('localized task toggle and Setext level preserve all other source',async()=>{
+    const output=await page.evaluate(source=>{
+      const b=new window.lossless.MarkdownSourceBridge(source),state=window.lossless.EditorState.create({doc:b.doc});let target
+      b.doc.descendants((node,pos)=>{if(node.type.name==='list_item'&&node.attrs.checked===true)target={node,pos}})
+      return b.prepare(state.tr.setNodeMarkup(target.pos,undefined,{...target.node.attrs,checked:false}).doc).source
+    },complex)
+    assert.equal(output,complex.replace('- [X] 完成任务','- [ ] 完成任务'))
+    const heading=await page.evaluate(source=>{
+      const b=new window.lossless.MarkdownSourceBridge(source),state=window.lossless.EditorState.create({doc:b.doc});let target
+      b.doc.forEach((node,pos)=>{if(node.type.name==='heading'&&node.attrs.level===1)target={node,pos}})
+      return b.prepare(state.tr.setNodeMarkup(target.pos,undefined,{...target.node.attrs,level:2}).doc).source
+    },complex)
+    assert.equal(heading,complex.replace('=============','-------------'))
   })
   await check('source mutation/undo/redo and multi-pane canonical ownership',async()=>{
     await page.evaluate(source=>window.f.reset(source),complex)
@@ -92,6 +144,7 @@ try {
         return{chars,calls,samples}
       }finally{window.lossless.tokenizer.parse=parse}
     })
+    if(!baseline)assert(metrics.chars<complex.length*15,'ordinary edits must parse a bounded block, not each full pane document')
     return metrics
   })
   await check('seeded edit/history/mode differential',async()=>{

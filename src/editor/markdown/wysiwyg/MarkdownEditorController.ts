@@ -990,7 +990,8 @@ export class MarkdownEditorController implements LiveEditor {
       return
     }
     const remote = update as LiveUpdate | undefined
-    this.inlineSource?.mapSource(textPatch(this.bridge.source, source))
+    const sourceChange=textPatch(this.bridge.source,source)
+    this.inlineSource?.mapSource(sourceChange)
     if (remote && remote.transactions[0]?.before.eq(this.view.state.doc)) {
       const tr = this.view.state.tr.setMeta('trailingParagraphSync', true)
       for (const transaction of remote.transactions) {
@@ -1005,7 +1006,7 @@ export class MarkdownEditorController implements LiveEditor {
       this.view.updateState(state)
     } else {
       const sel = this.selection
-      const bridge = new MarkdownSourceBridge(source, this.bridge)
+      const bridge = MarkdownSourceBridge.fromSource(source,this.bridge,sourceChange)
       reuseSourceBlocks(bridge, this.bridge)
       const doc = withTrailingParagraph(bridge.doc)
       const state = this.view.state

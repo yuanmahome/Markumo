@@ -1340,8 +1340,9 @@ export class DocumentManager {
     const line = state.doc.lineAt(position)
     record.meta.line = line.number
     record.meta.column = position - line.from + 1
+    let liveSource:string|undefined
     for(const [pane,live]of this.liveViews)if(live.id===record.meta.id){
-      if(docChanged&&pane!==this.liveOrigin?.pane)live.editor.sync(state.doc.toString(),this.liveOrigin?.update)
+      if(docChanged&&pane!==this.liveOrigin?.pane)live.editor.sync(liveSource??=state.doc.toString(),this.liveOrigin?.update)
       live.editor.refreshResources()
     }
     this.notify()

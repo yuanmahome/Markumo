@@ -69,6 +69,18 @@ try{
    return{created:active,allDelivered:events.every((e,i)=>i===0||e.join(',')==='true,false'),stoppedUnchanged:events[0].length===beforeDispose,disconnected:observers.every(o=>o.disconnected),registrations:observers.reduce((sum,o)=>sum+o.targets.size,0)}
   });assert.equal(result.created,1);assert.equal(result.allDelivered,true);assert.equal(result.stoppedUnchanged,true);assert.equal(result.disconnected,true);assert.equal(result.registrations,0);return result
  })
+ if(!baseline)await check('empty detached closure follows settled ownership, not only commit events',async()=>{
+  const result=await page.evaluate(async()=>{
+   const {EmptyDetachedWindow}=await import('/src/features/shell/EmptyDetachedWindow.ts')
+   const state={detached:true,ready:true,documents:0,busy:false};let closed=0,resolve
+   const closer=new EmptyDetachedWindow(()=>({...state}),()=>{closed++;return new Promise(r=>resolve=r)})
+   closer.refresh();await Promise.resolve();if(closed)throw Error('Initial empty window closed')
+   state.documents=1;closer.refresh();state.documents=0;state.busy=true;closer.refresh();await Promise.resolve()
+   if(closed)throw Error('Busy handoff window closed')
+   state.busy=false;closer.refresh();closer.refresh();await Promise.resolve();if(closed!==1)throw Error('Settled empty ownership must close exactly once')
+   resolve();await Promise.resolve();closer.dispose();closer.refresh();return{closed}
+  });assert.equal(result.closed,1);return result
+ })
  fs.mkdirSync('test-results/lifecycle',{recursive:true});fs.writeFileSync(`test-results/lifecycle/ownership-${baseline?'before':'after'}.json`,JSON.stringify(results,null,2)+'\n')
  const failed=results.filter(result=>!result.ok);console.log(`OWNERSHIP ${baseline?'before':'after'}: ${results.length-failed.length}/${results.length}`)
  if(!baseline)assert.equal(failed.length,0,failed.map(f=>f.name).join('\n'))

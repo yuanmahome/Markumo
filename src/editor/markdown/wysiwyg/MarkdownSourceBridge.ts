@@ -3,20 +3,32 @@ import { parseMarkdown, type SourceBlock } from './MarkdownParser'
 import { patchTable, serializeBlock } from './MarkdownSerializer'
 import { isTrailingParagraph, withoutTrailingParagraph } from './TrailingParagraph'
 import { isBlankParagraphNode } from '../blankLines'
-export interface SourcePatch { from:number;to:number;insert:string;blockId?:string;htmlOrdinal?:number;imageDraft?:{from:number;to:number} }
-export function textPatch(before:string,after:string):SourcePatch|null {
-  if(before===after)return null
-  let from=0,to=before.length,end=after.length
-  while(from<to&&from<end&&before[from]===after[from])from++
-  // Do not split UTF-16 surrogate pairs when constructing CM changes.
-  if(from && /[\uD800-\uDBFF]/.test(before[from-1]))from--
-  while(to>from&&end>from&&before[to-1]===after[end-1]){to--;end--}
-  if(to<before.length&&to>0&&/[\uD800-\uDBFF]/.test(before[to-1])){to++;end++}
-  return {from,to,insert:after.slice(from,end)}
-}
+import { patchSourceBlock } from './patchSourceBlock'
+import { textPatch, type SourcePatch } from './sourcePatch'
+export { textPatch, type SourcePatch } from './sourcePatch'
 export class MarkdownSourceBridge {
   source:string; doc:Node; blocks:SourceBlock[]; tail:string; environment:Record<string,unknown>
   constructor(source:string,previous?:{blocks:readonly SourceBlock[];environment:Record<string,unknown>}){this.source=source;const parsed=parseMarkdown(source,{},previous);this.doc=parsed.doc;this.blocks=parsed.blocks;this.tail=parsed.tail;this.environment=parsed.environment}
+  /** Source typing in one ordinary textblock cannot change surrounding block
+   * boundaries without touching an EOL. Reparse that block in the existing
+   * reference environment; structural edits keep the full authoritative parse. */
+  static fromSource(source:string,previous:MarkdownSourceBridge,change:SourcePatch|null){
+    if(change&&!/[\r\n]/.test(change.insert)&&!/[\r\n]/.test(previous.source.slice(change.from,change.to))){
+      const index=previous.blocks.findIndex(block=>!block.blank&&change.from>=block.from&&change.to<=block.to&&['paragraph','heading'].includes(block.node.type.name))
+      if(index>=0){
+        const old=previous.blocks[index],raw=old.raw.slice(0,change.from-old.from)+change.insert+old.raw.slice(change.to-old.from)
+        const parsed=parseMarkdown(raw,previous.environment)
+        if(parsed.blocks.length===1&&parsed.blocks[0].node.type===old.node.type&&JSON.stringify(parsed.environment)===JSON.stringify(previous.environment)){
+          const delta=change.insert.length-(change.to-change.from),node=parsed.blocks[0].node
+          const blocks=previous.blocks.map((block,at)=>at<index?block:at>index?{...block,from:block.from+delta,to:block.to+delta}:{...block,to:block.to+delta,raw,node:node.type.create({...node.attrs,sourceId:old.id},node.content,node.marks)})
+          const next=Object.create(MarkdownSourceBridge.prototype) as MarkdownSourceBridge
+          Object.assign(next,{source,blocks,doc:previous.doc.copy(Fragment.from(blocks.map(block=>block.node))),tail:previous.tail,environment:previous.environment})
+          return next
+        }
+      }
+    }
+    return new MarkdownSourceBridge(source,previous)
+  }
   /** Prepare without mutating; commit only after the canonical document accepts
    * the patch against the exact expected source revision. */
   prepare(doc:Node, inlinePatch?:SourcePatch){
@@ -80,7 +92,7 @@ export class MarkdownSourceBridge {
         if(inlineRaw===undefined)throw new Error('局部源码与文档节点不一致，拒绝修改。')
         inlineApplied=true
       }
-      let raw=inlineRaw??(old?.node.eq(node)?old.raw:old&&node.type.name==='table'&&old.node.type===node.type?(patchTable(old.node,node,old.raw)??serializeBlock(node)):serializeBlock(node))
+      let raw=inlineRaw??(old?.node.eq(node)?old.raw:old?(patchSourceBlock(old.node,node,old.raw,this.environment)??(node.type.name==='table'&&old.node.type===node.type?patchTable(old.node,node,old.raw):null)??serializeBlock(node)):serializeBlock(node))
       if(!old?.node.eq(node))raw=raw.replace(/\r?\n/g,old?.raw.match(/\r?\n/)?.[0] || eol)
       const blank=isBlankParagraphNode(node)
       if(blank)raw=old?.blank&&old.node.eq(node)?old.raw:node.textContent+eol+eol
