@@ -211,6 +211,7 @@
     @restore="restoreRecovery"
     @discard="discardRecovery"
     @restore-all="restoreAllRecovery"
+    @discard-all="discardAllRecovery"
     @diff="showRecoveryDiff"
     @close-diff="clearRecoveryDiff"
   />
@@ -251,7 +252,7 @@ const { autoCheckUpdates,autoDownloadUpdates,updateStatus,updatePanelOpen,update
   gotoLineRef, handleGotoLine, revealInExplorerToken,
   desktop, fileBusy, recentFiles, openFile, openRecent, openWorkspaceFolder, saveActive, quitApp, startupLoading, startupError, settingsReady, updateInstalling,
   recoveryRecords, recoveryVisible, recoveryBusy, recoveryError, recoveryDiff, openRecovery, closeRecovery,
-  restoreRecovery, discardRecovery, restoreAllRecovery, showRecoveryDiff, clearRecoveryDiff } = useAppShell()
+  restoreRecovery, discardRecovery, restoreAllRecovery, discardAllRecovery, showRecoveryDiff, clearRecoveryDiff } = useAppShell()
 const navigationSidebar=ref<InstanceType<typeof Sidebar>>()
 provide(workspaceNavigationKey, {workspace,enabled:()=>appMode.value==='workspace',reveal:async(path)=>{
   const id=manager.activeId,pane=manager.activePane,generation=workspace.openRevision

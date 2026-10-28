@@ -6,7 +6,7 @@
           <h2>未保存文档恢复</h2>
           <p class="hint">这些文档在异常退出前未完成保存。打开后将载入未保存内容并保持编辑状态，核对后请按 Ctrl+S 及时保存。</p>
         </div>
-        <button class="icon-close" type="button" aria-label="关闭恢复面板" @click="$emit('close')">×</button>
+        <button class="icon-close" type="button" aria-label="关闭恢复面板" :disabled="busy" @click="$emit('close')">×</button>
       </header>
 
       <p v-if="error" class="error" role="alert">{{ error }}</p>
@@ -76,7 +76,7 @@
             <strong>{{ diff.name }}</strong>
             <span v-if="diff.path" class="path">{{ displayPath(diff.path) }}</span>
           </div>
-          <button type="button" class="icon-close" aria-label="关闭差异比对" @click="$emit('close-diff')">×</button>
+          <button type="button" class="icon-close" aria-label="关闭差异比对" :disabled="busy" @click="$emit('close-diff')">×</button>
         </div>
 
         <p v-if="diff.error" class="error">{{ diff.error }}</p>
@@ -99,7 +99,18 @@
         </template>
       </div>
 
-      <footer>
+      <div v-if="confirmDiscardAll" class="discard-confirm-bar" role="alert">
+        <span class="confirm-text">确认丢弃当前列表中的 {{ records.length }} 个恢复稿？此操作不可撤销，<strong>不会删除磁盘原文件</strong>，也不会关闭当前已打开的文档。</span>
+        <div class="confirm-actions">
+          <button type="button" class="btn-danger-confirm" :disabled="busy || !records.length" @click="confirmDiscardAll = false; $emit('discard-all')">确认全部丢弃</button>
+          <button ref="discardAllCancelRef" type="button" class="btn-cancel-confirm" :disabled="busy" @click="cancelDiscardAll">取消</button>
+        </div>
+      </div>
+
+      <footer v-else>
+        <button type="button" class="discard discard-all" :disabled="busy || !records.length" @click="askDiscardAll">
+          全部丢弃
+        </button>
         <button type="button" class="secondary" :disabled="busy" @click="$emit('close')">
           稍后处理
         </button>
@@ -112,7 +123,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useModal } from '../../features/shell/useModal'
 import { diffText } from '../../features/recovery/diff'
 import { readablePath } from '../../features/shell/pathDisplay'
@@ -131,6 +142,7 @@ const emit = defineEmits<{
   (e: 'restore', record: RecoverySummary): void
   (e: 'discard', record: RecoverySummary): void
   (e: 'restore-all'): void
+  (e: 'discard-all'): void
   (e: 'diff', record: RecoverySummary): void
   (e: 'close-diff'): void
 }>()
@@ -139,6 +151,8 @@ const { dialogRef, open: openModal, close: closeModal, handleKeydown } = useModa
 void dialogRef
 
 const confirmDiscardId = ref<string | null>(null)
+const confirmDiscardAll = ref(false)
+const discardAllCancelRef = ref<HTMLButtonElement | null>(null)
 
 // 准确的比对顺序：以磁盘/会话已有内容为 before 基准，恢复稿为 after 新状态。
 // 恢复稿相对于原文件新增的内容展示为 add (+)，删除的内容展示为 remove (−)。
@@ -150,6 +164,7 @@ const diffLines = computed(() => {
 })
 
 watch(() => props.visible, value => {
+  confirmDiscardAll.value = false
   if (value) {
     openModal()
     confirmDiscardId.value = null
@@ -161,9 +176,11 @@ watch(() => props.visible, value => {
 
 function onKeydown(event: KeyboardEvent) {
   if (event.isComposing) return
+  if (props.busy && event.key === 'Escape') { event.preventDefault(); return }
   if (event.key === 'Escape') {
     event.preventDefault()
     event.stopPropagation()
+    if (confirmDiscardAll.value) { cancelDiscardAll(); return }
     if (confirmDiscardId.value) {
       confirmDiscardId.value = null
       return
@@ -218,7 +235,19 @@ function statusInfo(record: RecoverySummary) {
 }
 
 function askDiscard(record: RecoverySummary) {
+  confirmDiscardAll.value = false
   confirmDiscardId.value = record.id
+}
+
+function askDiscardAll() {
+  confirmDiscardId.value = null
+  confirmDiscardAll.value = true
+  void nextTick(() => discardAllCancelRef.value?.focus())
+}
+
+function cancelDiscardAll() {
+  confirmDiscardAll.value = false
+  void nextTick(() => dialogRef.value?.querySelector<HTMLButtonElement>('.discard-all')?.focus())
 }
 
 function cancelDiscard() {
@@ -469,6 +498,7 @@ footer {
   padding-top: 16px;
   margin-top: 14px;
 }
+.discard-all { margin-right: auto; }
 .diff-panel {
   border-top: 1px solid var(--line);
   margin-top: 16px;

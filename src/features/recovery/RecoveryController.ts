@@ -45,9 +45,9 @@ export class RecoveryController {
   /** Canonical document id -> the one snapshot this session owns. Keying by
    * document (not pane or path) gives every pane a single recovery identity. */
   private readonly claims = new Map<string, RecoveryClaim>()
-  // Tokens follow canonical metadata lifetime. Missing/replaced documents
-  // cannot match an old asynchronous token, even when their ids are reused.
-  private readonly generations = new WeakMap<EditorDocument, object>()
+  // metadata() returns a fresh display projection on every read. Track the
+  // document id instead, and prune it on close so a reused id gets a new token.
+  private readonly generations = new Map<string, object>()
   private readonly pending = new Map<string, Pending>()
   private readonly failed = new Map<string, Text>()
   private readonly lastSaved = new Map<string, Text>()
@@ -128,7 +128,7 @@ export class RecoveryController {
       const current = this.pending.get(doc.id)
       if (!current || current.text !== text) this.pending.set(doc.id, { text, due: now + this.debounceMs })
     }
-    for (const cache of [this.pending, this.failed, this.lastSaved, this.savedSummaries]) {
+    for (const cache of [this.pending, this.failed, this.lastSaved, this.savedSummaries, this.generations]) {
       for (const id of cache.keys()) if (!seen.has(id)) cache.delete(id)
     }
     this.schedule()
@@ -220,27 +220,39 @@ export class RecoveryController {
     this.diff.value = null
   }
   async discardAll() {
-    await this.discardActive()
+    if (this.disposed || this.busy.value) return
+    await this.discardRecords([...this.records.value])
+    if (!this.records.value.length) this.close()
   }
   async discard(record: RecoverySummary) {
-    await this.flushing.catch(() => {})
-    // The record must still be unclaimed: a concurrent snapshot write may have
-    // adopted it for a document. Never delete an active recovery identity.
-    if (this.claimedRecordIds().has(record.id)) {
-      this.lastError.value = '该恢复稿已被当前文档使用，未删除；请先处理对应文档。'
-      this.notify(this.lastError.value)
-      return
-    }
+    await this.discardRecords([record])
+  }
+
+  /** Delete only the listed drafts the user confirmed, never this session's
+   * active recovery claims or records that appeared after the confirmation. */
+  private async discardRecords(records: RecoverySummary[]) {
+    if (this.disposed || this.busy.value) return
+    this.busy.value = true
+    this.lastError.value = null
     try {
-      await this.gateway.remove(record.id)
-      this.records.value = this.records.value.filter(item => item.id !== record.id)
-      for (const [documentId, claim] of this.claims) if (claim.recordId === record.id) this.claims.delete(documentId)
-      if (this.diff.value?.id === record.id) this.diff.value = null
-    } catch (error) {
-      // Keep the record visible so the user can retry; deletion is not faked.
-      this.lastError.value = `丢弃恢复快照失败：${String(error)}`
-      this.notify(this.lastError.value)
-    }
+      await this.flushing.catch(() => {})
+      if (this.disposed) return
+      let failures = 0, claimed = 0, reason = ''
+      for (const record of records) {
+        if (this.disposed) break
+        if (this.claimedRecordIds().has(record.id)) { claimed++; continue }
+        if (!this.records.value.some(item => item.id === record.id)) continue
+        try {
+          await this.gateway.remove(record.id)
+          this.records.value = this.records.value.filter(item => item.id !== record.id)
+          if (this.diff.value?.id === record.id) this.diff.value = null
+        } catch (error) { failures++; reason = String(error) }
+      }
+      if (failures || claimed) {
+        this.lastError.value = [failures ? `${failures} 个恢复稿丢弃失败，已保留，可重试：${reason}` : '', claimed ? `${claimed} 个恢复稿已被当前文档使用，未删除；请先处理对应文档。` : ''].filter(Boolean).join('\n')
+        this.notify(this.lastError.value)
+      }
+    } finally { this.busy.value = false }
   }
 
   async showDiff(record: RecoverySummary) {
@@ -414,6 +426,7 @@ export class RecoveryController {
     this.lastSaved.clear()
     this.claims.clear()
     this.savedSummaries.clear()
+    this.generations.clear()
   }
 
   private eligible(doc: EditorDocument): boolean {
@@ -541,16 +554,14 @@ export class RecoveryController {
   }
 
   private generation(documentId: string) {
-    const doc = !this.disposed && this.manager.metadata(documentId)
-    if (!doc) return undefined
-    let token = this.generations.get(doc)
-    if (!token) { token = {}; this.generations.set(doc, token) }
+    if (this.disposed || !this.manager.metadata(documentId)) return undefined
+    let token = this.generations.get(documentId)
+    if (!token) { token = {}; this.generations.set(documentId, token) }
     return token
   }
 
   private bumpGeneration(documentId: string) {
-    const doc = !this.disposed && this.manager.metadata(documentId)
-    if (doc) this.generations.set(doc, {})
+    if (!this.disposed && this.manager.metadata(documentId)) this.generations.set(documentId, {})
   }
 
   private claimedRecordIds() {

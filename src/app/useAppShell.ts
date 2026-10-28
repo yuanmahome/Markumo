@@ -1672,6 +1672,7 @@ export function useAppShell() {
     restoreRecovery: (record: Parameters<typeof recovery.restore>[0]) => recovery.restore(record),
     discardRecovery: (record: Parameters<typeof recovery.discard>[0]) => recovery.discard(record),
     restoreAllRecovery: () => recovery.restoreAll(),
+    discardAllRecovery: () => recovery.discardAll(),
     showRecoveryDiff: (record: Parameters<typeof recovery.showDiff>[0]) => recovery.showDiff(record),
     clearRecoveryDiff: () => recovery.clearDiff(),
   }
