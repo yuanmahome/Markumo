@@ -73,9 +73,9 @@
             <section id="settings-markdown" class="settings-section">
               <h3>Markdown</h3>
               <h4 class="subhead">默认复制行为（{{ shortcutLabel('Mod+C') }}）</h4>
-              <div class="settingrow"><label for="settings-md-copy">始终复制 Markdown 源码（包括单行文字）</label><input id="settings-md-copy" type="checkbox" :checked="markdownClipboard?.copyMarkdown ?? false" @change="updateClipboard('copyMarkdown', ($event.target as HTMLInputElement).checked)" /></div>
+              <div class="settingrow"><label for="settings-md-copy">跨段自动复制 Markdown</label><input id="settings-md-copy" type="checkbox" :checked="markdownClipboard?.copyAcrossBlocks ?? true" @change="updateClipboard('copyAcrossBlocks', ($event.target as HTMLInputElement).checked)" /></div>
               <div class="settingrow"><label for="settings-md-copy-line">无文字选中时，复制或剪切光标所在的一整行</label><input id="settings-md-copy-line" type="checkbox" :checked="markdownClipboard?.copyWholeLine ?? false" @change="updateClipboard('copyWholeLine', ($event.target as HTMLInputElement).checked)" /></div>
-              <p class="setting-hint">默认智能复制：单行输出普通文字，跨行输出 Markdown，表格保留行列结构；自动折行不算跨行。粘贴到富文本应用时保留格式。仅在 Markdown 富文本编辑区生效。复制为 Markdown：{{ shortcutLabel('Mod+Shift+C') }}；粘贴为纯文本：{{ shortcutLabel('Mod+Shift+V') }}。</p>
+              <p class="setting-hint">单个文本块内选区复制纯文字；开启后跨段选区保留 Markdown 结构，关闭后复制可读纯文字。自动折行不算跨段，表格保留原有单元格复制规则。粘贴到富文本应用时保留所选格式。仅在 Markdown 富文本编辑区生效。复制为 Markdown（不受此开关影响）：{{ shortcutLabel('Mod+Shift+C') }}；粘贴为纯文本：{{ shortcutLabel('Mod+Shift+V') }}。</p>
               <h4 class="subhead">排版</h4>
               <div class="settingrow"><label for="settings-md-width">正文宽度</label><input id="settings-md-width" type="number" min="480" max="1400" :value="markdownTypography?.width || 860" @change="updateMd('width', Number(($event.target as HTMLInputElement).value))" /></div>
               <div class="settingrow"><label for="settings-md-size">正文字号</label><input id="settings-md-size" type="number" min="12" max="28" :value="markdownTypography?.fontSize || 16" @change="updateMd('fontSize', Number(($event.target as HTMLInputElement).value))" /></div>

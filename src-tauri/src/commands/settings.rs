@@ -69,11 +69,24 @@ impl Default for MarkdownTypography {
         }
     }
 }
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct MarkdownClipboard {
-    copy_markdown: bool,
+    copy_across_blocks: bool,
     copy_whole_line: bool,
+    // Both legacy values already enabled cross-block Markdown. Accept the old
+    // single-block override on read, then retire it on the next settings write.
+    #[serde(rename = "copyMarkdown", skip_serializing)]
+    _legacy_copy_markdown: Option<bool>,
+}
+impl Default for MarkdownClipboard {
+    fn default() -> Self {
+        Self {
+            copy_across_blocks: true,
+            copy_whole_line: false,
+            _legacy_copy_markdown: None,
+        }
+    }
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
@@ -133,7 +146,7 @@ impl Default for EditorSettings {
             keymap_preset: "markumo".into(),
             image_rules: ImageRules::default(),
             document_image_rules: BTreeMap::new(),
-            settings_version: 6,
+            settings_version: 7,
             shortcut_version: 4,
             custom_shortcuts: Vec::new(),
             shortcuts: BTreeMap::new(),
@@ -200,7 +213,7 @@ fn validate(settings: &EditorSettings) -> Result<(), String> {
         || !(500..=10000).contains(&settings.auto_save_delay)
         || !["single", "double"].contains(&settings.tree_click_mode.as_str())
         || !["markumo", "fleet", "typora"].contains(&settings.keymap_preset.as_str())
-        || !(1..=6).contains(&settings.settings_version)
+        || !(1..=7).contains(&settings.settings_version)
         || !(1..=4).contains(&settings.shortcut_version)
         || settings.custom_shortcuts.len() > 128
         || settings.custom_shortcuts.iter().any(|id| id.len() > 64)
@@ -283,4 +296,47 @@ pub async fn save_editor_settings(
     tauri::async_runtime::spawn_blocking(move || save(&path, &settings))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod clipboard_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_clipboard_keeps_cross_block_and_whole_line_behavior() {
+        for always_markdown in [false, true] {
+            let settings: EditorSettings = serde_json::from_value(serde_json::json!({
+                "settingsVersion": 6,
+                "markdownClipboard": {"copyMarkdown": always_markdown, "copyWholeLine": true}
+            }))
+            .unwrap();
+            assert!(validate(&settings).is_ok());
+            let value = serde_json::to_value(&settings).unwrap();
+            assert_eq!(
+                value["markdownClipboard"],
+                serde_json::json!({
+                    "copyAcrossBlocks": true, "copyWholeLine": true
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn cross_block_opt_out_survives_native_serialization() {
+        let settings: EditorSettings = serde_json::from_value(serde_json::json!({
+            "settingsVersion": 7,
+            "markdownClipboard": {"copyAcrossBlocks": false, "copyWholeLine": true}
+        }))
+        .unwrap();
+        assert!(validate(&settings).is_ok());
+        let next: EditorSettings =
+            serde_json::from_slice(&serde_json::to_vec(&settings).unwrap()).unwrap();
+        assert!(!next.markdown_clipboard.copy_across_blocks);
+        assert!(next.markdown_clipboard.copy_whole_line);
+        assert!(MarkdownClipboard::default().copy_across_blocks);
+        assert!(serde_json::from_value::<EditorSettings>(serde_json::json!({
+            "markdownClipboard": {"copyAcrossBlocks": "false"}
+        }))
+        .is_err());
+    }
 }

@@ -4,8 +4,8 @@ import type { MarkdownResources } from '../images'
 import type { CaretAnimation } from '../../core/caretMotion'
 export interface MarkdownTypography { width:number; fontSize:number; fontFamily:string; lineHeight:number; codeLineNumbers:boolean; codeWrap:boolean; imageBorder:boolean }
 export const defaultMarkdownTypography=():MarkdownTypography=>({width:860,fontSize:16,fontFamily:'system',lineHeight:1.6,codeLineNumbers:true,codeWrap:false,imageBorder:true})
-export interface MarkdownClipboardSettings { copyMarkdown: boolean; copyWholeLine: boolean }
-export const defaultMarkdownClipboard = (): MarkdownClipboardSettings => ({ copyMarkdown: false, copyWholeLine: false })
+export interface MarkdownClipboardSettings { copyAcrossBlocks: boolean; copyWholeLine: boolean }
+export const defaultMarkdownClipboard = (): MarkdownClipboardSettings => ({ copyAcrossBlocks: true, copyWholeLine: false })
 export type MarkdownToolbarCommand = 'footnote' | 'link-reference' | 'math' | 'toc' | 'yaml' | 'callout'
 export interface LiveToolbarState {
   heading: number

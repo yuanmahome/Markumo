@@ -22,8 +22,9 @@ export const currentShortcutVersion = 4
 /** Bumped when a stored preference needs migration. Version 4 made automatic
  * save opt-in: files written by older versions always stored the old `true`
  * default, so that value cannot prove intent. Version 5 adds independent UI typography.
- * Version 6 makes visible text the default clipboard representation for new users and unconfigured settings. */
-export const currentSettingsVersion = 6
+ * Version 6 makes visible text the default clipboard representation for new users and unconfigured settings.
+ * Version 7 replaces always-Markdown copying with opt-out automatic cross-block copying. */
+export const currentSettingsVersion = 7
 export interface EditorSettings extends UpdatePreferences {
   syntaxStyle: SyntaxStyle
   bracketMode: BracketMode
@@ -84,7 +85,10 @@ export function settingsFrom(raw: unknown): EditorSettings {
   if (s.caretAnimation === 'off' || s.caretAnimation === 'quick' || s.caretAnimation === 'smooth') defaults.caretAnimation = s.caretAnimation
   if (Number.isInteger(s.outlineWidth) && s.outlineWidth! >= 160 && s.outlineWidth! <= 520) defaults.outlineWidth = s.outlineWidth!
   if (s.markdownClipboard && typeof s.markdownClipboard === 'object') {
-    for (const key of ['copyMarkdown', 'copyWholeLine'] as const) if (typeof s.markdownClipboard[key] === 'boolean') defaults.markdownClipboard[key] = s.markdownClipboard[key]
+    // Both legacy copyMarkdown values already copied cross-block selections as
+    // Markdown. Keep that behavior while retiring the single-block override;
+    // only the new key records an explicit opt-out. Preserve whole-line copying.
+    for (const key of ['copyAcrossBlocks', 'copyWholeLine'] as const) if (typeof s.markdownClipboard[key] === 'boolean') defaults.markdownClipboard[key] = s.markdownClipboard[key]
   }
   if(s.markdownTypography&&typeof s.markdownTypography==='object'){
     const md=s.markdownTypography,target=defaults.markdownTypography

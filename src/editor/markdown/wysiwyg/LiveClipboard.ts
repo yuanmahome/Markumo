@@ -16,6 +16,38 @@ export type LiveClipboardOperation = 'copy' | 'cut' | 'paste' | 'select-all' | '
 // Re-rendering clipboard HTML must recognize those links just like Live/preview.
 const renderer = new MarkdownIt({ html: false, linkify: true })
 
+/** Keep the selected ancestors (list/quote/heading attributes), but exclude
+ * boundary textblocks whose content never entered the range. Ascending through
+ * first/last children also avoids empty quote and list wrappers at the edges. */
+function selectedBlockContent(selection: TextSelection): Fragment {
+  const { $from, $to } = selection
+  let from = selection.from, to = selection.to
+  if ($from.parent.isTextblock && $from.parent.content.size > 0 && $from.parentOffset === $from.parent.content.size) {
+    let depth = $from.depth
+    while (depth > 1 && $from.index(depth - 1) === $from.node(depth - 1).childCount - 1) depth--
+    from = $from.after(depth)
+  }
+  if ($to.parent.isTextblock && $to.parentOffset === 0) {
+    let depth = $to.depth
+    while (depth > 1 && $to.index(depth - 1) === 0) depth--
+    to = $to.before(depth)
+  }
+  if (from >= to) return Fragment.empty
+  const selected = $from.doc.slice(from, to, true).content
+  const start = $from.doc.resolve(from)
+  // Slicing the second item of an ordered list keeps the list's attributes.
+  // Advance its starting number to the first actually selected item, including
+  // nested lists on the open left edge. Fully selected lists stay untouched.
+  const numberedStart = (node: Node, depth: number): Node => {
+    if (depth > start.depth || node.type !== start.node(depth).type) return node
+    const first = node.firstChild
+    const content = first ? Fragment.from(numberedStart(first, depth + 1)).append(node.content.cut(first.nodeSize)) : node.content
+    const attrs = node.type.name === 'ordered_list' ? { ...node.attrs, order: node.attrs.order + start.index(depth) } : node.attrs
+    return node.type.create(attrs, content, node.marks)
+  }
+  return selected.firstChild ? Fragment.from(numberedStart(selected.firstChild, 1)).append(selected.cut(selected.firstChild.nodeSize)) : selected
+}
+
 /** The logical source line, never a soft-wrapped screen row. */
 function lineSelection(state: EditorState): Selection {
   const { $from } = state.selection
@@ -44,7 +76,7 @@ export class LiveClipboard {
     const selection = this.selection(state)
     if (selection.empty) return null
     const slice = selection.content()
-    const full = selection instanceof AllSelection || (selection.from <= 1 && selection.to >= state.doc.content.size - 1)
+    const full = selection instanceof AllSelection
     // A one-cell structural selection is not a table copy. Triple click and
     // programmatic single-cell selections must yield the cell's text, never a
     // one-cell Markdown table.
@@ -59,7 +91,13 @@ export class LiveClipboard {
     // its slice. Serialize the selected textblock alone, retaining inline marks
     // without inventing a table header and separators around a copied word.
     const inline = selection instanceof TextSelection && selection.$from.sameParent(selection.$to) && selection.$from.parent.isTextblock
-    let selected = inline ? Fragment.from(selection.$from.parent.cut(selection.$from.parentOffset, selection.$to.parentOffset)) : slice.content
+    // Ending at the next textblock's offset zero still selects the paragraph
+    // boundary, even though no character in that next block was selected.
+    const crossesBlocks = selection instanceof TextSelection && !selection.$from.sameParent(selection.$to)
+    let selected = inline ? Fragment.from(selection.$from.parent.cut(selection.$from.parentOffset, selection.$to.parentOffset))
+      : crossesBlocks && !acrossCells ? selectedBlockContent(selection) : slice.content
+    // The final editing affordance is not a selected source paragraph.
+    if (selected.lastChild?.attrs.editorTrailing) selected = selected.cut(0, selected.size - selected.lastChild.nodeSize)
     // Partial rectangular selections contain rows, while a whole-table selection
     // already contains a table. Close the former before invoking the serializer.
     if (selection instanceof CellSelection && selected.firstChild?.type.spec.tableRole === 'row') {
@@ -85,9 +123,9 @@ export class LiveClipboard {
     }
     const plain = singleCell
       ? cellNode ? cellNode.textBetween(0, cellNode.content.size, '\n', leafText) : ''
-      : selection instanceof TextSelection
+      : acrossCells
         ? state.doc.textBetween(selection.from, selection.to, '\n', leafText)
-        : slice.content.textBetween(0, slice.content.size, '\n', leafText)
+        : selected.textBetween(0, selected.size, '\n', leafText)
     // A partial cross-cell text selection has no exact Markdown table
     // representation: serializing the open slice would add cells the user did
     // not select. Use the selected plain range for every copy mode. A single
@@ -120,11 +158,9 @@ export class LiveClipboard {
       rich = container.innerHTML
     }
     const html = DOMPurify.sanitize(rich, { USE_PROFILES: { html: true } })
-    // Ending at the next textblock's offset zero still selects the paragraph
-    // boundary, even though no character in that next block was selected.
-    const crossesBlocks = selection instanceof TextSelection && !selection.$from.sameParent(selection.$to)
-    const multipleLines = crossesBlocks || /[\r\n]/.test(plain)
-    const useMarkdown = !singleCell && (this.settings().copyMarkdown || (!acrossCells && (table || multipleLines)))
+    let textblocks = 0
+    if (!(selection instanceof TextSelection)) selected.descendants(node => { if (node.isTextblock && !node.attrs.editorTrailing) textblocks++ })
+    const useMarkdown = !singleCell && !acrossCells && (table || (this.settings().copyAcrossBlocks && (crossesBlocks || textblocks > 1)))
     return { selection, markdown, plain, html, text: useMarkdown ? markdown : plain }
   }
 
