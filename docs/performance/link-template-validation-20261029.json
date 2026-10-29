@@ -1,0 +1,172 @@
+{
+  "sourceCommit": "7fac4b941d77b91d1ff7eb8ed43e6151c8587c01",
+  "sourceInputsSha256": "6c8c015f30097a8e7b7a0990a38588fb284e6adc5e6900c1e9f657df2bacd8f4",
+  "binarySha256": "8bc1c6b675868fe79f495e1ec32896c99cb46e59669b14daefe7cada1e3c7489",
+  "webview2Runtime": "156.0.4314.50",
+  "nativeMethod": "Isolated Windows Release; CDP text input and fixture caret positioning. Not OS keyboard or real IME verification.",
+  "native": [
+    {
+      "name": "template: brackets before label and destination",
+      "passed": true,
+      "source": "[11](111)",
+      "links": [
+        {
+          "text": "11",
+          "href": "111"
+        }
+      ]
+    },
+    {
+      "name": "template: destination before Unicode label",
+      "passed": true,
+      "source": "[链接👩‍💻](http://129.com)",
+      "links": [
+        {
+          "text": "链接👩‍💻",
+          "href": "http://129.com"
+        }
+      ]
+    },
+    {
+      "name": "character input",
+      "passed": true,
+      "source": "[链接](http://129.com)",
+      "links": [
+        {
+          "text": "链接",
+          "href": "http://129.com"
+        }
+      ]
+    },
+    {
+      "name": "one input",
+      "passed": true,
+      "source": "[链接](http://129.com)",
+      "links": [
+        {
+          "text": "链接",
+          "href": "http://129.com"
+        }
+      ]
+    },
+    {
+      "name": "screenshot: new paragraphs after horizontal rule",
+      "passed": true,
+      "source": "***asdjf***\n\n---\n\n[111](jkasdfkdsakf)\n\n\n\n[链接](http://129.com)\n\n\n",
+      "links": [
+        {
+          "text": "111",
+          "href": "jkasdfkdsakf"
+        },
+        {
+          "text": "链接",
+          "href": "http://129.com"
+        }
+      ]
+    }
+  ],
+  "browserMethod": "Playwright Chromium Home/arrow key input, plus synthetic composition events",
+  "browser": [
+    {
+      "name": "typed explicit link renders the label and preserves exact source",
+      "passed": true
+    },
+    {
+      "name": "native DOM transaction completes a link without handleTextInput",
+      "passed": true
+    },
+    {
+      "name": "fill label and destination after typing an empty bracket template",
+      "passed": true
+    },
+    {
+      "name": "composition completion waits for commit before converting the link",
+      "passed": true
+    },
+    {
+      "name": "template destination first, Unicode label, mode switch and Undo/Redo",
+      "passed": true
+    },
+    {
+      "name": "template Chinese composition defers normalization until commit",
+      "passed": true
+    },
+    {
+      "name": "editing a loaded escaped template never acquires local draft ownership",
+      "passed": true
+    },
+    {
+      "name": "temporarily empty link label stays pending and Escape restores accepted content",
+      "passed": true
+    },
+    {
+      "name": "empty document (character input)",
+      "passed": true
+    },
+    {
+      "name": "empty document (single input)",
+      "passed": true
+    },
+    {
+      "name": "screenshot sequence: new paragraph after horizontal rule and a relative link",
+      "passed": true
+    },
+    {
+      "name": "single text input: [11](111)",
+      "passed": true
+    },
+    {
+      "name": "single text input: [链接](http://129.com)",
+      "passed": true
+    },
+    {
+      "name": "single text input: [带标题](https://example.com/a_(b)?x=1&y=2 \"说明\")",
+      "passed": true
+    },
+    {
+      "name": "single text input: [文档](notes.md#section)",
+      "passed": true
+    },
+    {
+      "name": "single text input: [嵌套[文字]](https://example.com)",
+      "passed": true
+    },
+    {
+      "name": "multiple links and subsequent prose keep their own marks",
+      "passed": true
+    },
+    {
+      "name": "typed link inside ## Start",
+      "passed": true
+    },
+    {
+      "name": "typed link inside > Start",
+      "passed": true
+    },
+    {
+      "name": "typed link inside - Start",
+      "passed": true
+    },
+    {
+      "name": "typed link inside | A | B |",
+      "passed": true
+    },
+    {
+      "name": "undo, redo and source/live round trip retain the link",
+      "passed": true
+    },
+    {
+      "name": "code and explicitly escaped opening brackets stay literal",
+      "passed": true
+    },
+    {
+      "name": "unsafe destinations and image syntax do not create explicit text links",
+      "passed": true
+    },
+    {
+      "name": "literal escaped parenthesis is preserved when loading Markdown",
+      "passed": true
+    }
+  ],
+  "errors": []
+}

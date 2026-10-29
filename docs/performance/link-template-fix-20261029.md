@@ -17,8 +17,12 @@
 
 运行 `node tests/phase042/link-input.mjs`。其中模板测试通过键盘先创建括号、Home/方向键移动，再填写标签及网址，最后点击其他段落。反向填写测试同时验证中文及 Emoji、Undo/Redo 与 Split 预览。组合输入使用合成 composition 事件验证提交边界；不能代替真实 Windows 输入法候选窗口人工测试。
 
-Windows Release 验证脚本为 `node tests/phase042/native-link-input.mjs --label=v114-candidate`，使用冻结提交构建、独立应用 Profile 与 WebView2 用户数据目录，通过 CDP 发送真实 WebView2 输入事件。此功能验证不用于推断内存提升。
+Windows Release 验证脚本为 `node tests/phase042/native-link-input.mjs --label=v114-candidate`，使用冻结提交构建、独立应用 Profile 与 WebView2 用户数据目录，通过 CDP 发送 WebView2 文本输入事件。此机器上 CDP 模拟 Home/方向键没有移动原生光标，因此原生用例显式使用编辑器测试接口定位光标，不冒充操作系统键盘输入验收。实际 Home/方向键完整流程由独立的浏览器回归覆盖；真实 Windows 输入法候选窗口仍需人工验证。此功能验证不用于推断内存提升。
 
 本地已完成：链接输入 25/25、现有链接交互 28/28、无损保存 73/73、粗体输入 14/14、资源所有权 6/6、恢复 12/12、删除与打开文件竞态 5/5、空行保持及开发实例隔离回归。`pnpm check` 类型检查与生产前端构建通过。详细日志在本机忽略的 `test-results/p03/release-114-*.log`，不包含用户文档。
+
+冻结提交 `7fac4b941d77b91d1ff7eb8ed43e6151c8587c01` 的 Windows Release 链接验证 5/5 通过，含两个回填顺序、Unicode、逐字/单次输入、分割线后新段落和 Undo/Redo。WebView2 Runtime 为 `156.0.4314.50`，测试二进制 SHA-256 为 `8bc1c6b675868fe79f495e1ec32896c99cb46e59669b14daefe7cada1e3c7489`。该构建含最小只读资源计数探针，区别于 CI 最终签名安装包。可携带的原始功能断言见同目录 `link-template-validation-20261029.json`。
+
+首次远端质量检查中，空标签提示用例在 Linux 上发生异步观察竞态（立即读取可见提示数量为 0）。后续改为明确等待局部编辑器获得正确光标、再等待提示出现；源码保持与 Esc 恢复断言保留，没有降低正确性预期。后续变更仅涉及测试和验证报告，应用源码与上述冻结构建相同。
 
 本报告不覆盖先前内存调查的冻结数据，也不据此宣称性能提升或原生泄漏已消除。此前已保存的转义链接应由用户在源码模式确认后修正。

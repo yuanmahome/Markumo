@@ -36,10 +36,24 @@ try {
   }
   browser = await connectRawCDP(`http://127.0.0.1:${port}`)
   const page = browser.contexts()[0].pages()[0], cdp = await page.context().newCDPSession(page)
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true })
   page.on('pageerror', error => errors.push(String(error)))
   await page.waitForFunction(() => !!window.__nativeManager && !document.querySelector('.startup-overlay'))
-  const key = async (name, code) => {
-    for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key: name, code: name, windowsVirtualKeyCode: code })
+  const key = async name => {
+    // WebView2 CDP synthetic navigation did not move its native caret on this
+    // machine. Set only the fixture caret; all text still uses Input.insertText.
+    // The independent browser test covers actual Home/arrow keyboard dispatch.
+    await page.evaluate(name => {
+      const editor = [...window.__nativeManager.liveViews.values()][0].editor, v = editor.view
+      if (editor.inlineSource) {
+        const local = editor.inlineSource, selection = local.selection()
+        local.focus(name === 'Home' ? 0 : (selection?.head ?? 0) + (name === 'ArrowRight' ? 1 : -1))
+      } else {
+        const selection = v.state.selection, pos = name === 'Home' ? selection.$from.start() : selection.head + (name === 'ArrowRight' ? 1 : -1)
+        v.dispatch(v.state.tr.setSelection(selection.constructor.create(v.state.doc, pos)))
+        v.focus()
+      }
+    }, name)
   }
   for (const destinationFirst of [false, true]) {
     const id = await page.evaluate(() => {
@@ -51,15 +65,16 @@ try {
     await page.evaluate(() => [...window.__nativeManager.liveViews.values()][0].editor.view.focus())
     for (const text of '[]()') await cdp.send('Input.insertText', { text })
     if (destinationFirst) {
-      await key('ArrowLeft', 37)
+      await key('ArrowLeft')
       for (const text of 'http://129.com') await cdp.send('Input.insertText', { text })
     }
-    await key('Home', 36)
-    await key('ArrowRight', 39)
+    await key('Home')
+    await key('ArrowRight')
+    assert.equal(await page.evaluate(() => [...window.__nativeManager.liveViews.values()][0].editor.view.state.selection.head), 2, 'Caret must reach the empty label before typing')
     for (const text of destinationFirst ? ['链接👩‍💻'] : ['1', '1']) await cdp.send('Input.insertText', { text })
     if (!destinationFirst) {
-      await key('ArrowRight', 39)
-      await key('ArrowRight', 39)
+      await key('ArrowRight')
+      await key('ArrowRight')
       for (const text of '111') await cdp.send('Input.insertText', { text })
     }
     await page.evaluate(() => [...window.__nativeManager.liveViews.values()][0].editor.view.focus())

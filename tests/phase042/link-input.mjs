@@ -137,9 +137,10 @@ try {
     await page.keyboard.press('Home')
     await page.keyboard.press('ArrowRight')
     await page.keyboard.type('X')
+    await page.waitForFunction(() => window.f.live().inlineSource?.selection()?.head === 2 && document.activeElement?.matches('.md-inline-source-input'))
     const before = (await state()).source
     await page.keyboard.press('Backspace')
-    assert.equal(await page.locator('.md-inline-source-warning:not([hidden])').count(), 1)
+    await page.locator('.md-inline-source-warning:not([hidden])').waitFor()
     assert.equal((await state()).source, before)
     await page.keyboard.press('Escape')
     assert.equal((await state()).source, '[X]()\n\nEND_SENTINEL\n')
