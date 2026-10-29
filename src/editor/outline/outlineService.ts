@@ -8,19 +8,24 @@ import { sanitizeMarkup } from '../markdown/html/sanitize'
 import { codeAdapters, extractCodeSymbols } from './codeAdapters'
 import { resolveLanguage } from '../languages'
 
-const inlineMarkdown=new MarkdownIt({html:false,linkify:false})
+let inlineMarkdown:InstanceType<typeof MarkdownIt>|undefined
 // A Live pane has no CodeMirror viewport to advance its incremental parser.
 // Tokenize Markdown independently so headings after the initial parse budget
 // remain available. This parser only inspects tokens; HTML is never mounted.
-const outlineMarkdown=new MarkdownIt({html:true,linkify:false})
+let outlineMarkdown:InstanceType<typeof MarkdownIt>|undefined
 // Outline rows navigate the editor. Titles must not add nested links, images,
 // event handlers or remote requests inside those navigation buttons.
-inlineMarkdown.renderer.rules.link_open=inlineMarkdown.renderer.rules.link_close=()=>''
-inlineMarkdown.renderer.rules.image=(tokens,index)=>inlineMarkdown.utils.escapeHtml(tokens[index].content)
-inlineMarkdown.renderer.rules.softbreak=()=> ' '
-const unescapeHtml=inlineMarkdown.utils.unescapeAll
+function inlineParser(){
+  if(inlineMarkdown)return inlineMarkdown
+  const parser=new MarkdownIt({html:false,linkify:false})
+  parser.renderer.rules.link_open=parser.renderer.rules.link_close=()=>''
+  parser.renderer.rules.image=(tokens,index)=>parser.utils.escapeHtml(tokens[index].content)
+  parser.renderer.rules.softbreak=()=> ' '
+  return inlineMarkdown=parser
+}
+const unescapeHtml=(source:string)=>inlineParser().utils.unescapeAll(source)
 function headingLabel(source:string){
-  const labelHtml=sanitizeMarkup(DOMPurify,inlineMarkdown.renderInline(source),{ALLOWED_TAGS:['strong','em','s','code','br'],ALLOWED_ATTR:[]})
+  const labelHtml=sanitizeMarkup(DOMPurify,inlineParser().renderInline(source),{ALLOWED_TAGS:['strong','em','s','code','br'],ALLOWED_ATTR:[]})
   return {name:unescapeHtml(labelHtml.replace(/<[^>]*>/g,'')),labelHtml}
 }
 
@@ -46,7 +51,7 @@ const cache = new WeakMap<Text, Map<string,{tree:ReturnType<typeof syntaxTree>;r
 export const MAX_CODE_OUTLINE_SIZE = 256 * 1024
 export const isMarkdownOutline=(doc:EditorDocument|null)=>getOutlineCapability(doc)==='markdown'
 function markdownOutline(text: Text): OutlineItem[] {
-  const tokens = outlineMarkdown.parse(text.toString(), {}), items: OutlineItem[] = []
+  const tokens = (outlineMarkdown??=new MarkdownIt({html:true,linkify:false})).parse(text.toString(), {}), items: OutlineItem[] = []
   for (let index = 0; index < tokens.length && items.length < 1000; index++) {
     const token = tokens[index]
     if (!token.map) continue

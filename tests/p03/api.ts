@@ -1,0 +1,7 @@
+export { EditorState, EditorSelection, Transaction } from '@codemirror/state'
+export { history, undo, redo } from '@codemirror/commands'
+export { lineEndings } from '../../src/editor/core/lineEndings'
+export { DocumentManager } from '../../src/editor/core/DocumentManager'
+export { FileController } from '../../src/features/files/FileController'
+export { imageImportBookmarks } from '../../src/editor/markdown/imageImport'
+export { markdownResources } from '../../src/editor/markdown/images'

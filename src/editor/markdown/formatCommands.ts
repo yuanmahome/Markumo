@@ -5,7 +5,7 @@ import type { Tree } from '@lezer/common'
 import { parser } from '@lezer/markdown'
 import { markdownSyntaxExtensions } from './semantics'
 
-const blockParser = parser.configure(markdownSyntaxExtensions)
+let blockParser: ReturnType<typeof parser.configure> | undefined
 const pendingLanguageTrees = new WeakMap<Text, Tree>()
 
 // Use the Markdown block tree, including nested/unterminated fences. A range
@@ -16,7 +16,7 @@ export function markdownSelectionInCodeBlock(state: EditorState): boolean {
   // extension arrives. Parse Markdown blocks directly rather than treating the
   // missing extension as a code block. Immutable documents share the cached tree.
   if (!tree && !state.facet(language)) {
-    tree = pendingLanguageTrees.get(state.doc) ?? blockParser.parse(new DocInput(state.doc))
+    tree = pendingLanguageTrees.get(state.doc) ?? (blockParser ??= parser.configure(markdownSyntaxExtensions)).parse(new DocInput(state.doc))
     pendingLanguageTrees.set(state.doc, tree)
   }
   if (!tree) return true // Parsing has not caught up: do not mutate an unknown block.

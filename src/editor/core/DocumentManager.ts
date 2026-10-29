@@ -29,6 +29,7 @@ import { cancelSmoothScroll, smoothScrollTo } from './smoothScroll'
 import { smoothCaret } from './smoothCaret'
 import { typewriterExtension } from './typewriterScroll'
 import type { CaretAnimation } from './caretMotion'
+import type { FullTextDocument } from '../text/protocol'
 
 export interface DocumentSeed { id: string; name: string; path: string; text: string; pinned?: boolean; mode?: MarkdownMode; kind?: 'text' | 'javaClass'; classInfo?: ClassInfo; encoding?: string; bom?: boolean; eol?: EditorDocument['eol'] }
 export type Pane = string
@@ -46,6 +47,7 @@ interface CachedDocument {
   wrap: Compartment
   theme: Compartment
   markdownMode: Compartment
+  markdownServices: Compartment
   indent: Compartment
   caret: Compartment
   brackets: Compartment
@@ -182,6 +184,10 @@ export class DocumentManager {
     return { ...record.meta, line: line.number, column: head - line.from + 1, pinned: isPinned }
   }
   getState(id: string) { return this.records.get(id)?.state }
+  getTextDocument(id: string): FullTextDocument | undefined {
+    const record = this.records.get(id)
+    return record ? { mode: 'full-text', positionUnit: 'utf16', snapshot: record.state.doc } : undefined
+  }
   getText(id: string) { return this.records.get(id)?.state.doc.toString() }
   holdForHandoff(id:string){
     if(this.media.has(id))return ()=>{}
@@ -212,7 +218,7 @@ export class DocumentManager {
     const isMd = !binary && !byteEditor && /\.(md|markdown)$/i.test(seed.name)
     const initialMdMode: MarkdownMode | undefined = isMd ? (seed.mode || this.defaultMarkdownMode) : undefined
 
-    const brackets = new Compartment(), typewriter = new Compartment(),handoff=new Compartment()
+    const brackets = new Compartment(), typewriter = new Compartment(),handoff=new Compartment(), markdownServices = new Compartment()
     const state = EditorState.create({
       doc: seed.text,
       extensions: [
@@ -224,9 +230,7 @@ export class DocumentManager {
           enabled: this.typewriterMode,
           isPaneActive: (view: EditorView) => this.paneView(this.activePane) === view,
         })),
-        imageImportBookmarks,
-        markdownResources.of(createMarkdownResources(() => this.records.get(seed.id)?.meta.fileToken,()=>{const meta=this.records.get(seed.id)?.meta;return `${meta?.fileToken||''}|${meta?.path||''}`})),
-        isMd ? sourceSlashExtension() : [],
+        markdownServices.of(isMd ? this.markdownServices(seed.id) : []),
         binary ? [EditorState.readOnly.of(true), EditorView.editable.of(false), EditorState.transactionFilter.of(tr => tr.docChanged ? [] : tr)] : [],
         indent.of([EditorState.tabSize.of(this.indentSize), indentUnit.of(this.useTabs ? '\t' : ' '.repeat(this.indentSize))]),
         Prec.highest(keymap.of([
@@ -277,12 +281,19 @@ export class DocumentManager {
         encoding: seed.encoding || 'UTF-8', eol: seed.eol || (/\r\n/.test(seed.text) ? 'CRLF' : 'LF'), bom: seed.bom ?? false, readOnly: false, lastDiskVersion: null,
         charCount: state.doc.length, line: 1, column: 1, mode: initialMdMode,
       },
-      state, baseline: state.doc, baselineEndings: endings.snapshot(state), endings, language, wrap, theme, markdownMode, indent, caret, brackets, typewriter,handoff, languageGeneration: 0, readyLanguageGeneration: null, scroll: { top: 0, left: 0 },
+      state, baseline: state.doc, baselineEndings: endings.snapshot(state), endings, language, wrap, theme, markdownMode, markdownServices, indent, caret, brackets, typewriter,handoff, languageGeneration: 0, readyLanguageGeneration: null, scroll: { top: 0, left: 0 },
       panes: { main: { selection: state.selection, top: 0, left: 0 }, secondary: { selection: state.selection, top: 0, left: 0 } },
     }
     this.records.set(seed.id, record)
     if (!binary) void this.setLanguage(seed.id, record.meta.language)
     return record
+  }
+
+  private markdownServices(id: string): Extension {
+    return [imageImportBookmarks, sourceSlashExtension(), markdownResources.of(createMarkdownResources(
+      () => this.records.get(id)?.meta.fileToken,
+      () => { const meta = this.records.get(id)?.meta; return `${meta?.fileToken || ''}|${meta?.path || ''}` },
+    ))]
   }
 
   openFile(file: OpenFile, preview = false, pane = this.activePane, activatePane = true) {
@@ -1469,7 +1480,7 @@ export class DocumentManager {
     const isMarkdown = /\.(md|markdown)$/i.test(record.meta.name)
     if (wasMarkdown === isMarkdown) return
     record.meta.mode = isMarkdown ? this.defaultMarkdownMode : undefined
-    this.effects(record, [record.markdownMode.reconfigure([])])
+    this.effects(record, [record.markdownMode.reconfigure([]), record.markdownServices.reconfigure(isMarkdown ? this.markdownServices(record.meta.id) : [])])
     for(const pane of this.layout.getAllLeafIds())if(this.paneGroup(pane).activeId===record.meta.id){this.destroyView(pane);this.showActive(pane)}
   }
   setWrap(wrap: boolean) {

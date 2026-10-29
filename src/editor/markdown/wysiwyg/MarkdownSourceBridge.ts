@@ -93,6 +93,14 @@ export class MarkdownSourceBridge {
         inlineApplied=true
       }
       let raw=inlineRaw??(old?.node.eq(node)?old.raw:old?(patchSourceBlock(old.node,node,old.raw,this.environment)??(node.type.name==='table'&&old.node.type===node.type?patchTable(old.node,node,old.raw):null)??serializeBlock(node)):serializeBlock(node))
+      // A paragraph promoted from the trailing placeholder has no old source
+      // block yet. Preserve its first typed '[' instead of serializing '\[';
+      // otherwise a later completed link looks author-escaped. Prove the whole
+      // paragraph semantics before accepting the unescaped spelling.
+      if(!old&&node.type.name==='paragraph'&&node.childCount&&node.content.content.every(child=>child.isText)){
+        const candidate=node.textContent,parsed=parseMarkdown(candidate,this.environment).doc,first=parsed.firstChild
+        if(parsed.childCount===1&&first&&first.type===node.type&&first.type.create({...first.attrs,sourceId:node.attrs.sourceId},first.content,first.marks).eq(node))raw=candidate
+      }
       if(!old?.node.eq(node))raw=raw.replace(/\r?\n/g,old?.raw.match(/\r?\n/)?.[0] || eol)
       const blank=isBlankParagraphNode(node)
       if(blank)raw=old?.blank&&old.node.eq(node)?old.raw:node.textContent+eol+eol

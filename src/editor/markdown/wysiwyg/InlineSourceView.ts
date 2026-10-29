@@ -11,6 +11,33 @@ import type { LiveClipboardOperation } from './LiveClipboard'
 
 const syntax = parser.configure(markdownSyntaxExtensions)
 const syntaxNames: Record<string, string> = { link: 'Link', image: 'Image', strong: 'StrongEmphasis', em: 'Emphasis', strike: 'Strikethrough', code: 'InlineCode' }
+/** Find a trailing explicit link; the Markdown parser validates its destination,
+ * title and nested label. Lezer's shortcut-reference grammar differs here. */
+export function completedInlineLink(raw: string, environment: Record<string, unknown>): { from: number; raw: string } | null {
+  if (raw.length > 8192) return null
+  const escaped = (at: number) => {
+    let count = 0
+    while (at > 0 && raw[--at] === '\\') count++
+    return count % 2 !== 0
+  }
+  for (let close = raw.lastIndexOf(']('); close > 0; close = raw.lastIndexOf('](', close - 1)) {
+    if (escaped(close)) continue
+    let depth = 1
+    for (let from = close - 1; from >= 0; from--) {
+      if (escaped(from)) continue
+      if (raw[from] === ']') depth++
+      if (raw[from] !== '[') continue
+      if (--depth !== 0) continue
+      const candidate = raw.slice(from)
+      const content = parseInlineSource(candidate, [], environment)
+      if (content?.childCount && content.content.every(node => node.isText && node.marks.some(mark => mark.type.name === 'link' && mark.attrs.autolink === 'none'))) {
+        return { from, raw: candidate }
+      }
+      break
+    }
+  }
+  return null
+}
 export function parseInlineSource(raw: string, inherited: readonly Mark[] = [], environment:Record<string,unknown> = {}): Fragment | null {
   if (raw.length > 8192) return null
   if (!raw) return Fragment.empty

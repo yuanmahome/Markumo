@@ -1,6 +1,5 @@
 import type { Extension } from '@codemirror/state'
 import { StreamLanguage, LanguageDescription, LanguageSupport, type StreamParser } from '@codemirror/language'
-import { markdownSyntaxExtensions } from '../markdown/semantics'
 
 interface LanguageDefinition {
   id: string; name: string; extensions: readonly string[]; aliases: readonly string[]; filenames: readonly string[]
@@ -102,7 +101,7 @@ export function detectLanguage(name: string): LanguageName {
   return languageRegistry.find(language => language.extensions.some(e => e === ext))?.name || 'Plain Text'
 }
 async function loadMarkdown(): Promise<Extension> {
-  const [{ markdown }, { markdownSmartEditing }] = await Promise.all([import('@codemirror/lang-markdown'), import('../markdown/smartEditing')])
+  const [{ markdown }, { markdownSmartEditing }, { markdownSyntaxExtensions }] = await Promise.all([import('@codemirror/lang-markdown'), import('../markdown/smartEditing'), import('../markdown/semantics')])
   const codeLanguages = languageRegistry.filter(language => language.highlights && language.name !== 'Markdown').map(language => LanguageDescription.of({
     name: language.name, alias: [...language.aliases, language.id], extensions: [...language.extensions],
     load: async () => await loadLanguage(language.name,'fence') as LanguageSupport,

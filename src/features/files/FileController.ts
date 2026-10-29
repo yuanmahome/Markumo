@@ -171,14 +171,16 @@ export class FileController {
       // Preserve the version that is still on disk *before* it is replaced. This
       // is the only point where the old body can be captured; recording the new
       // text afterwards is not a substitute for it.
-      const diskBaseline = this.manager.getBaselineText(id)
       const baselinePath = !saveAs ? source.path || null : null
-      if (!this.gateway.historyTransactional && diskBaseline !== null && baselinePath) {
-        try {
-          const archived = await recordVersion(baselinePath, diskBaseline, 'disk')
-          for (const warning of archived?.warnings ?? []) this.notify(warning)
-        } catch (error) {
-          throw new Error(`保存前历史备份失败，已取消写入，原文件和当前编辑内容均保留：${fileError(error)}`)
+      if (!this.gateway.historyTransactional && baselinePath) {
+        const diskBaseline = this.manager.getBaselineText(id)
+        if (diskBaseline !== null) {
+          try {
+            const archived = await recordVersion(baselinePath, diskBaseline, 'disk')
+            for (const warning of archived?.warnings ?? []) this.notify(warning)
+          } catch (error) {
+            throw new Error(`保存前历史备份失败，已取消写入，原文件和当前编辑内容均保留：${fileError(error)}`)
+          }
         }
       }
       if (this.disposed || this.manager.metadata(id)?.fileToken !== source.fileToken) {

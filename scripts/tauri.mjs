@@ -12,6 +12,7 @@ if (options.directories.length) {
   for (const directory of options.directories) mkdirSync(directory, { recursive: true })
   Object.assign(process.env, options.env)
   console.log(`Markumo development data: ${options.directories[0]}`)
+  console.log('Development instance: com.markumo.app.dev (independent from the installed app).')
   console.log(options.watch ? 'Code hot reload enabled (default for pnpm tauri dev).' : 'File-test mode (--no-watch): automatic restart and frontend reload disabled.')
 }
 

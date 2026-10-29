@@ -1,8 +1,7 @@
-import { MapMode, RangeSet, RangeValue, StateEffect, StateField, type EditorState, type Range } from '@codemirror/state'
+import { MapMode, RangeSet, RangeSetBuilder, RangeValue, StateEffect, StateField, type EditorState, type Range } from '@codemirror/state'
 import { invertedEffects } from '@codemirror/commands'
 
 type Ending = '\n' | '\r\n' | '\r'
-interface Break { at: number; ending: Ending }
 class EndingValue extends RangeValue {
   point = true
   startSide = 1
@@ -17,17 +16,26 @@ export type LineEndingSnapshot = RangeSet<EndingValue>
 // CM stores normalized text. This field maps surviving original line separators
 // through transactions (including undo), so mixed EOLs never silently normalize.
 export function lineEndings(source: string) {
-  const initial: Break[] = []
-  let removed = 0
-  for (const match of source.matchAll(/\r\n|\r|\n/g)) {
-    initial.push({ at: match.index! - removed, ending: match[0] as Ending })
-    removed += match[0].length - 1
-  }
   const counts = new Map<Ending, number>()
-  for (const item of initial) counts.set(item.ending, (counts.get(item.ending) || 0) + 1)
+  for (const match of source.matchAll(/\r\n|\r|\n/g)) {
+    const ending = match[0] as Ending
+    counts.set(ending, (counts.get(ending) || 0) + 1)
+  }
   const fallback = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] || '\n'
+  const mixed = counts.size > 1
   const restore = StateEffect.define<RangeSet<EndingValue>>({ map: (value, changes) => value.map(changes) })
-  const initialSet = RangeSet.of(initial.map(item => values.get(item.ending)!.range(item.at)))
+  // Uniform files need no per-line metadata. Mixed files keep the existing
+  // ordered markers: colliding mapped breaks must retain their old precedence.
+  const builder = new RangeSetBuilder<EndingValue>()
+  if (mixed) {
+    let removed = 0
+    for (const match of source.matchAll(/\r\n|\r|\n/g)) {
+      const at = match.index! - removed
+      builder.add(at, at, values.get(match[0] as Ending)!)
+      removed += match[0].length - 1
+    }
+  }
+  const initialSet = builder.finish()
   const field = StateField.define<RangeSet<EndingValue>>({
     create: () => initialSet,
     update(value, transaction) {
@@ -38,6 +46,7 @@ export function lineEndings(source: string) {
       if (!transaction.docChanged) return value
       // Persistent RangeSet maps unchanged chunks without copying every line
       // on each keystroke or retaining full arrays in undo history.
+      if (!mixed) return value
       const additions: Range<EndingValue>[] = []
       transaction.changes.iterChanges((_fromA, _toA, fromB, _toB, inserted) => {
         let offset = fromB
@@ -56,17 +65,26 @@ export function lineEndings(source: string) {
     snapshot(state: EditorState) { return state.field(field) },
     equal(a: EditorState, b: LineEndingSnapshot) { return RangeSet.eq([a.field(field)], [b]) },
     serialize(state: EditorState) {
+      if (state.field(field).size === 0) return state.doc.sliceString(0, state.doc.length, fallback)
       const breaks = state.field(field).iter()
       const parts: string[] = []
-      for (let line = 1; line <= state.doc.lines; line++) {
-        const current = state.doc.line(line)
-        parts.push(current.text)
-        if (line < state.doc.lines) {
-          while (breaks.value && breaks.from < current.to) breaks.next()
-          parts.push(breaks.value && breaks.from === current.to ? breaks.value.ending : fallback)
-          if (breaks.value && breaks.from === current.to) breaks.next()
+      let from = 0
+      let previousBreak = -1
+      // Join whole unchanged spans instead of materializing two array entries
+      // per line. Each exception replaces one normalized CM line separator.
+      while (breaks.value) {
+        // TrackDel can leave a point at a replacement boundary that is now
+        // ordinary text. The dense serializer ignored those points too.
+        if (breaks.from !== previousBreak && state.doc.sliceString(breaks.from, breaks.from + 1) === '\n') {
+          previousBreak = breaks.from
+          if (breaks.value.ending !== fallback) {
+            parts.push(state.doc.sliceString(from, breaks.from, fallback), breaks.value.ending)
+            from = breaks.from + 1
+          }
         }
+        breaks.next()
       }
+      parts.push(state.doc.sliceString(from, state.doc.length, fallback))
       return parts.join('')
     },
   }

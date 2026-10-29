@@ -19,7 +19,9 @@ export function devOptions(input, project, environment = process.env) {
   env.TMP = temp
   env.WEBVIEW2_USER_DATA_FOLDER = webview
   env.MARKUMO_DESKTOP_NO_RELOAD = watch ? '0' : '1'
-  additions.push('--config', JSON.stringify({ app: { appDirectoriesOverride: data } }))
+  // The single-instance plugin keys its Windows mutex by identifier, not by
+  // profile directory. Keep dev launches from forwarding to the installed app.
+  additions.push('--config', JSON.stringify({ identifier: 'com.markumo.app.dev', app: { appDirectoriesOverride: data } }))
   args.splice(insertion < 0 ? args.length : insertion, 0, ...additions)
   return { args, env, directories: [data, temp, webview], watch }
 }

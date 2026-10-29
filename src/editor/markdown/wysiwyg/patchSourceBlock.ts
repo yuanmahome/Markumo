@@ -3,6 +3,25 @@ import { parseMarkdown, tokenizer } from './MarkdownParser'
 import { textPatch } from './sourcePatch'
 
 interface Difference { before:Node;after:Node;code?:boolean }
+function textSpanDifference(before:Node,after:Node,offset=0):{before:Node;after:Node;offset:number}|null {
+  if(before.eq(after)||!before.sameMarkup(after))return null
+  if(before.isTextblock&&after.isTextblock){
+    const text=[...before.content.content,...after.content.content]
+    return text.every(node=>node.isText)&&(before.childCount===0||after.childCount===0||text.some(node=>node.marks.some(mark=>mark.type.name==='link'&&mark.attrs.autolink!=='none')))?{before,after,offset}:null
+  }
+  if(before.childCount!==after.childCount)return null
+  let result:ReturnType<typeof textSpanDifference>=null,at=0
+  for(let i=0;i<before.childCount;i++){
+    const a=before.child(i),b=after.child(i)
+    if(!a.eq(b)){
+      if(result)return null
+      result=textSpanDifference(a,b,offset+at+1)
+      if(!result)return null
+    }
+    at+=a.nodeSize
+  }
+  return result
+}
 function singleDifference(before:Node,after:Node):Difference|null {
   if(before.eq(after))return null
   if(!before.sameMarkup(after)||before.isText||after.isText)return {before,after}
@@ -113,6 +132,19 @@ export function patchSourceBlock(before:Node,after:Node,raw:string,environment:R
       const node=parsed.blocks[0].node
       return node.type.create({...node.attrs,sourceId:after.attrs.sourceId},node.content,node.marks).eq(after)
     }catch{return false}
+  }
+  // Empty paragraphs and linkification change the text-node count, so the
+  // single-node path below no longer applies. Preserve the exact typed source
+  // before falling back to serialization, which would escape pending [label](
+  // syntax. Accept only a text-only block whose complete parse agrees with PM.
+  const linked=textSpanDifference(before,after)
+  if(linked){
+    const change=textPatch(linked.before.textContent,linked.after.textContent)
+    if(change){
+      const from=sourceTextPosition(before,raw,linked.offset+change.from),to=sourceTextPosition(before,raw,linked.offset+change.to)
+      const candidate=raw.slice(0,from)+change.insert+raw.slice(to)
+      if(accepts(candidate))return candidate
+    }
   }
   const difference=singleDifference(before,after)
   if(!difference)return null

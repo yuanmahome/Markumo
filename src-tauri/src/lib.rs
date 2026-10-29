@@ -8,6 +8,8 @@ mod profile_migration;
 mod recovery;
 mod session;
 mod workspace;
+#[cfg(feature = "segmented-prototype")]
+pub mod text_document;
 
 use commands::files::FileStore;
 use commands::workspace::WorkspaceStore;
