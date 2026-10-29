@@ -204,6 +204,9 @@ export class InlineSourceView {
         }
       }
       let content = parseInlineSource(this.draft, this.inherited, environment())
+      // An empty label parses to no inline nodes. Keep the editable draft pending
+      // instead of silently erasing its nonempty source from a blank paragraph.
+      if (this.kind === 'link' && content && !content.childCount && this.draft.trim()) content = null
       if (this.kind === 'image' && (!content || content.childCount !== 1 || content.firstChild?.type.name !== 'image')) {
         content = Fragment.from(markdownParser.schema.nodes.image_source.create({ source: this.draft }, null, this.inherited))
       }

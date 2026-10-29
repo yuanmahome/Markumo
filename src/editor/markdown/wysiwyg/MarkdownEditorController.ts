@@ -14,7 +14,7 @@ import { LiveTableToolbar, type TableToolbarCommand } from './LiveTableToolbar'
 import { markdownSchema as s } from './MarkdownSchema'
 import { MarkdownSourceBridge, textPatch, type SourcePatch } from './MarkdownSourceBridge'
 import { setSourceBlockType } from './setSourceBlockType'
-import { inlineMarkdownInputRules } from './strongInputRule'
+import { completeInlineLinkTransaction, inlineMarkdownInputRules, trackInlineLinkDraft, type InlineLinkDraft } from './strongInputRule'
 import { mathBlockParts, mapMathSelection, mergeMathComposition, type MathSelection } from './MathSource'
 import { markdownTypographyStyle } from '../typography'
 import { InlineSourceView, inlineSourceRange } from './InlineSourceView'
@@ -124,7 +124,8 @@ export class MarkdownEditorController implements LiveEditor {
   private currentAnchorEl: HTMLElement | null = null
   private propertyTargetToken: object | null = null
   private inlineSource: InlineSourceView | null = null
-  private pendingInline: { pos:number; kind:string } | null = null
+  private pendingInline: { pos:number; kind:string; offset?:number } | null = null
+  private inlineLinkDraft: InlineLinkDraft | null = null
   private dismissedInline: { from:number; to:number } | null = null
   private linkGesture?: ModifiedLinkGesture
   private inlineEntryEpoch = 0
@@ -152,6 +153,9 @@ export class MarkdownEditorController implements LiveEditor {
     this.typewriterKeyboardAlign = true
     this.scheduleTypewriterAlign()
     setTimeout(() => {
+      if (!this.disposed && this.inlineLinkDraft && !this.composing && !this.pendingSource) {
+        this.view.dispatch(this.view.state.tr.setMeta('inlineLinkDraftCommit', true))
+      }
       if (!this.disposed) this.options.compositionChanged?.()
       if (!this.disposed && this.pendingSource !== null) {
         const source = this.pendingSource
@@ -935,6 +939,11 @@ export class MarkdownEditorController implements LiveEditor {
     if (this.disposed) return
     if (tr.docChanged) cancelSmoothScroll(this.dom)
     try {
+      const nextDraft = trackInlineLinkDraft(this.view.state, tr, this.bridge, this.inlineLinkDraft)
+      if (!this.composing && !this.inlineSource && !this.options.readOnly?.()) {
+        tr = completeInlineLinkTransaction(this.view.state, tr, this.bridge, this.inlineLinkDraft)
+      }
+      this.inlineLinkDraft = tr.getMeta('inlineSourcePatch') ? null : nextDraft
       const applied = this.view.state.applyTransaction(tr)
       const before = this.bridge.source
       if (applied.state.doc.eq(this.view.state.doc) && !tr.getMeta('inlineSourcePatch')) {
@@ -985,6 +994,8 @@ export class MarkdownEditorController implements LiveEditor {
       for (const transaction of applied.transactions) this.inlineSource?.map(transaction)
       this.inlineSource?.mapSource(prepared.patch, tr.getMeta('inlineSourceEditor') === this.inlineSource)
       this.view.updateState(nextState)
+      const draftEdit = tr.getMeta('inlineLinkDraftEdit') as { pos:number; offset:number } | undefined
+      if (draftEdit) this.queueInlineEdit(draftEdit.pos, 'link', draftEdit.offset)
       this.releaseIdleCodeEditors()
       this.updateTools()
       const sel = this.selection
@@ -999,6 +1010,7 @@ export class MarkdownEditorController implements LiveEditor {
 
   sync(source: string, update?: unknown) {
     if (this.disposed || source === this.bridge.source) return
+    this.inlineLinkDraft = null
     cancelSmoothScroll(this.dom)
     this.contextMenu.close()
     this.slashController?.close()
@@ -1575,15 +1587,18 @@ export class MarkdownEditorController implements LiveEditor {
     })
   }
 
-  private queueInlineEdit(pos: number, kind: string) {
-    this.pendingInline = { pos, kind }
+  private queueInlineEdit(pos: number, kind: string, offset?: number) {
+    this.pendingInline = { pos, kind, offset }
+    const epoch = this.focusEpoch
     // The toolbar focuses the editor after running the command; wait for that
     // focus so the inline source editor is not immediately blurred and closed.
     queueMicrotask(() => {
       const pending = this.pendingInline
       if (!pending || this.disposed || !this.view.hasFocus()) return
       this.pendingInline = null
+      if (pending.pos > this.view.state.doc.content.size || pending.offset !== undefined && epoch !== this.focusEpoch) return
       this.openInlineAt(pending.pos, pending.kind)
+      if (pending.offset !== undefined) this.inlineSource?.focus(pending.offset)
     })
   }
 
@@ -2673,6 +2688,7 @@ export class MarkdownEditorController implements LiveEditor {
   }
 
   destroy() {
+    this.inlineLinkDraft = null
     this.linkGesture?.destroy()
     this.propertyObserver?.disconnect()
     window.removeEventListener('resize', this.repositionProperties)

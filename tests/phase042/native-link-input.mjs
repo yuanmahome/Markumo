@@ -8,7 +8,7 @@ import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { connectRawCDP } from '../../scripts/p01-raw-cdp.mjs'
 
-const label = process.argv.find(arg => arg.startsWith('--label='))?.slice(8) || 'v113-candidate'
+const label = process.argv.find(arg => arg.startsWith('--label='))?.slice(8) || 'v114-candidate'
 assert(/^[\w-]+$/.test(label))
 const root = path.resolve('test-results/phase042'), output = path.resolve(`test-results/p03/native-link-${Date.now()}`)
 fs.mkdirSync(output, { recursive: true })
@@ -38,6 +38,41 @@ try {
   const page = browser.contexts()[0].pages()[0], cdp = await page.context().newCDPSession(page)
   page.on('pageerror', error => errors.push(String(error)))
   await page.waitForFunction(() => !!window.__nativeManager && !document.querySelector('.startup-overlay'))
+  const key = async (name, code) => {
+    for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key: name, code: name, windowsVirtualKeyCode: code })
+  }
+  for (const destinationFirst of [false, true]) {
+    const id = await page.evaluate(() => {
+      const m = window.__nativeManager
+      for (const doc of [...m.openedDocuments]) m.close(doc.id, true)
+      return m.createUntitled('md')
+    })
+    await page.waitForFunction(() => window.__nativeManager.liveViews.size === 1)
+    await page.evaluate(() => [...window.__nativeManager.liveViews.values()][0].editor.view.focus())
+    for (const text of '[]()') await cdp.send('Input.insertText', { text })
+    if (destinationFirst) {
+      await key('ArrowLeft', 37)
+      for (const text of 'http://129.com') await cdp.send('Input.insertText', { text })
+    }
+    await key('Home', 36)
+    await key('ArrowRight', 39)
+    for (const text of destinationFirst ? ['链接👩‍💻'] : ['1', '1']) await cdp.send('Input.insertText', { text })
+    if (!destinationFirst) {
+      await key('ArrowRight', 39)
+      await key('ArrowRight', 39)
+      for (const text of '111') await cdp.send('Input.insertText', { text })
+    }
+    await page.evaluate(() => [...window.__nativeManager.liveViews.values()][0].editor.view.focus())
+    await page.waitForFunction(() => !document.querySelector('.md-source-link'))
+    const result = await page.evaluate(id => ({ source: window.__nativeManager.getText(id), links: [...document.querySelectorAll('.md-prose a[data-href]')].map(el => ({ text: el.textContent, href: el.dataset.href })) }), id)
+    const text = destinationFirst ? '链接👩‍💻' : '11', href = destinationFirst ? 'http://129.com' : '111'
+    assert.equal(result.source.trimEnd(), `[${text}](${href})`)
+    assert.deepEqual(result.links, [{ text, href }])
+    await page.evaluate(() => window.__nativeManager.command('undo'))
+    await page.evaluate(() => window.__nativeManager.command('redo'))
+    assert.equal((await page.evaluate(id => window.__nativeManager.getText(id), id)).trimEnd(), `[${text}](${href})`)
+    results.push({ name: destinationFirst ? 'template: destination before Unicode label' : 'template: brackets before label and destination', passed: true, ...result })
+  }
   for (const singleInput of [false, true]) {
     const id = await page.evaluate(() => {
       const m = window.__nativeManager
