@@ -25,25 +25,41 @@ try {
   await page.goto('http://127.0.0.1:1495/tests/markdown-links/fixture.html')
   await page.waitForFunction(() => !!window.f)
 
-  // 1. 分割线输入规则：空行输入 --- 生成水平分割线，源码不带反斜杠转义
+  // 1. 分割线输入：空行输入 --- 在未按回车前保留为文本，按回车后生成水平分割线，光标定位到下方新段落
   await reset('')
   await page.locator('.md-prose').click()
   await page.keyboard.type('---')
   await page.waitForTimeout(50)
-  assert.equal(await page.locator('.md-prose hr').count(), 1, '--- should generate horizontal rule')
-  assert.equal((await page.evaluate(() => window.f.manager.getText(window.f.id))).trim(), '---')
-  console.log('PASS 1: typing --- generates horizontal rule')
+  assert.equal(await page.locator('.md-prose hr').count(), 0, 'Before Enter, typing --- must not prematurely generate <hr>')
+  assert.equal((await page.locator('.md-prose').textContent()).trim(), '---')
 
-  // 2. 分割线输入规则：空行输入 ***加空格 或 ___加空格 生成水平分割线
-  for (const trigger of ['*** ', '___ ']) {
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(50)
+  assert.equal(await page.locator('.md-prose hr').count(), 1, 'Pressing Enter after --- converts it to <hr>')
+  const caretInNewPara = await page.evaluate(() => {
+    const sel = window.f.live().view.state.selection
+    return sel.$from.parent.type.name === 'paragraph' && sel.$from.parent.content.size === 0
+  })
+  assert.equal(caretInNewPara, true, 'Cursor is placed inside the new empty paragraph below hr')
+  assert.equal((await page.evaluate(() => window.f.manager.getText(window.f.id))).trim(), '---')
+
+  await page.keyboard.type('下文内容')
+  assert((await page.evaluate(() => window.f.manager.getText(window.f.id))).includes('---\n\n下文内容'))
+  console.log('PASS 1: typing --- requires Enter to generate horizontal rule, caret lands in next paragraph')
+
+  // 2. 分割线输入：空行输入 *** 或 ___ 按回车同样生成水平分割线
+  for (const trigger of ['***', '___']) {
     await reset('')
     await page.locator('.md-prose').click()
     await page.keyboard.type(trigger)
     await page.waitForTimeout(50)
-    assert.equal(await page.locator('.md-prose hr').count(), 1, `${trigger} should generate horizontal rule`)
+    assert.equal(await page.locator('.md-prose hr').count(), 0, `Before Enter, typing ${trigger} must not generate <hr>`)
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(50)
+    assert.equal(await page.locator('.md-prose hr').count(), 1, `Pressing Enter after ${trigger} generates <hr>`)
     assert.equal((await page.evaluate(() => window.f.manager.getText(window.f.id))).trim(), '---')
   }
-  console.log('PASS 2: typing *** and ___ with trailing space generates horizontal rule')
+  console.log('PASS 2: typing *** and ___ with Enter generates horizontal rule')
 
   // 3. 粗斜体输入规则：输入 ***kdsa*** 和 ___kdsa___ 即时渲染为粗体+斜体
   for (const input of ['***kdsa***', '___kdsa___']) {

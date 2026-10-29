@@ -1,7 +1,6 @@
 import { InputRule } from 'prosemirror-inputrules'
 import { TextSelection } from 'prosemirror-state'
-import type { Schema } from 'prosemirror-model'
-import { parseInlineSource } from './InlineSourceView'
+import { completedInlineLink, parseInlineSource } from './InlineSourceView'
 import { parseMarkdown } from './MarkdownParser'
 import type { MarkdownSourceBridge } from './MarkdownSourceBridge'
 
@@ -11,9 +10,15 @@ function createInlineMarkInputRule(
   currentBridge: () => MarkdownSourceBridge
 ) {
   return new InputRule(pattern, (state, match, start, end) => {
+    const explicitLink = expectedMarks.includes('link')
     let matchedText = match[0]
     let actualStart = start
-    if (match.length > 2 && match[1] !== undefined) {
+    if (explicitLink) {
+      const link = completedInlineLink(matchedText, currentBridge().environment)
+      if (!link) return null
+      matchedText = link.raw
+      actualStart += link.from
+    } else if (match.length > 2 && match[1] !== undefined) {
       const offset = match[0].indexOf(match[1])
       if (offset > 0) {
         matchedText = match[0].slice(offset)
@@ -21,10 +26,11 @@ function createInlineMarkInputRule(
       }
     }
     const innerText = match[2]
-    if (!innerText || /^[*_~`]+$/.test(innerText)) return null
+    if (!explicitLink && (!innerText || /^[*_~`]+$/.test(innerText))) return null
     const $start = state.doc.resolve(actualStart)
     const prefix = $start.parent.textBetween(0, $start.parentOffset, '', '\ufffc')
     if ((/\\+$/.exec(prefix)?.[0].length ?? 0) % 2) return null
+    if (explicitLink && prefix.endsWith('!')) return null
     const inherited = $start.marks(), bridge = currentBridge()
     const content = parseInlineSource(matchedText, inherited, bridge.environment)
     if (!content?.childCount || !content.content.every(node => expectedMarks.every(name => node.marks.some(mark => mark.type.name === name)))) {
@@ -35,9 +41,11 @@ function createInlineMarkInputRule(
     const old = bridge.blocks.find(block => block.id === target.attrs.sourceId)
     const from = bridge.sourcePosition(actualStart), to = bridge.sourcePosition(end)
     if (!old || from < old.from || to > old.to) return null
+    if (explicitLink && (bridge.source.slice(from, from + 2) === '\\[' ||
+      (bridge.source[from] === '[' && (/\\+$/.exec(bridge.source.slice(old.from, from))?.[0].length ?? 0) % 2))) return null
     // Preserve an explicitly source-authored escaped delimiter pair (e.g. \*\* or \*\*\*)
     const delim = match[1] || matchedText.slice(0, 1)
-    if (delim.length >= 2) {
+    if (!explicitLink && delim.length >= 2) {
       const escapedDelim = delim.split('').map(c => '\\' + c).join('')
       if (bridge.source.slice(from, from + escapedDelim.length) === escapedDelim) return null
     }
@@ -55,21 +63,10 @@ function createInlineMarkInputRule(
   }, { inCodeMark: false })
 }
 
-/** Input rule for creating a horizontal rule when typing ---, or asterisks/underscores with space. */
-export function horizontalRuleInputRule(schema: Schema) {
-  return new InputRule(/^(?:-{3,}|(?:\*{3,}|_{3,})\s+)$/, (state, _match, start, _end) => {
-    const $start = state.doc.resolve(start)
-    if ($start.parent.type === schema.nodes.paragraph && $start.parent.childCount <= 1) {
-      const from = $start.before(), to = $start.after()
-      return state.tr.replaceWith(from, to, schema.nodes.horizontal_rule.create()).setMeta('isolated', true)
-    }
-    return null
-  })
-}
-
-/** Comprehensive inline formatting rules (bold-italic, bold, italic, strike, inline code). */
+/** Inline formatting and explicit links, with source patches validated by a full block parse. */
 export function inlineMarkdownInputRules(currentBridge: () => MarkdownSourceBridge): InputRule[] {
   return [
+    createInlineMarkInputRule(/\[[^\n]*\]\([^\n]*\)$/, ['link'], currentBridge),
     // Bold + Italic: ***text*** or ___text___
     createInlineMarkInputRule(/(?:^|[^*_])(\*\*\*|___)(?=\S)([^\n]*?\S)\1$/, ['strong', 'em'], currentBridge),
     // Bold: **text** or __text__

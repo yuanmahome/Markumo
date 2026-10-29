@@ -14,7 +14,7 @@ import { LiveTableToolbar, type TableToolbarCommand } from './LiveTableToolbar'
 import { markdownSchema as s } from './MarkdownSchema'
 import { MarkdownSourceBridge, textPatch, type SourcePatch } from './MarkdownSourceBridge'
 import { setSourceBlockType } from './setSourceBlockType'
-import { inlineMarkdownInputRules, horizontalRuleInputRule } from './strongInputRule'
+import { inlineMarkdownInputRules } from './strongInputRule'
 import { mathBlockParts, mapMathSelection, mergeMathComposition, type MathSelection } from './MathSource'
 import { markdownTypographyStyle } from '../typography'
 import { InlineSourceView, inlineSourceRange } from './InlineSourceView'
@@ -214,7 +214,6 @@ export class MarkdownEditorController implements LiveEditor {
     const rules = inputRules({
       rules: [
         ...inlineMarkdownInputRules(() => this.bridge),
-        horizontalRuleInputRule(s),
         new InputRule(/!\[[^\n]*\]\([^\n]*\)$/, (state, match, start, end) => {
           const parsed = markdownParser.parse(match[0], this.bridge.environment).firstChild
           if (parsed?.childCount !== 1 || parsed.firstChild?.type !== s.nodes.image) return null
@@ -372,7 +371,7 @@ export class MarkdownEditorController implements LiveEditor {
               }
               return false
             },
-            'Enter': chainCommands(this.enterHtml,this.enterFence,splitListItem(s.nodes.list_item, { checked: null }), liftEmptyBlock, baseKeymap.Enter),
+            'Enter': chainCommands(this.enterHtml,this.enterFence,this.enterHorizontalRule,splitListItem(s.nodes.list_item, { checked: null }), liftEmptyBlock, baseKeymap.Enter),
             'F2': this.enterHtml,
             'Tab': chainCommands(this.nextCell(1), sinkListItem(s.nodes.list_item)),
             'Shift-Tab': chainCommands(this.nextCell(-1), liftListItem(s.nodes.list_item)),
@@ -822,6 +821,20 @@ export class MarkdownEditorController implements LiveEditor {
         }
       }
     })
+    return true
+  }
+
+  private enterHorizontalRule: Command = (state, dispatch) => {
+    const { empty, $from } = state.selection
+    if (!empty || $from.parent.type !== s.nodes.paragraph || $from.parentOffset !== $from.parent.content.size) return false
+    const rule = /^(?:-{3,}|_{3,}|\*{3,})[ \t]*$/.exec($from.parent.textContent)
+    if (!rule) return false
+    const from = $from.before(), to = $from.after()
+    const hr = s.nodes.horizontal_rule.create()
+    const nextPara = s.nodes.paragraph.create()
+    const tr = state.tr.replaceWith(from, to, [hr, nextPara])
+    const targetPos = from + hr.nodeSize + 1
+    dispatch?.(tr.setSelection(TextSelection.create(tr.doc, targetPos)).setMeta('isolated', true).scrollIntoView())
     return true
   }
 
