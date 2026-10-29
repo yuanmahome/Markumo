@@ -78,12 +78,32 @@ export function inlineSourceRange(bridge: MarkdownSourceBridge, doc: PMNode, fro
   const block = bridge.blocks.find(block => position >= block.from && position <= block.to)
   if (!block || block.raw.length > 32768) return null
   let result: { raw: string; sourceFrom: number; sourceTo: number; inherited: readonly Mark[];blockId:string } | null = null
+  const formatNamesToMark: Record<string, string> = { StrongEmphasis: 'strong', Emphasis: 'em', Strikethrough: 'strike', InlineCode: 'code' }
   syntax.parse(block.raw).iterate({ enter(node) {
     if (result || node.name !== syntaxNames[kind]) return
-    const sourceFrom = block.from + node.from, sourceTo = block.from + node.to
+    let sourceFrom = block.from + node.from, sourceTo = block.from + node.to
     if (position < sourceFrom || position > sourceTo) return
-    const raw = block.raw.slice(node.from, node.to)
-    if (parseInlineSource(raw, inherited, bridge.environment)?.eq(expected)) result = { raw, sourceFrom, sourceTo, inherited,blockId:block.id }
+    let raw = block.raw.slice(node.from, node.to)
+    let curInherited = inherited
+    if (parseInlineSource(raw, curInherited, bridge.environment)?.eq(expected)) {
+      let curr = node.node
+      while (curr.parent && formatNamesToMark[curr.parent.name]) {
+        const p = curr.parent
+        const parentMark = formatNamesToMark[p.name]
+        const nextInherited = curInherited.filter(m => m.type.name !== parentMark)
+        const parentRaw = block.raw.slice(p.from, p.to)
+        if (parseInlineSource(parentRaw, nextInherited, bridge.environment)?.eq(expected)) {
+          curr = p
+          curInherited = nextInherited
+          sourceFrom = block.from + p.from
+          sourceTo = block.from + p.to
+          raw = parentRaw
+        } else {
+          break
+        }
+      }
+      result = { raw, sourceFrom, sourceTo, inherited: curInherited, blockId: block.id }
+    }
   } })
   return result
 }
