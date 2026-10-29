@@ -1,4 +1,5 @@
 import DOMPurify from 'dompurify'
+import { sanitizeMarkup } from './sanitize'
 import { safeMarkdownURL } from '../links'
 import {
   acquireBlobUrl,
@@ -151,7 +152,7 @@ export function sanitizeHtml(rawHtml: string): string {
 
   const purifier = getPurifier()
   if (purifier && typeof purifier.sanitize === 'function') {
-    return purifier.sanitize(rawHtml, {
+    return sanitizeMarkup(purifier, rawHtml, {
       ALLOWED_TAGS,
       ALLOWED_ATTR,
       ALLOW_DATA_ATTR: false,

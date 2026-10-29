@@ -4,6 +4,7 @@ import type { EditorView } from 'prosemirror-view'
 import { CellSelection } from 'prosemirror-tables'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
+import { sanitizeMarkup } from '../html/sanitize'
 import { markdownSerializer } from './MarkdownSerializer'
 import { parseMarkdown } from './MarkdownParser'
 import { crossesTableCells } from './tableTextSelection'
@@ -157,7 +158,7 @@ export class LiveClipboard {
       }
       rich = container.innerHTML
     }
-    const html = DOMPurify.sanitize(rich, { USE_PROFILES: { html: true } })
+    const html = sanitizeMarkup(DOMPurify, rich, { USE_PROFILES: { html: true } })
     let textblocks = 0
     if (!(selection instanceof TextSelection)) selected.descendants(node => { if (node.isTextblock && !node.attrs.editorTrailing) textblocks++ })
     const useMarkdown = !singleCell && !acrossCells && (table || (this.settings().copyAcrossBlocks && (crossesBlocks || textblocks > 1)))

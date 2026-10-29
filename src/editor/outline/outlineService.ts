@@ -4,6 +4,7 @@ import type { EditorDocument } from '../../types'
 import { htmlLanguage } from '@codemirror/lang-html'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
+import { sanitizeMarkup } from '../markdown/html/sanitize'
 import { codeAdapters, extractCodeSymbols } from './codeAdapters'
 import { resolveLanguage } from '../languages'
 
@@ -19,7 +20,7 @@ inlineMarkdown.renderer.rules.image=(tokens,index)=>inlineMarkdown.utils.escapeH
 inlineMarkdown.renderer.rules.softbreak=()=> ' '
 const unescapeHtml=inlineMarkdown.utils.unescapeAll
 function headingLabel(source:string){
-  const labelHtml=DOMPurify.sanitize(inlineMarkdown.renderInline(source),{ALLOWED_TAGS:['strong','em','s','code','br'],ALLOWED_ATTR:[]})
+  const labelHtml=sanitizeMarkup(DOMPurify,inlineMarkdown.renderInline(source),{ALLOWED_TAGS:['strong','em','s','code','br'],ALLOWED_ATTR:[]})
   return {name:unescapeHtml(labelHtml.replace(/<[^>]*>/g,'')),labelHtml}
 }
 

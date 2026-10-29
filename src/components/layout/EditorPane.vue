@@ -11,10 +11,9 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue'
 import { isMedia } from '../../features/files/media'
-const ImageViewer = defineAsyncComponent(() => import('../viewers/ImageViewer.vue'))
-const PdfViewer = defineAsyncComponent(() => import('../viewers/PdfViewer.vue'))
+import { ImageViewer, PdfViewer } from '../viewers/asyncViewers'
 import SplitPreview from '../../editor/markdown/splitPreview.vue'
 import type { DocumentManager, Pane } from '../../editor/core/DocumentManager'
 import type { EditorDocument } from '../../types'

@@ -8,6 +8,17 @@ await server.listen();const browser=await chromium.launch({headless:true}),page=
 async function check(name,run){try{const details=await run();results.push({name,ok:true,...details});console.log('PASS',name)}catch(error){results.push({name,ok:false,error:String(error)});console.log('FAIL',name,String(error).slice(0,400))}}
 try{
  await page.goto('http://127.0.0.1:1502/tests/markdown-links/fixture.html');await page.waitForFunction(()=>!!window.f)
+ await check('HTML sanitization preserves safe output and releases removed DOM diagnostics',async()=>{
+  const result=await page.evaluate(async()=>{
+   const {DOMPurify,sanitizeMarkup}=await import('/tests/lossless/api.ts'),purifier=DOMPurify(window)
+   const source='<div><script>bad()</script><a href="javascript:bad()">safe label</a><img src="x" onerror="bad()"><button data-private="value">copy</button></div>'
+   const config={USE_PROFILES:{html:true},ALLOW_DATA_ATTR:false}
+   const expected=purifier.sanitize(source,config),before=purifier.removed.length
+   const output=sanitizeMarkup(purifier,source,config)
+   return {before,after:purifier.removed.length,expected,output}
+  })
+  assert(result.before>0);assert.equal(result.output,result.expected);assert(!/script|javascript:|onerror|data-private/.test(result.output));assert(result.output.includes('safe label'));assert.equal(result.after,0);return result
+ })
  await check('120 recovery discard cycles release per-document bookkeeping',async()=>{
   const result=await page.evaluate(async()=>{
    window.f.reset('baseline');const m=window.f.manager

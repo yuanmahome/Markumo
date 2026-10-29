@@ -1,7 +1,14 @@
 import { createRenderTaskQueue, type RenderTaskQueueStats } from '../renderTaskQueue'
+import { sanitizeMarkup } from '../html/sanitize'
 
 // Load heavy engines (Mermaid / KaTeX) lazily only for documents containing diagrams or formulas.
 let identity = 0
+
+// Vite's CSS preload links keep their load/error callbacks on document.head.
+// Keep the import closures outside render tasks so those callbacks cannot retain
+// a closed editor through host/current/signal's shared lexical context.
+const loadDiagramModules = () => Promise.all([import('mermaid'), import('dompurify')])
+const loadMathModules = () => Promise.all([import('katex'), import('katex/dist/katex.min.css')])
 
 // Dual-bounded LRU caches (entry count cap + UTF-16 byte budget cap; never increased above 300 / 30)
 export const MATH_CACHE_LIMIT = 300
@@ -213,10 +220,7 @@ export async function renderDiagram(
           return
         }
 
-        const [{ default: mermaid }, { default: purify }] = await Promise.all([
-          import('mermaid'),
-          import('dompurify'),
-        ])
+        const [{ default: mermaid }, { default: purify }] = await loadDiagramModules()
         if (signal?.aborted || !host.isConnected || !current()) return
 
         mermaid.initialize({
@@ -232,7 +236,7 @@ export async function renderDiagram(
         const id = `markumo-diagram-${++identity}`
         try {
           const { svg } = await mermaid.render(id, source)
-          const cleaned = purify.sanitize(svg, {
+          const cleaned = sanitizeMarkup(purify, svg, {
             USE_PROFILES: { svg: true, svgFilters: true },
             FORBID_TAGS: ['foreignObject', 'a', 'image', 'script', 'iframe'],
             FORBID_ATTR: ['href', 'xlink:href', 'onclick', 'onload'],
@@ -298,10 +302,7 @@ export async function renderMath(
           mathSliceStart = now
         }
 
-        const [{ default: katex }] = await Promise.all([
-          import('katex'),
-          import('katex/dist/katex.min.css'),
-        ])
+        const [{ default: katex }] = await loadMathModules()
         if (signal?.aborted || !host.isConnected || !current()) return
 
         const html = katex.renderToString(source, {

@@ -4,3 +4,5 @@ export { MarkdownSourceBridge } from '../../src/editor/markdown/wysiwyg/Markdown
 export { EditorState,TextSelection } from 'prosemirror-state'
 export { isolateHistory, undoDepth, redoDepth } from '@codemirror/commands'
 export { tokenizer } from '../../src/editor/markdown/wysiwyg/MarkdownParser'
+export { default as DOMPurify } from 'dompurify'
+export { sanitizeMarkup } from '../../src/editor/markdown/html/sanitize'

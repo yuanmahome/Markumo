@@ -11,6 +11,7 @@ import { normalizeWindowsArtifacts } from './windows-artifacts.mjs'
 
 const arg = name => process.argv.find(value => value.startsWith(`--${name}=`))?.slice(name.length + 3)
 const ref = arg('ref') || 'WORKTREE'
+const fullRef = process.argv.includes('--full-ref')
 const label = arg('label') || 'before'
 assert(/^[\w-]+$/.test(label), `Invalid label: ${label}`)
 
@@ -26,16 +27,32 @@ process.env.TEMP = tmpDir
 process.env.TMP = tmpDir
 
 let commit = git(['rev-parse', 'HEAD'])
+let sourceRoot = repository
+if (fullRef) {
+  assert.notEqual(ref, 'WORKTREE', '--full-ref requires an immutable git ref')
+  commit = git(['rev-parse', `${ref}^{commit}`])
+  assert.equal(git(['diff', commit, '--', 'pnpm-lock.yaml']), '', 'Install historical dependencies separately when lockfiles differ')
+  sourceRoot = path.join(root, `source-${label}-${commit.slice(0, 12)}`)
+  assert(!fs.existsSync(sourceRoot), 'Historical source snapshot already exists; use a new label')
+  fs.mkdirSync(sourceRoot)
+  const archive = path.join(root, `source-${label}.tar`)
+  execFileSync('git', ['archive', '--format=tar', `--output=${archive}`, commit], { cwd: repository, windowsHide: true })
+  execFileSync('tar', ['-xf', archive, '-C', sourceRoot], { windowsHide: true })
+  // Build an immutable archive, not a Git worktree. Only compiler-generated
+  // outputs and the external test configuration are written for historical refs.
+  process.chdir(sourceRoot)
+  process.env.CARGO_TARGET_DIR = path.join(repository, 'src-tauri/target')
+}
 let originals = new Map()
 let changed = []
-if (ref !== 'WORKTREE') {
+if (ref !== 'WORKTREE' && !fullRef) {
   assert(/^[\w.~^-]+$/.test(ref), `Invalid git ref: ${ref}`)
   assert.equal(
     git(['diff', ref, '--', 'src-tauri']),
     '',
     'Native Rust source must match reference when building a historical frontend overlay'
   )
-  commit = git(['rev-parse', ref])
+  commit = git(['rev-parse', `${ref}^{commit}`])
   changed = git(['diff', '--name-only', commit, '--', 'src']).split(/\r?\n/).filter(Boolean)
   const historicalFiles=new Set(git(['ls-tree','-r','--name-only',commit,'--','src']).split(/\r?\n/))
   originals = new Map(
@@ -46,7 +63,7 @@ if (ref !== 'WORKTREE') {
   )
 }
 const inputFiles=git(ref==='WORKTREE'?['ls-files','--cached','--others','--exclude-standard','--','src','src-tauri']:['ls-tree','-r','--name-only',commit,'--','src','src-tauri']).split(/\r?\n/).filter(Boolean).sort()
-const inputManifest=()=>inputFiles.map(file=>[file,createHash('sha256').update(originals.get(path.resolve(repository,file).replaceAll('\\','/'))??fs.readFileSync(path.resolve(repository,file))).digest('hex')])
+const inputManifest=()=>inputFiles.filter(file=>!file.startsWith('src-tauri/gen/')).map(file=>[file,createHash('sha256').update(originals.get(path.resolve(sourceRoot,file).replaceAll('\\','/'))??fs.readFileSync(path.resolve(sourceRoot,file))).digest('hex')])
 const sourceInputs=inputManifest()
 
 const PROBE_BOOTSTRAP = `
@@ -377,7 +394,7 @@ fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
 await run(['build', '--no-bundle', '--config', configPath], 'tauri')
 assert.deepEqual(inputManifest(),sourceInputs,'Source inputs changed during Release build')
 
-const targetDir = path.resolve('src-tauri/target')
+const targetDir = process.env.CARGO_TARGET_DIR || path.resolve('src-tauri/target')
 normalizeWindowsArtifacts(targetDir, 'markumo')
 const binary = path.join(root, `markumo-${label}.exe`)
 fs.copyFileSync(path.join(targetDir, 'release/markumo.exe'), binary)
@@ -391,6 +408,8 @@ const dirtyFiles = ref === 'WORKTREE' ? dirtyAtStart : []
 const buildInfo = {
   commit,
   ref,
+  fullRef,
+  sourceRoot,
   label,
   worktreeDirty: dirtyFiles,
   sourceInputsSha256:createHash('sha256').update(JSON.stringify(sourceInputs)).digest('hex'),

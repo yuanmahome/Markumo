@@ -29,13 +29,14 @@ const releaseLabel = process.env.MARKUMO_PHASE042_RELEASE_LABEL || 'after'
 const releaseAfterExe = path.resolve(`test-results/phase042/markumo-${releaseLabel}.exe`)
 if (mode === 'regression' && process.platform === 'win32' && fs.existsSync(releaseAfterExe)) {
   regressionScripts.push('tests/phase042/acceptance-a-to-n.mjs')
+  regressionScripts.push('tests/lifecycle/native-retention.mjs')
 }
 
 const list = mode === 'regression' ? regressionScripts : smokeScripts
 let passed = 0
 for (const script of list) {
   console.log(`\n=== Running [${mode}] ${script} ===`)
-  const args = script.endsWith('/acceptance-a-to-n.mjs') ? [`--label=${releaseLabel}`] : []
+  const args = script.endsWith('/acceptance-a-to-n.mjs') || script.endsWith('/native-retention.mjs') ? [`--label=${releaseLabel}`] : []
   execFileSync(process.execPath, [script, ...args], { stdio: 'inherit', windowsHide: true })
   passed++
 }

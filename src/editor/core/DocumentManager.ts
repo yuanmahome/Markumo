@@ -33,6 +33,9 @@ import type { CaretAnimation } from './caretMotion'
 export interface DocumentSeed { id: string; name: string; path: string; text: string; pinned?: boolean; mode?: MarkdownMode; kind?: 'text' | 'javaClass'; classInfo?: ClassInfo; encoding?: string; bom?: boolean; eol?: EditorDocument['eol'] }
 export type Pane = string
 const sharedConfiguration = Annotation.define<boolean>()
+// CSS preload event handlers live with the stylesheet. Their import closure
+// must not capture showActive's record or pane host after the last tab closes.
+const loadLiveEditor = () => import('../markdown/wysiwyg/MarkdownEditorController')
 interface CachedDocument {
   meta: EditorDocument
   state: EditorState
@@ -769,7 +772,7 @@ export class DocumentManager {
       const parent=this.hosts.get(resolved)
       if(!parent||this.disposed)return
       const load={};this.liveLoads.set(resolved,load)
-      void import('../markdown/wysiwyg/MarkdownEditorController').then(({MarkdownEditorController})=>{
+      void loadLiveEditor().then(({MarkdownEditorController})=>{
         if(this.disposed||this.liveLoads.get(resolved)!==load||this.paneGroup(resolved).activeId!==record.meta.id||this.getMarkdownMode(record.meta.id, resolved)!=='live'||this.hosts.get(resolved)!==parent)return
         const source=record.state.doc.toString(),saved=record.panes[resolved]
         const sibling=[...this.liveViews.values()].find(live=>live.id===record.meta.id)?.editor
