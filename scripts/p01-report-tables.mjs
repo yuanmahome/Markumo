@@ -18,7 +18,7 @@ const out=['# P0.1 Windows Release 实测表（自动生成）','','由 `node sc
 function table(headers,rows){out.push('| '+headers.join(' | ')+' |','| '+headers.map(()=> '---').join(' | ')+' |',...rows.map(row=>'| '+row.join(' | ')+' |'),'')}
 out.push('## 构建与输入','')
 table(['角色','Commit','二进制 SHA-256','应用源输入 SHA-256'],labels.map(label=>{const d=dataset(label);return[names[label],d.build.resolvedCommit||d.build.commit,d.build.sha256,d.build.sourceInputsSha256]}))
-out.push('每个构建的 Rust、完整输入和测试配置记录在 JSON；main 原始与修复侧为同一 Git HEAD，修复侧包含未提交的本次源改动。v1.1.1/v1.1.2 为解引用后的提交，不是 annotated tag 对象 ID。','')
+out.push('每个构建的 Rust、完整输入和测试配置记录在 JSON；main 原始与修复侧构建时基于同一 Git HEAD，修复侧追加本次源改动。后续提交是否对应实测源，由验收清单再次比较完整源输入 SHA。v1.1.1/v1.1.2 为解引用后的提交，不是 annotated tag 对象 ID。','')
 out.push('## 独立场景：打开态','')
 table(['场景',...labels.map(l=>names[l])],scenes.map(scene=>[sceneNames[scene],...labels.map(label=>fmt(points(dataset(label),scene,'loaded').map(p=>size(p))))]))
 out.push('循环行的 loaded 在 240 次关闭后额外等待一秒采样，此时没有打开文档；循环检查点另列。空白 loaded 是空工作区再等待三秒后的点。','')
@@ -26,6 +26,12 @@ out.push('## 独立场景：关闭后的自然恢复','')
 table(['场景/关闭后等待',...labels.map(l=>names[l])],scenes.map(scene=>{const ms=['blank','same240','mixed240'].includes(scene)?60000:5000;return[`${sceneNames[scene]} / ${ms/1000}s`,...labels.map(label=>fmt(points(dataset(label),scene,'closed-natural',{plannedMs:ms}).map(p=>size(p))))]}))
 out.push('## 普通操作就绪耗时','', '从操作开始到目标挂载与两帧就绪；不含后加一秒静置。启动耗时从启动进程至 CDP 观察到 UI 就绪，包含轮询/探针成本，不是纯绘制时间。','')
 table(['操作/ms',...labels.map(l=>names[l])],[['冷启动（空白场景）',...labels.map(label=>fmt(dataset(label).samples.filter(s=>s.scene==='blank').map(s=>s.startupMs)))],...['ordinary','code200','text-exact2mib','image','pdf','split'].map(scene=>[sceneNames[scene],...labels.map(label=>fmt(dataset(label).samples.filter(s=>s.scene===scene).map(s=>s.operations.find(o=>o.scene===scene).durationMs)))])])
+if(data.latencyControl?.length===2){
+ out.push('### 同二进制交错耗时复核','', '保留上面的原始较高耗时，不用补测覆盖它们。另用三对新进程/Profile 复测普通 Live 和大图；第二对倒序。下列为逐对毫秒原值，JSON 保存源文件 SHA。','')
+ const before=data.latencyControl.find(c=>c.label==='p01-main-before'),after=data.latencyControl.find(c=>c.label==='p01-final')
+ table(['场景','轮次','原始 main/ms','修复 main/ms','配对差/修复−原始 ms'],['ordinary','image'].flatMap(scene=>before.scenes[scene].runs.map(a=>{const b=after.scenes[scene].runs.find(b=>b.pair===a.pair);return[sceneNames[scene],a.pair,number(a.durationMs),number(b.durationMs),number(b.durationMs-a.durationMs)]})))
+ table(['场景','原始 main 中位数 [范围]','修复 main 中位数 [范围]'],['ordinary','image'].map(scene=>[sceneNames[scene],fmt(before.scenes[scene].runs.map(r=>r.durationMs)),fmt(after.scenes[scene].runs.map(r=>r.durationMs))]))
+}
 out.push('## 分进程变化','', '每个角色各自取三轮中位数，故角色中位数之和可能不等于总和的中位数。Utility 合并显示，逐一子类型、PID、创建时间、句柄及 CPU 位于 JSON/CSV。','')
 const roleStages=[['新进程空白冷点','blank','cold',{}],['普通 Live 打开','ordinary','loaded',{}],['普通 Live 关闭 5s','ordinary','closed-natural',{plannedMs:5000}],['混合第 240 次关闭','mixed240','cycle-closed',{cycle:240}],['混合关闭 60s','mixed240','closed-natural',{plannedMs:60000}]]
 for(const field of ['private','working']){
@@ -62,6 +68,12 @@ for(const scene of ['same240','mixed240']){
 }
 out.push('## 固定顺序累计负载','', '顺序固定；每轮新进程/Profile，但同一轮内保留前序缓存。表为每一步 loaded，不能称为独立文件成本。','')
 table(['顺序 / 负载',...labels.map(l=>names[l])],['ordinary','code200','panes','image','markdown-image','pdf','split','mixed240','text2mb'].map((scene,i)=>[`${i+1}. ${sceneNames[scene]}`,...labels.map(label=>fmt(points(dataset(label,true),scene,'loaded').map(p=>size(p))))]))
+out.push('### 累计负载中的 240 次混合循环','')
+table(['版本','30','60','120','240','Δ180→240','180～240 斜率'],labels.map(label=>{
+ const d=dataset(label,true),deltas=[],slopes=[]
+ for(const sample of d.samples){const ps=sample.points.filter(p=>p.workload==='mixed240'&&p.stage==='cycle-closed'&&p.cycle>=180),at=cycle=>size(ps.find(p=>p.cycle===cycle)),my=ps.reduce((sum,p)=>sum+size(p),0)/ps.length;deltas.push(at(240)-at(180));slopes.push(ps.reduce((sum,p)=>sum+(p.cycle-210)*(size(p)-my),0)/ps.reduce((sum,p)=>sum+(p.cycle-210)**2,0))}
+ return[names[label],...[30,60,120,240].map(cycle=>fmt(points(d,'mixed240','cycle-closed',{cycle}).map(p=>size(p)))),fmt(deltas),fmt(slopes)]
+}))
 out.push('## 交错历史提交控制','', '每轮按 v1.1.1 → 210d878 → 5515036 → v1.1.2 → a9b3c41+CSS 修复；第二轮倒序。这里只比较对应候选，不能将 a9b3c41 候选称为最新 main 最终修复。','')
 table(['构建','30','60','120','240','关闭60s'],data.cohorts.filter(d=>d.n===3&&d.transport==='raw-cdp-no-network').map(d=>[names[d.label],...[30,60,120,240].map(cycle=>fmt(points(d,'mixed240','cycle-closed',{cycle}).map(p=>size(p)))),fmt(points(d,'mixed240','closed-natural',{plannedMs:60000}).map(p=>size(p)))]))
 const target='docs/performance/p01-memory-tables-20261028.md'

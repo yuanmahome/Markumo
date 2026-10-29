@@ -1,0 +1,1597 @@
+{
+  "generatedAt": "2026-10-29T06:01:41.130Z",
+  "branch": "main",
+  "head": "532c478e1b66d2e652e8f447d3faebe85e6f4436",
+  "measuredBaseCommit": "315de6beb82ce2c2927df006a7d3d96542bb0e60",
+  "build": {
+    "commit": "315de6beb82ce2c2927df006a7d3d96542bb0e60",
+    "ref": "WORKTREE",
+    "fullRef": false,
+    "sourceRoot": "E:\\code\\Markumo",
+    "label": "p01-final",
+    "worktreeDirty": [
+      "M src/components/layout/EditorPane.vue",
+      " M src/editor/core/DocumentManager.ts",
+      " M src/editor/markdown/html/SafeHtmlRenderer.ts",
+      " M src/editor/markdown/wysiwyg/LiveClipboard.ts",
+      " M src/editor/markdown/wysiwyg/renderers.ts",
+      " M src/editor/outline/outlineService.ts",
+      "?? src/components/viewers/asyncViewers.ts",
+      "?? src/editor/markdown/html/sanitize.ts"
+    ],
+    "sourceInputsSha256": "eefe88d71ab4b99c2fddc62c9547aed7597c7d65f878b2b912e6030c8fbd26fe",
+    "binary": "E:\\code\\Markumo\\test-results\\phase042\\markumo-p01-final.exe",
+    "sha256": "3d503fe3659fe2f8539955655c537b299b839a2fa1c5d3b005b8c3d14548781a",
+    "rustTree": "59f53c877ce61e3f3089e2220c65e1a61822fa31",
+    "overlay": [],
+    "instrumentation": "Identical non-invasive counters for PM, main CM, embedded CM, Workers, render tasks, Blob URLs/bytes, decoded DOM pixels, and production DocumentManager reference.",
+    "frontendFiles": [
+      "ExternalFileDiff-DxLYJGB8.js",
+      "ExternalFileDiff-yHnKiNs1.css",
+      "GlobalSearchDialog-BcYyjsq4.js",
+      "GlobalSearchDialog-Dle_ImDm.css",
+      "ImageViewer-kaOwjIdh.js",
+      "ImageViewer-to_jMDm_.css",
+      "KaTeX_AMS-Regular-BQhdFMY1.woff2",
+      "KaTeX_AMS-Regular-DMm9YOAa.woff",
+      "KaTeX_AMS-Regular-DRggAlZN.ttf",
+      "KaTeX_Caligraphic-Bold-ATXxdsX0.ttf",
+      "KaTeX_Caligraphic-Bold-BEiXGLvX.woff",
+      "KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2",
+      "KaTeX_Caligraphic-Regular-CTRA-rTL.woff",
+      "KaTeX_Caligraphic-Regular-Di6jR-x-.woff2",
+      "KaTeX_Caligraphic-Regular-wX97UBjC.ttf",
+      "KaTeX_Fraktur-Bold-BdnERNNW.ttf",
+      "KaTeX_Fraktur-Bold-BsDP51OF.woff",
+      "KaTeX_Fraktur-Bold-CL6g_b3V.woff2",
+      "KaTeX_Fraktur-Regular-CB_wures.ttf",
+      "KaTeX_Fraktur-Regular-CTYiF6lA.woff2",
+      "KaTeX_Fraktur-Regular-Dxdc4cR9.woff",
+      "KaTeX_Main-Bold-Cx986IdX.woff2",
+      "KaTeX_Main-Bold-Jm3AIy58.woff",
+      "KaTeX_Main-Bold-waoOVXN0.ttf",
+      "KaTeX_Main-BoldItalic-DxDJ3AOS.woff2",
+      "KaTeX_Main-BoldItalic-DzxPMmG6.ttf",
+      "KaTeX_Main-BoldItalic-SpSLRI95.woff",
+      "KaTeX_Main-Italic-3WenGoN9.ttf",
+      "KaTeX_Main-Italic-BMLOBm91.woff",
+      "KaTeX_Main-Italic-NWA7e6Wa.woff2",
+      "KaTeX_Main-Regular-B22Nviop.woff2",
+      "KaTeX_Main-Regular-Dr94JaBh.woff",
+      "KaTeX_Main-Regular-ypZvNtVU.ttf",
+      "KaTeX_Math-BoldItalic-B3XSjfu4.ttf",
+      "KaTeX_Math-BoldItalic-CZnvNsCZ.woff2",
+      "KaTeX_Math-BoldItalic-iY-2wyZ7.woff",
+      "KaTeX_Math-Italic-DA0__PXp.woff",
+      "KaTeX_Math-Italic-flOr_0UB.ttf",
+      "KaTeX_Math-Italic-t53AETM-.woff2",
+      "KaTeX_SansSerif-Bold-CFMepnvq.ttf",
+      "KaTeX_SansSerif-Bold-D1sUS0GD.woff2",
+      "KaTeX_SansSerif-Bold-DbIhKOiC.woff",
+      "KaTeX_SansSerif-Italic-C3H0VqGB.woff2",
+      "KaTeX_SansSerif-Italic-DN2j7dab.woff",
+      "KaTeX_SansSerif-Italic-YYjJ1zSn.ttf",
+      "KaTeX_SansSerif-Regular-BNo7hRIc.ttf",
+      "KaTeX_SansSerif-Regular-CS6fqUqJ.woff",
+      "KaTeX_SansSerif-Regular-DDBCnlJ7.woff2",
+      "KaTeX_Script-Regular-C5JkGWo-.ttf",
+      "KaTeX_Script-Regular-D3wIWfF6.woff2",
+      "KaTeX_Script-Regular-D5yQViql.woff",
+      "KaTeX_Size1-Regular-C195tn64.woff",
+      "KaTeX_Size1-Regular-Dbsnue_I.ttf",
+      "KaTeX_Size1-Regular-mCD8mA8B.woff2",
+      "KaTeX_Size2-Regular-B7gKUWhC.ttf",
+      "KaTeX_Size2-Regular-Dy4dx90m.woff2",
+      "KaTeX_Size2-Regular-oD1tc_U0.woff",
+      "KaTeX_Size3-Regular-CTq5MqoE.woff",
+      "KaTeX_Size3-Regular-DgpXs0kz.ttf",
+      "KaTeX_Size4-Regular-BF-4gkZK.woff",
+      "KaTeX_Size4-Regular-DWFBv043.ttf",
+      "KaTeX_Size4-Regular-Dl5lxZxV.woff2",
+      "KaTeX_Typewriter-Regular-C0xS9mPB.woff",
+      "KaTeX_Typewriter-Regular-CO6r4hn1.woff2",
+      "KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf",
+      "MarkdownEditorController-8LKER32O.css",
+      "MarkdownEditorController-D5QSOiV7.js",
+      "PdfViewer-C-Zei6Kn.css",
+      "PdfViewer-CKNzZduk.js",
+      "SearchCodePreview-C--z1a4l.css",
+      "SearchCodePreview-Dtz85YiG.js",
+      "__vite-browser-external-BIHI7g3E.js",
+      "abnfDiagram-N423BO3Z-CgOPysHW.js",
+      "arc-BHuoOAWq.js",
+      "architectureDiagram-T3A2C74G-r1CPuv_t.js",
+      "batch-DyqML1Rh.js",
+      "blockDiagram-VBNYF7ZC-BQGZqgki.js",
+      "c4Diagram-5PPSVZJV-BPt4PEf9.js",
+      "channel-DST289yn.js",
+      "chunk-2GRJ4B5K-DHnf3th3.js",
+      "chunk-2Q5K7J3B-CBfPmHW4.js",
+      "chunk-5RXB4S5H-VOLbqx-X.js",
+      "chunk-5VM5RSS4-z6CsjSWb.js",
+      "chunk-6Q2QTUOP-CBpQzvKb.js",
+      "chunk-GF5L2VYU-BgD3yCqV.js",
+      "chunk-JWPE2WC7-CgSPU7rr.js",
+      "chunk-KBJHAD2P-COMT_dNL.js",
+      "chunk-RYQCIY6F-B2UH8DWw.js",
+      "chunk-XXDRQBXY-D2y8K3fh.js",
+      "classDiagram-JCYQIIEL-BxeHvHGp.js",
+      "classDiagram-v2-OCEON4UE-BxeHvHGp.js",
+      "clike-In58eC2I.js",
+      "cmake-BQqOBYOt.js",
+      "cose-bilkent-JH36ORCC-Bp3vP3Tf.js",
+      "css-BnMrqG3P.js",
+      "cynefin-OW5HDTMX-Eulr9s6z.js",
+      "cynefinDiagram-MW4NZA55-CMUYRUoT.js",
+      "cytoscape.esm-Ix0LnXOy.js",
+      "dagre-VZM6K2ZE-DK4dwmyc.js",
+      "defaultLocale-DX6XiGOO.js",
+      "diagram-7IWD3JNH-C3s7d0dL.js",
+      "diagram-B4RE2ZJO-Cqm7dBhL.js",
+      "diagram-LBJQPF4R-B20b5qbj.js",
+      "diagram-Q27KOJAE-CvPXMnGS.js",
+      "diagram-UB23O5K3-CHZ88o2X.js",
+      "diff-DbItnlRl.js",
+      "dockerfile-ZL4hHokT.js",
+      "docxWorkerClient-C8io9bK1.js",
+      "ebnfDiagram-BXEA7PRR-Bwa2EXGk.js",
+      "editor-core-DoQ-A7xQ.js",
+      "erDiagram-JOGREHBK-6zJPJ9Gp.js",
+      "flowDiagram-UKHOOZJN-CDPryfbO.js",
+      "ganttDiagram-PKOTCBZU-BFsskADN.js",
+      "gitGraphDiagram-DS77QQ5N-BsUsTvNb.js",
+      "graph-C9eacEi8.js",
+      "html-BbXHkOgw.js",
+      "html2canvas.esm-QH1iLAAe.js",
+      "index-BKukaNaP.js",
+      "index-BLAdBwfK.js",
+      "index-C7B3kIKw.js",
+      "index-C7jh4C8B.js",
+      "index-C84N32Fy.js",
+      "index-CDGKrJeK.css",
+      "index-COHejPa5.js",
+      "index-CSlW-jEZ.js",
+      "index-Cu5kBULU.js",
+      "index-D1mhAORt.js",
+      "index-D97fU_fW.js",
+      "index-DA9DiW2p.js",
+      "index-DowJbd4n.js",
+      "index-G24ENa4_.js",
+      "index-H5StWQ8M.js",
+      "index-LtQCYY6-.js",
+      "infoDiagram-6WML65LV-BgdMJ4gD.js",
+      "init-Gi6I4Gst.js",
+      "ishikawaDiagram-WSZJBQD7-Dml455a0.js",
+      "javascript-D7Br0fgr.js",
+      "journeyDiagram-NVQOT4AX-rILTLbdP.js",
+      "kanban-definition-27J2QSJJ-CBZO9cPP.js",
+      "katex-Cp5iPVkt.js",
+      "katex-DdZNUVNG.css",
+      "layout-DEXfKzaS.js",
+      "linear-BbUNLLNM.js",
+      "lua-VAEuO923.js",
+      "makefile-BtB3hR6v.js",
+      "map-Czzmt4hB.js",
+      "mermaid.core-B3ko4Row.js",
+      "mindmap-definition-FAOFIHXS-D5TNyk_a.js",
+      "native-DvTGFyUp.js",
+      "nativeDocxWorker-DLL8YOOd.js",
+      "ordinal-Cboi1Yqb.js",
+      "pdf-BtCWNl9F.js",
+      "pegDiagram-VL7TDLO6-C1ShdLL8.js",
+      "perl-CdXCOZ3F.js",
+      "pieDiagram-7S7Q4E2Y-BQdtJ0n-.js",
+      "powershell-CFHJl5sT.js",
+      "pug-C3WPX4ao.js",
+      "quadrantDiagram-CIZ2JOQS-DFwGvqXo.js",
+      "r-B6wPVr8A.js",
+      "railroadDiagram-AXF67PYL-vocRuJqY.js",
+      "requirementDiagram-LRYGKXZP-1zj_V1Nq.js",
+      "ruby-BK5aLJev.js",
+      "sankeyDiagram-W5VNT64P-BlXCNQvn.js",
+      "sequenceDiagram-SI44F4Z6-DuHg5ko5.js",
+      "shell-CjFT_Tl9.js",
+      "sizeCapture-X5ZJPWSS-B3KKXmh-.js",
+      "smartEditing-Blp3uw_R.js",
+      "stateDiagram-OKZ733FA-CXJpPe9T.js",
+      "stateDiagram-v2-UEYNNEHI-CHzMYX6O.js",
+      "structured-7cz3L4KZ.js",
+      "swift-BzpIVaGY.js",
+      "swimlanes-SLNWSIFB-CjlKSiJb.js",
+      "swimlanesDiagram-ULZ7WXOC-DQ0vPlkf.js",
+      "timeline-definition-Z64GVDOM-ERosTj2W.js",
+      "toml-BEbV1LRN.js",
+      "vennDiagram-T6HMQDX7-CwsAk07q.js",
+      "viewer-Clq3s49R.js",
+      "viewer-DKBP3Fnn.css",
+      "wardleyDiagram-T6FBY63Y-CeX6fRtF.js",
+      "xychartDiagram-ELKLHX3M-CU5q26tC.js",
+      "yaml-2qca58Rd.js"
+    ],
+    "builtAt": "2026-10-29T01:47:51.624Z"
+  },
+  "sourceInputsMatchMeasuredRelease": true,
+  "results": {
+    "regression": "20/20 passed, 0 failed.",
+    "ownership": "6/6",
+    "losslessBrowser": [
+      "=== Running [regression] tests/lossless/browser.mjs ===",
+      "LOSSLESS after: 73/73, failures=0, pageErrors=0"
+    ],
+    "boldInput": "14/14 passed",
+    "nativeLossless": [
+      "0: 18 byte-identical save/reopen cases; localized=true; conflict rejected",
+      "1: 11 byte-identical save/reopen cases; localized=true; conflict rejected"
+    ]
+  },
+  "matrices": [
+    {
+      "name": "matrix",
+      "source": {
+        "file": "E:\\code\\Markumo\\test-results\\p01\\matrix.json",
+        "sha256": "b99625cba4314298528e18671e40227660724486c028cff46603a13b13538b5c"
+      },
+      "startedAt": "2026-10-28T12:11:15.692Z",
+      "steps": [
+        {
+          "name": "v112-isolated",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v112",
+            "--mode=isolated",
+            "--rounds=3"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\v112-isolated.log",
+          "startedAt": "2026-10-28T12:11:15.702Z",
+          "code": 0,
+          "completedAt": "2026-10-28T12:31:29.081Z",
+          "logSha256": "5a6efc028a4e423d07d44ea9b80ea9fc800db68ce63c53bbd9528b4fec7b92f6"
+        },
+        {
+          "name": "p01-v111-sequence",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v111",
+            "--mode=sequence",
+            "--rounds=3",
+            "--scenes=ordinary,code200,panes,image,markdown-image,pdf,split,mixed240,text2mb"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\p01-v111-sequence.log",
+          "startedAt": "2026-10-28T12:31:29.082Z",
+          "code": 0,
+          "completedAt": "2026-10-28T12:41:22.091Z",
+          "logSha256": "c47d64aeb535e4503f079ed9a616ca951215e267d5bd440cf2243777c76237fa"
+        },
+        {
+          "name": "p01-v112-sequence",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v112",
+            "--mode=sequence",
+            "--rounds=3",
+            "--scenes=ordinary,code200,panes,image,markdown-image,pdf,split,mixed240,text2mb"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\p01-v112-sequence.log",
+          "startedAt": "2026-10-28T12:41:22.091Z",
+          "code": 0,
+          "completedAt": "2026-10-28T12:53:43.674Z",
+          "logSha256": "9cf640b0e57a45e93b9b05b14b0903d57b7e4451187c26ceea22ad8a638d03e5"
+        },
+        {
+          "name": "v112-profile",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v112",
+            "--mode=profile",
+            "--rounds=1",
+            "--scenes=mixed240,pdf,image,split"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\v112-profile.log",
+          "startedAt": "2026-10-28T12:53:43.676Z",
+          "code": 0,
+          "completedAt": "2026-10-28T12:58:38.036Z",
+          "logSha256": "7f5355db21d6d54725927d722d06eb8f723982ab46468c7e381e6e5e9379e0ec"
+        },
+        {
+          "name": "build-fixed",
+          "script": "scripts/memory-release-build.mjs",
+          "args": [
+            "--label=p01-fixed"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\build-fixed.log",
+          "startedAt": "2026-10-28T12:58:38.038Z",
+          "code": 1,
+          "completedAt": "2026-10-28T13:02:35.218Z",
+          "supersededBy": 2,
+          "logSha256": "0e3a4064153dd0f4669ac11c816f2ee2f300054d8a957e395908a9fdcc1d7e0e"
+        },
+        {
+          "name": "build-fixed",
+          "attempt": 2,
+          "script": "scripts/memory-release-build.mjs",
+          "args": [
+            "--label=p01-fixed"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\build-fixed-attempt2.log",
+          "startedAt": "2026-10-28T13:04:25.983Z",
+          "code": 0,
+          "completedAt": "2026-10-28T13:07:47.352Z",
+          "logSha256": "0b89740a7de1d06bd40052ff27eebb37a5b055d823d6cad8038aaf62d641907e"
+        },
+        {
+          "name": "fixed-isolated",
+          "attempt": 1,
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-fixed",
+            "--mode=isolated",
+            "--rounds=3"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\fixed-isolated.log",
+          "startedAt": "2026-10-28T13:07:47.354Z",
+          "code": 0,
+          "completedAt": "2026-10-28T13:28:20.511Z",
+          "logSha256": "c2488a511c7001e16e4897f32219069f94e2691d474851da7944e11d71ee4185"
+        },
+        {
+          "name": "fixed-sequence",
+          "attempt": 1,
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-fixed",
+            "--mode=sequence",
+            "--rounds=3",
+            "--scenes=ordinary,code200,panes,image,markdown-image,pdf,split,mixed240,text2mb"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\fixed-sequence.log",
+          "startedAt": "2026-10-28T13:28:20.512Z",
+          "code": 0,
+          "completedAt": "2026-10-28T13:38:16.451Z",
+          "logSha256": "a375899b2b7a403b31cb86e274e8ad5ae5080beb3463c110aecd3aa2c3688ae5"
+        },
+        {
+          "name": "fixed-profile",
+          "attempt": 1,
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-fixed",
+            "--mode=profile",
+            "--rounds=1",
+            "--scenes=mixed240,pdf,image,split"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\fixed-profile.log",
+          "startedAt": "2026-10-28T13:38:16.452Z",
+          "code": 0,
+          "completedAt": "2026-10-28T13:42:56.959Z",
+          "logSha256": "a2ac28c6810db8f755f05fc393e44278d11a71cc560440e93f262ca282c8fccb"
+        },
+        {
+          "name": "regression",
+          "attempt": 1,
+          "script": "tests/run-suite.mjs",
+          "args": [
+            "regression"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\regression.log",
+          "startedAt": "2026-10-28T13:42:56.960Z",
+          "code": 0,
+          "completedAt": "2026-10-28T13:47:41.080Z",
+          "logSha256": "e35c2b786dea1adfbf035aeca2a3a9de62c07d0bb874daa79c60bb5eed45959c"
+        },
+        {
+          "name": "native-lossless-0",
+          "attempt": 1,
+          "script": "tests/lossless/native.mjs",
+          "args": [
+            "--label=p01-fixed",
+            "--batch=0"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\native-lossless-0.log",
+          "startedAt": "2026-10-28T13:47:41.081Z",
+          "code": 0,
+          "completedAt": "2026-10-28T13:48:08.203Z",
+          "logSha256": "9be9945e0b5214fc1c5b941144f09fb9f6f0fb923f01542da49cdb87d6fea1f2"
+        },
+        {
+          "name": "native-lossless-1",
+          "attempt": 1,
+          "script": "tests/lossless/native.mjs",
+          "args": [
+            "--label=p01-fixed",
+            "--batch=1"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\native-lossless-1.log",
+          "startedAt": "2026-10-28T13:48:08.204Z",
+          "code": 0,
+          "completedAt": "2026-10-28T13:48:36.629Z",
+          "logSha256": "9af7ce120eaf7a31021a3806aef62ba34cdab6a3a6f637e67f8bfef24185c780"
+        }
+      ],
+      "resumes": [
+        "2026-10-28T13:04:25.981Z"
+      ],
+      "completedAt": "2026-10-28T13:48:36.630Z"
+    },
+    {
+      "name": "interleaved-matrix",
+      "source": {
+        "file": "E:\\code\\Markumo\\test-results\\p01\\interleaved-matrix.json",
+        "sha256": "4d05edb325090d3d7bf092b07c7b2a1cf03db915fa74700c720e376d7d3c730b"
+      },
+      "startedAt": "2026-10-29T00:52:18.650Z",
+      "steps": [
+        {
+          "name": "raw-transport-control",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v112",
+            "--mode=isolated",
+            "--rounds=3",
+            "--scenes=ordinary,code200,image,mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\raw-transport-control.log",
+          "startedAt": "2026-10-29T00:52:18.652Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:00:15.052Z",
+          "logSha256": "214775994edd26152e7061e84abd6065ba09a8f0644807599ddef7bd46e9379e"
+        },
+        {
+          "name": "raw-native-profile",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v112",
+            "--mode=profile",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--native-sampling",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\raw-native-profile.log",
+          "startedAt": "2026-10-29T01:00:15.054Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:02:49.622Z",
+          "logSha256": "8eff564dfd3006be5ee53727a619bda4b6b8a84988f7121d97ab44bee1a667bf"
+        },
+        {
+          "name": "build-p01-pre-io",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/memory-release-build.mjs",
+          "args": [
+            "--ref=210d878",
+            "--label=p01-pre-io",
+            "--full-ref"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\build-p01-pre-io.log",
+          "startedAt": "2026-10-29T01:02:49.623Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:10:01.227Z",
+          "logSha256": "ef6c3120fa8be53e15e7a134315b3665af64dcf9033d25f4fcae25ee456f90e3"
+        },
+        {
+          "name": "build-p01-io",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/memory-release-build.mjs",
+          "args": [
+            "--ref=5515036",
+            "--label=p01-io",
+            "--full-ref"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\build-p01-io.log",
+          "startedAt": "2026-10-29T01:10:01.230Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:13:08.245Z",
+          "logSha256": "3b058efe2475b1bcb644bc1661fea4ca9fe946c9550a644c046d642771bacc45"
+        },
+        {
+          "name": "interleaved-1-p01-v111",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v111",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-1-p01-v111.log",
+          "startedAt": "2026-10-29T01:13:08.246Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:15:15.356Z",
+          "logSha256": "9c1411956a212d1b7c9a5fbe175aed6e700cb0bbf3e3d1112b2c4654121c67af"
+        },
+        {
+          "name": "interleaved-1-p01-pre-io",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-pre-io",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-1-p01-pre-io.log",
+          "startedAt": "2026-10-29T01:15:15.357Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:17:19.436Z",
+          "logSha256": "57e3820b54838bfc2a6b44a887517275f25a8a7508fce8ce4b4beb75797765b3"
+        },
+        {
+          "name": "interleaved-1-p01-io",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-io",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-1-p01-io.log",
+          "startedAt": "2026-10-29T01:17:19.438Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:19:23.811Z",
+          "logSha256": "846f5edd84a378fa218d0696add86c0010aeb4544124e0c7734350c404e9f769"
+        },
+        {
+          "name": "interleaved-1-p01-v112",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v112",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-1-p01-v112.log",
+          "startedAt": "2026-10-29T01:19:23.812Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:21:26.917Z",
+          "logSha256": "71b01d2a6a4e80e6e1da256a690e68f26516e0a9167c979bbafa988427b5e524"
+        },
+        {
+          "name": "interleaved-1-p01-fixed",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-fixed",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-1-p01-fixed.log",
+          "startedAt": "2026-10-29T01:21:26.918Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:23:30.910Z",
+          "logSha256": "566840ddbc3a51c79e53fcfd4affcd44c373134308cf99eb26e193071673371c"
+        },
+        {
+          "name": "interleaved-2-p01-fixed",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-fixed",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-2-p01-fixed.log",
+          "startedAt": "2026-10-29T01:23:30.912Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:25:34.719Z",
+          "logSha256": "5e5116238039d4ad4f8ce60cf04850015bf1d717a696b851a8ee853d36c913dc"
+        },
+        {
+          "name": "interleaved-2-p01-v112",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v112",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-2-p01-v112.log",
+          "startedAt": "2026-10-29T01:25:34.720Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:27:38.163Z",
+          "logSha256": "652105434ade69bbde43df2adda750e708b23205d52430cab3eab94b6e588b20"
+        },
+        {
+          "name": "interleaved-2-p01-io",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-io",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-2-p01-io.log",
+          "startedAt": "2026-10-29T01:27:38.164Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:29:42.875Z",
+          "logSha256": "ddc1e98334cfeedda9cfa2852a335e74e4309dfcf7ab2dffc460fc9bd487004d"
+        },
+        {
+          "name": "interleaved-2-p01-pre-io",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-pre-io",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-2-p01-pre-io.log",
+          "startedAt": "2026-10-29T01:29:42.877Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:31:46.996Z",
+          "logSha256": "7040cce4f69458d9eed60c38ebaeb8408b1cc92c629ec17f001261228ea6cbf8"
+        },
+        {
+          "name": "interleaved-2-p01-v111",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v111",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-2-p01-v111.log",
+          "startedAt": "2026-10-29T01:31:46.999Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:33:50.596Z",
+          "logSha256": "6b02137e6d11d54e77dbd4611c0398c63d9767c59d57c03fe15cc43cb07f637e"
+        },
+        {
+          "name": "interleaved-3-p01-v111",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v111",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-3-p01-v111.log",
+          "startedAt": "2026-10-29T01:33:50.597Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:35:53.387Z",
+          "logSha256": "9b50ae0621fceb1d1841ef1e4f99f44c416e3327415c1bafeaf8915806b9bc3d"
+        },
+        {
+          "name": "interleaved-3-p01-pre-io",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-pre-io",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-3-p01-pre-io.log",
+          "startedAt": "2026-10-29T01:35:53.388Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:38:20.451Z",
+          "logSha256": "e576021c8d6424226e56b7f5b392390cda25b59d4f2737750d99e9cfff19e679"
+        },
+        {
+          "name": "interleaved-3-p01-io",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-io",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-3-p01-io.log",
+          "startedAt": "2026-10-29T01:38:20.451Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:40:23.013Z",
+          "logSha256": "2d69234b553bf0713d9bfbd03fdcbe71231d54802b85220e9eb5ed70c7a46646"
+        },
+        {
+          "name": "interleaved-3-p01-v112",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v112",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-3-p01-v112.log",
+          "startedAt": "2026-10-29T01:40:23.014Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:42:26.122Z",
+          "logSha256": "9fd72d62db800ca98bc38059ac001b94eee39f508c6ab730c00f0f88ab8ea64b"
+        },
+        {
+          "name": "interleaved-3-p01-fixed",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-fixed",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\interleaved-3-p01-fixed.log",
+          "startedAt": "2026-10-29T01:42:26.122Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:44:29.315Z",
+          "logSha256": "03e81c76c5f57f6b38654000acda2b430d524d8b6c5b0a232f7dcafb7d5897aa"
+        },
+        {
+          "name": "exact2mib-p01-v111",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v111",
+            "--mode=isolated",
+            "--rounds=3",
+            "--scenes=text-exact2mib",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\exact2mib-p01-v111.log",
+          "startedAt": "2026-10-29T01:44:29.316Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:45:09.736Z",
+          "logSha256": "8336008a498d4a0dea71e4758b2d6cd0c40270b4e3e9a7219812a75a1177149f"
+        },
+        {
+          "name": "exact2mib-p01-v112",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v112",
+            "--mode=isolated",
+            "--rounds=3",
+            "--scenes=text-exact2mib",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\exact2mib-p01-v112.log",
+          "startedAt": "2026-10-29T01:45:09.736Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:45:50.399Z",
+          "logSha256": "747155902ad7c1b943946a12772040c11967e47cd126d93779f48433e5b78a47"
+        },
+        {
+          "name": "exact2mib-p01-fixed",
+          "executable": "d:\\env\\nodejs\\node.exe",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-fixed",
+            "--mode=isolated",
+            "--rounds=3",
+            "--scenes=text-exact2mib",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\exact2mib-p01-fixed.log",
+          "startedAt": "2026-10-29T01:45:50.399Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:46:30.948Z",
+          "logSha256": "73ff949b1971773033fda53296af5da7c6ff25b312c1fc2c03dd95158ae8b80d"
+        }
+      ],
+      "completedAt": "2026-10-29T01:46:30.949Z"
+    },
+    {
+      "name": "final-matrix",
+      "source": {
+        "file": "E:\\code\\Markumo\\test-results\\p01\\final-matrix.json",
+        "sha256": "9f302e13e6714df66d6d0e59f0cf8a465c2ec342baf5124e5d36c7e768be7a08"
+      },
+      "startedAt": "2026-10-29T01:46:31.964Z",
+      "steps": [
+        {
+          "name": "build",
+          "script": "scripts/memory-release-build.mjs",
+          "args": [
+            "--label=p01-final"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\final-build.log",
+          "startedAt": "2026-10-29T01:46:31.966Z",
+          "code": 0,
+          "completedAt": "2026-10-29T01:47:51.676Z",
+          "logSha256": "04fdbba44e2c4b6fb517d74e7a98a03e903d061e04ca12dceb670ab9d558c491"
+        },
+        {
+          "name": "isolated",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-final",
+            "--raw-cdp",
+            "--rounds=3",
+            "--mode=isolated"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\final-isolated.log",
+          "startedAt": "2026-10-29T01:47:51.677Z",
+          "code": 1,
+          "completedAt": "2026-10-29T01:50:19.358Z",
+          "supersededBy": 2,
+          "logSha256": "1d87b3dff56b019e51c7fd83c9cfa8b76790abd78886ef66039c9fa4f9e6f8e3"
+        },
+        {
+          "name": "isolated",
+          "attempt": 2,
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-final",
+            "--raw-cdp",
+            "--rounds=3",
+            "--mode=isolated"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\final-isolated-attempt2.log",
+          "startedAt": "2026-10-29T01:52:50.933Z",
+          "code": 0,
+          "completedAt": "2026-10-29T02:12:52.149Z",
+          "logSha256": "89dc4e7312d2b838e5ebd86b3d0e93515e068832b7065bc674e98acb02f128a0"
+        },
+        {
+          "name": "sequence",
+          "attempt": 1,
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-final",
+            "--raw-cdp",
+            "--rounds=3",
+            "--mode=sequence",
+            "--scenes=ordinary,code200,panes,image,markdown-image,pdf,split,mixed240,text2mb"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\final-sequence.log",
+          "startedAt": "2026-10-29T02:12:52.150Z",
+          "code": 0,
+          "completedAt": "2026-10-29T02:22:19.721Z",
+          "logSha256": "cd9e0757cb9436a0f2e172d276c1380d3d4813ed5a6823c14dcdc15613dde946"
+        },
+        {
+          "name": "exact2mib",
+          "attempt": 1,
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-final",
+            "--raw-cdp",
+            "--rounds=3",
+            "--mode=isolated",
+            "--scenes=text-exact2mib"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\final-exact2mib.log",
+          "startedAt": "2026-10-29T02:22:19.722Z",
+          "code": 0,
+          "completedAt": "2026-10-29T02:23:00.128Z",
+          "logSha256": "f59504d4b671623c4dff0d3759da3554987dfa46e6f050199680d8a1e538d330"
+        },
+        {
+          "name": "regression",
+          "attempt": 1,
+          "script": "tests/run-suite.mjs",
+          "args": [
+            "regression"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\final-regression.log",
+          "startedAt": "2026-10-29T02:23:00.128Z",
+          "code": 0,
+          "completedAt": "2026-10-29T02:29:34.337Z",
+          "logSha256": "2914dfeff6a76c5e54478ec449f8cd7ebf84412fe7dccdb3054af5580ffa43e7"
+        },
+        {
+          "name": "bold-input",
+          "attempt": 1,
+          "script": "tests/phase042/bold-input.mjs",
+          "args": [],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\final-bold-input.log",
+          "startedAt": "2026-10-29T02:29:34.338Z",
+          "code": 0,
+          "completedAt": "2026-10-29T02:29:44.339Z",
+          "logSha256": "0945ab39cc0ea6a798ad94102d0e5615d4958a83c93263ac37c3599db179da0c"
+        },
+        {
+          "name": "native-lossless-0",
+          "attempt": 1,
+          "script": "tests/lossless/native.mjs",
+          "args": [
+            "--label=p01-final",
+            "--batch=0"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\final-native-lossless-0.log",
+          "startedAt": "2026-10-29T02:29:44.340Z",
+          "code": 0,
+          "completedAt": "2026-10-29T02:30:09.072Z",
+          "logSha256": "9be9945e0b5214fc1c5b941144f09fb9f6f0fb923f01542da49cdb87d6fea1f2"
+        },
+        {
+          "name": "native-lossless-1",
+          "attempt": 1,
+          "script": "tests/lossless/native.mjs",
+          "args": [
+            "--label=p01-final",
+            "--batch=1"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\final-native-lossless-1.log",
+          "startedAt": "2026-10-29T02:30:09.073Z",
+          "code": 0,
+          "completedAt": "2026-10-29T02:30:28.063Z",
+          "logSha256": "9af7ce120eaf7a31021a3806aef62ba34cdab6a3a6f637e67f8bfef24185c780"
+        },
+        {
+          "name": "vue-types",
+          "attempt": 1,
+          "script": "node_modules/vue-tsc/bin/vue-tsc.js",
+          "args": [
+            "--noEmit"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\final-vue-types.log",
+          "startedAt": "2026-10-29T02:30:28.064Z",
+          "code": 0,
+          "completedAt": "2026-10-29T02:30:46.833Z",
+          "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "node-types",
+          "attempt": 1,
+          "script": "node_modules/typescript/bin/tsc",
+          "args": [
+            "--noEmit",
+            "-p",
+            "tsconfig.node.json"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\final-node-types.log",
+          "startedAt": "2026-10-29T02:30:46.834Z",
+          "code": 0,
+          "completedAt": "2026-10-29T02:30:48.071Z",
+          "logSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "name": "frontend",
+          "attempt": 1,
+          "script": "node_modules/vite/bin/vite.js",
+          "args": [
+            "build"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\final-frontend.log",
+          "startedAt": "2026-10-29T02:30:48.072Z",
+          "code": 0,
+          "completedAt": "2026-10-29T02:31:13.224Z",
+          "logSha256": "7c7bf322444d2ac708f12a8bda1aedf14591772ceae5cacc153930419314286b"
+        }
+      ],
+      "resumes": [
+        "2026-10-29T01:52:50.931Z"
+      ],
+      "build": {
+        "commit": "315de6beb82ce2c2927df006a7d3d96542bb0e60",
+        "ref": "WORKTREE",
+        "fullRef": false,
+        "sourceRoot": "E:\\code\\Markumo",
+        "label": "p01-final",
+        "worktreeDirty": [
+          "M src/components/layout/EditorPane.vue",
+          " M src/editor/core/DocumentManager.ts",
+          " M src/editor/markdown/html/SafeHtmlRenderer.ts",
+          " M src/editor/markdown/wysiwyg/LiveClipboard.ts",
+          " M src/editor/markdown/wysiwyg/renderers.ts",
+          " M src/editor/outline/outlineService.ts",
+          "?? src/components/viewers/asyncViewers.ts",
+          "?? src/editor/markdown/html/sanitize.ts"
+        ],
+        "sourceInputsSha256": "eefe88d71ab4b99c2fddc62c9547aed7597c7d65f878b2b912e6030c8fbd26fe",
+        "binary": "E:\\code\\Markumo\\test-results\\phase042\\markumo-p01-final.exe",
+        "sha256": "3d503fe3659fe2f8539955655c537b299b839a2fa1c5d3b005b8c3d14548781a",
+        "rustTree": "59f53c877ce61e3f3089e2220c65e1a61822fa31",
+        "overlay": [],
+        "instrumentation": "Identical non-invasive counters for PM, main CM, embedded CM, Workers, render tasks, Blob URLs/bytes, decoded DOM pixels, and production DocumentManager reference.",
+        "frontendFiles": [
+          "ExternalFileDiff-DxLYJGB8.js",
+          "ExternalFileDiff-yHnKiNs1.css",
+          "GlobalSearchDialog-BcYyjsq4.js",
+          "GlobalSearchDialog-Dle_ImDm.css",
+          "ImageViewer-kaOwjIdh.js",
+          "ImageViewer-to_jMDm_.css",
+          "KaTeX_AMS-Regular-BQhdFMY1.woff2",
+          "KaTeX_AMS-Regular-DMm9YOAa.woff",
+          "KaTeX_AMS-Regular-DRggAlZN.ttf",
+          "KaTeX_Caligraphic-Bold-ATXxdsX0.ttf",
+          "KaTeX_Caligraphic-Bold-BEiXGLvX.woff",
+          "KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2",
+          "KaTeX_Caligraphic-Regular-CTRA-rTL.woff",
+          "KaTeX_Caligraphic-Regular-Di6jR-x-.woff2",
+          "KaTeX_Caligraphic-Regular-wX97UBjC.ttf",
+          "KaTeX_Fraktur-Bold-BdnERNNW.ttf",
+          "KaTeX_Fraktur-Bold-BsDP51OF.woff",
+          "KaTeX_Fraktur-Bold-CL6g_b3V.woff2",
+          "KaTeX_Fraktur-Regular-CB_wures.ttf",
+          "KaTeX_Fraktur-Regular-CTYiF6lA.woff2",
+          "KaTeX_Fraktur-Regular-Dxdc4cR9.woff",
+          "KaTeX_Main-Bold-Cx986IdX.woff2",
+          "KaTeX_Main-Bold-Jm3AIy58.woff",
+          "KaTeX_Main-Bold-waoOVXN0.ttf",
+          "KaTeX_Main-BoldItalic-DxDJ3AOS.woff2",
+          "KaTeX_Main-BoldItalic-DzxPMmG6.ttf",
+          "KaTeX_Main-BoldItalic-SpSLRI95.woff",
+          "KaTeX_Main-Italic-3WenGoN9.ttf",
+          "KaTeX_Main-Italic-BMLOBm91.woff",
+          "KaTeX_Main-Italic-NWA7e6Wa.woff2",
+          "KaTeX_Main-Regular-B22Nviop.woff2",
+          "KaTeX_Main-Regular-Dr94JaBh.woff",
+          "KaTeX_Main-Regular-ypZvNtVU.ttf",
+          "KaTeX_Math-BoldItalic-B3XSjfu4.ttf",
+          "KaTeX_Math-BoldItalic-CZnvNsCZ.woff2",
+          "KaTeX_Math-BoldItalic-iY-2wyZ7.woff",
+          "KaTeX_Math-Italic-DA0__PXp.woff",
+          "KaTeX_Math-Italic-flOr_0UB.ttf",
+          "KaTeX_Math-Italic-t53AETM-.woff2",
+          "KaTeX_SansSerif-Bold-CFMepnvq.ttf",
+          "KaTeX_SansSerif-Bold-D1sUS0GD.woff2",
+          "KaTeX_SansSerif-Bold-DbIhKOiC.woff",
+          "KaTeX_SansSerif-Italic-C3H0VqGB.woff2",
+          "KaTeX_SansSerif-Italic-DN2j7dab.woff",
+          "KaTeX_SansSerif-Italic-YYjJ1zSn.ttf",
+          "KaTeX_SansSerif-Regular-BNo7hRIc.ttf",
+          "KaTeX_SansSerif-Regular-CS6fqUqJ.woff",
+          "KaTeX_SansSerif-Regular-DDBCnlJ7.woff2",
+          "KaTeX_Script-Regular-C5JkGWo-.ttf",
+          "KaTeX_Script-Regular-D3wIWfF6.woff2",
+          "KaTeX_Script-Regular-D5yQViql.woff",
+          "KaTeX_Size1-Regular-C195tn64.woff",
+          "KaTeX_Size1-Regular-Dbsnue_I.ttf",
+          "KaTeX_Size1-Regular-mCD8mA8B.woff2",
+          "KaTeX_Size2-Regular-B7gKUWhC.ttf",
+          "KaTeX_Size2-Regular-Dy4dx90m.woff2",
+          "KaTeX_Size2-Regular-oD1tc_U0.woff",
+          "KaTeX_Size3-Regular-CTq5MqoE.woff",
+          "KaTeX_Size3-Regular-DgpXs0kz.ttf",
+          "KaTeX_Size4-Regular-BF-4gkZK.woff",
+          "KaTeX_Size4-Regular-DWFBv043.ttf",
+          "KaTeX_Size4-Regular-Dl5lxZxV.woff2",
+          "KaTeX_Typewriter-Regular-C0xS9mPB.woff",
+          "KaTeX_Typewriter-Regular-CO6r4hn1.woff2",
+          "KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf",
+          "MarkdownEditorController-8LKER32O.css",
+          "MarkdownEditorController-D5QSOiV7.js",
+          "PdfViewer-C-Zei6Kn.css",
+          "PdfViewer-CKNzZduk.js",
+          "SearchCodePreview-C--z1a4l.css",
+          "SearchCodePreview-Dtz85YiG.js",
+          "__vite-browser-external-BIHI7g3E.js",
+          "abnfDiagram-N423BO3Z-CgOPysHW.js",
+          "arc-BHuoOAWq.js",
+          "architectureDiagram-T3A2C74G-r1CPuv_t.js",
+          "batch-DyqML1Rh.js",
+          "blockDiagram-VBNYF7ZC-BQGZqgki.js",
+          "c4Diagram-5PPSVZJV-BPt4PEf9.js",
+          "channel-DST289yn.js",
+          "chunk-2GRJ4B5K-DHnf3th3.js",
+          "chunk-2Q5K7J3B-CBfPmHW4.js",
+          "chunk-5RXB4S5H-VOLbqx-X.js",
+          "chunk-5VM5RSS4-z6CsjSWb.js",
+          "chunk-6Q2QTUOP-CBpQzvKb.js",
+          "chunk-GF5L2VYU-BgD3yCqV.js",
+          "chunk-JWPE2WC7-CgSPU7rr.js",
+          "chunk-KBJHAD2P-COMT_dNL.js",
+          "chunk-RYQCIY6F-B2UH8DWw.js",
+          "chunk-XXDRQBXY-D2y8K3fh.js",
+          "classDiagram-JCYQIIEL-BxeHvHGp.js",
+          "classDiagram-v2-OCEON4UE-BxeHvHGp.js",
+          "clike-In58eC2I.js",
+          "cmake-BQqOBYOt.js",
+          "cose-bilkent-JH36ORCC-Bp3vP3Tf.js",
+          "css-BnMrqG3P.js",
+          "cynefin-OW5HDTMX-Eulr9s6z.js",
+          "cynefinDiagram-MW4NZA55-CMUYRUoT.js",
+          "cytoscape.esm-Ix0LnXOy.js",
+          "dagre-VZM6K2ZE-DK4dwmyc.js",
+          "defaultLocale-DX6XiGOO.js",
+          "diagram-7IWD3JNH-C3s7d0dL.js",
+          "diagram-B4RE2ZJO-Cqm7dBhL.js",
+          "diagram-LBJQPF4R-B20b5qbj.js",
+          "diagram-Q27KOJAE-CvPXMnGS.js",
+          "diagram-UB23O5K3-CHZ88o2X.js",
+          "diff-DbItnlRl.js",
+          "dockerfile-ZL4hHokT.js",
+          "docxWorkerClient-C8io9bK1.js",
+          "ebnfDiagram-BXEA7PRR-Bwa2EXGk.js",
+          "editor-core-DoQ-A7xQ.js",
+          "erDiagram-JOGREHBK-6zJPJ9Gp.js",
+          "flowDiagram-UKHOOZJN-CDPryfbO.js",
+          "ganttDiagram-PKOTCBZU-BFsskADN.js",
+          "gitGraphDiagram-DS77QQ5N-BsUsTvNb.js",
+          "graph-C9eacEi8.js",
+          "html-BbXHkOgw.js",
+          "html2canvas.esm-QH1iLAAe.js",
+          "index-BKukaNaP.js",
+          "index-BLAdBwfK.js",
+          "index-C7B3kIKw.js",
+          "index-C7jh4C8B.js",
+          "index-C84N32Fy.js",
+          "index-CDGKrJeK.css",
+          "index-COHejPa5.js",
+          "index-CSlW-jEZ.js",
+          "index-Cu5kBULU.js",
+          "index-D1mhAORt.js",
+          "index-D97fU_fW.js",
+          "index-DA9DiW2p.js",
+          "index-DowJbd4n.js",
+          "index-G24ENa4_.js",
+          "index-H5StWQ8M.js",
+          "index-LtQCYY6-.js",
+          "infoDiagram-6WML65LV-BgdMJ4gD.js",
+          "init-Gi6I4Gst.js",
+          "ishikawaDiagram-WSZJBQD7-Dml455a0.js",
+          "javascript-D7Br0fgr.js",
+          "journeyDiagram-NVQOT4AX-rILTLbdP.js",
+          "kanban-definition-27J2QSJJ-CBZO9cPP.js",
+          "katex-Cp5iPVkt.js",
+          "katex-DdZNUVNG.css",
+          "layout-DEXfKzaS.js",
+          "linear-BbUNLLNM.js",
+          "lua-VAEuO923.js",
+          "makefile-BtB3hR6v.js",
+          "map-Czzmt4hB.js",
+          "mermaid.core-B3ko4Row.js",
+          "mindmap-definition-FAOFIHXS-D5TNyk_a.js",
+          "native-DvTGFyUp.js",
+          "nativeDocxWorker-DLL8YOOd.js",
+          "ordinal-Cboi1Yqb.js",
+          "pdf-BtCWNl9F.js",
+          "pegDiagram-VL7TDLO6-C1ShdLL8.js",
+          "perl-CdXCOZ3F.js",
+          "pieDiagram-7S7Q4E2Y-BQdtJ0n-.js",
+          "powershell-CFHJl5sT.js",
+          "pug-C3WPX4ao.js",
+          "quadrantDiagram-CIZ2JOQS-DFwGvqXo.js",
+          "r-B6wPVr8A.js",
+          "railroadDiagram-AXF67PYL-vocRuJqY.js",
+          "requirementDiagram-LRYGKXZP-1zj_V1Nq.js",
+          "ruby-BK5aLJev.js",
+          "sankeyDiagram-W5VNT64P-BlXCNQvn.js",
+          "sequenceDiagram-SI44F4Z6-DuHg5ko5.js",
+          "shell-CjFT_Tl9.js",
+          "sizeCapture-X5ZJPWSS-B3KKXmh-.js",
+          "smartEditing-Blp3uw_R.js",
+          "stateDiagram-OKZ733FA-CXJpPe9T.js",
+          "stateDiagram-v2-UEYNNEHI-CHzMYX6O.js",
+          "structured-7cz3L4KZ.js",
+          "swift-BzpIVaGY.js",
+          "swimlanes-SLNWSIFB-CjlKSiJb.js",
+          "swimlanesDiagram-ULZ7WXOC-DQ0vPlkf.js",
+          "timeline-definition-Z64GVDOM-ERosTj2W.js",
+          "toml-BEbV1LRN.js",
+          "vennDiagram-T6HMQDX7-CwsAk07q.js",
+          "viewer-Clq3s49R.js",
+          "viewer-DKBP3Fnn.css",
+          "wardleyDiagram-T6FBY63Y-CeX6fRtF.js",
+          "xychartDiagram-ELKLHX3M-CU5q26tC.js",
+          "yaml-2qca58Rd.js"
+        ],
+        "builtAt": "2026-10-29T01:47:51.624Z"
+      },
+      "completedAt": "2026-10-29T02:31:14.477Z"
+    },
+    {
+      "name": "additional-matrix",
+      "source": {
+        "file": "E:\\code\\Markumo\\test-results\\p01\\additional-matrix.json",
+        "sha256": "2bfd840c95e6aecd9c607cab281ddebc30ba5d394ede57a66bd8fb0b0b3235b1"
+      },
+      "startedAt": "2026-10-29T02:31:15.483Z",
+      "steps": [
+        {
+          "name": "raw-v111-remaining",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v111",
+            "--mode=isolated",
+            "--rounds=3",
+            "--scenes=blank,ordinary,code200,text2mb,panes,pdf,image,markdown-image,split,same240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\raw-v111-remaining.log",
+          "startedAt": "2026-10-29T02:31:15.485Z",
+          "code": 0,
+          "completedAt": "2026-10-29T02:44:52.422Z",
+          "logSha256": "2777c5391f2d895f035a37e2c9a436c07443149827fb1502196b775bfc3f47dc"
+        },
+        {
+          "name": "raw-v112-remaining",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v112",
+            "--mode=isolated",
+            "--rounds=3",
+            "--scenes=blank,text2mb,panes,pdf,markdown-image,split,same240",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\raw-v112-remaining.log",
+          "startedAt": "2026-10-29T02:44:52.423Z",
+          "code": 0,
+          "completedAt": "2026-10-29T02:56:42.015Z",
+          "logSha256": "587196ff8188b395815283382e5dd29df0b0cb5a566c60115469d7e70e682189"
+        },
+        {
+          "name": "raw-sequence-p01-v111",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v111",
+            "--mode=sequence",
+            "--rounds=3",
+            "--scenes=ordinary,code200,panes,image,markdown-image,pdf,split,mixed240,text2mb",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\raw-sequence-p01-v111.log",
+          "startedAt": "2026-10-29T02:56:42.015Z",
+          "code": 0,
+          "completedAt": "2026-10-29T03:06:18.926Z",
+          "logSha256": "8aca0888d6345b83145c1571dc49ab76e3c0c67c874ac3c0b5d13f01bbf0ed99"
+        },
+        {
+          "name": "raw-sequence-p01-v112",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v112",
+            "--mode=sequence",
+            "--rounds=3",
+            "--scenes=ordinary,code200,panes,image,markdown-image,pdf,split,mixed240,text2mb",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\raw-sequence-p01-v112.log",
+          "startedAt": "2026-10-29T03:06:18.927Z",
+          "code": 0,
+          "completedAt": "2026-10-29T03:15:53.165Z",
+          "logSha256": "8cb8b4a2c44824981d2b0c839e5674b810094d61f3e4d8444479ba188a52dcf2"
+        },
+        {
+          "name": "network-cache-control",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-v112",
+            "--mode=profile",
+            "--rounds=1",
+            "--scenes=mixed240",
+            "--raw-cdp",
+            "--native-sampling",
+            "--network-cache-control"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\network-cache-control.log",
+          "startedAt": "2026-10-29T03:15:53.166Z",
+          "code": 0,
+          "completedAt": "2026-10-29T03:18:32.377Z",
+          "logSha256": "3669a582e418c9312109f2619019bbd0a0fa0ec98f68095d5962b336b1db5d24"
+        }
+      ],
+      "completedAt": "2026-10-29T03:18:32.378Z"
+    },
+    {
+      "name": "main-control-matrix",
+      "source": {
+        "file": "E:\\code\\Markumo\\test-results\\p01\\main-control-matrix.json",
+        "sha256": "9e666f989b8b1b13b16269e45410fc2ebd1c82093ec75d4caac1fab1b2ea1d72"
+      },
+      "startedAt": "2026-10-29T03:18:34.033Z",
+      "ref": "315de6beb82ce2c2927df006a7d3d96542bb0e60",
+      "steps": [
+        {
+          "name": "clean-main-build",
+          "script": "scripts/memory-release-build.mjs",
+          "args": [
+            "--ref=315de6beb82ce2c2927df006a7d3d96542bb0e60",
+            "--label=p01-main-before",
+            "--full-ref"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\clean-main-build.log",
+          "startedAt": "2026-10-29T03:18:34.034Z",
+          "code": 0,
+          "completedAt": "2026-10-29T03:20:25.170Z",
+          "logSha256": "36d8f452f9b60f82b9d527ff6acc8595636d7b4b3b44e3bced2fe0ff1572f4de"
+        },
+        {
+          "name": "clean-main-isolated",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-main-before",
+            "--raw-cdp",
+            "--rounds=3",
+            "--mode=isolated"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\clean-main-isolated.log",
+          "startedAt": "2026-10-29T03:20:25.170Z",
+          "code": 0,
+          "completedAt": "2026-10-29T03:39:54.613Z",
+          "logSha256": "f313359a7a475eb601bbce632906bd3f9466ec133ecb2ae489c19b6335cd93b4"
+        },
+        {
+          "name": "clean-main-exact2mib",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-main-before",
+            "--raw-cdp",
+            "--rounds=3",
+            "--mode=isolated",
+            "--scenes=text-exact2mib"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\clean-main-exact2mib.log",
+          "startedAt": "2026-10-29T03:39:54.614Z",
+          "code": 0,
+          "completedAt": "2026-10-29T03:40:35.095Z",
+          "logSha256": "7bbfdf2dd5c1e24b1d3f476c15ce05a9fce2f940db34896165edc2ad6494848f"
+        },
+        {
+          "name": "clean-main-sequence",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-main-before",
+            "--raw-cdp",
+            "--rounds=3",
+            "--mode=sequence",
+            "--scenes=ordinary,code200,panes,image,markdown-image,pdf,split,mixed240,text2mb"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\clean-main-sequence.log",
+          "startedAt": "2026-10-29T03:40:35.095Z",
+          "code": 0,
+          "completedAt": "2026-10-29T03:50:07.720Z",
+          "logSha256": "e590f647f5e8a13707c52174ab6ce6c96b86fae4aa5ef2a1110df19ecc0e5d85"
+        },
+        {
+          "name": "clean-main-profile",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-main-before",
+            "--raw-cdp",
+            "--rounds=1",
+            "--mode=profile",
+            "--scenes=mixed240,split,image,pdf"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\clean-main-profile.log",
+          "startedAt": "2026-10-29T03:50:07.720Z",
+          "code": 0,
+          "completedAt": "2026-10-29T03:54:35.089Z",
+          "logSha256": "c2a40cd4643b8c93674e3473c96d6785b1b79ac54d29e71280bfc4e922fcd8c7"
+        }
+      ],
+      "completedAt": "2026-10-29T03:54:35.089Z"
+    },
+    {
+      "name": "latency-matrix",
+      "source": {
+        "file": "E:\\code\\Markumo\\test-results\\p01\\latency-matrix.json",
+        "sha256": "3139fbf8f86bc538bf942d65bf12f4bc4b70f48729403b6e71bbd741240189eb"
+      },
+      "startedAt": "2026-10-29T03:58:53.172Z",
+      "reason": "Verify higher ordinary/image ready latency in the first full final matrix; no source or expected-output changes",
+      "steps": [
+        {
+          "name": "latency-1-p01-main-before",
+          "pair": 1,
+          "label": "p01-main-before",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-main-before",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=ordinary,image",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\latency-pair-1-p01-main-before.log",
+          "startedAt": "2026-10-29T03:58:53.174Z",
+          "code": 0,
+          "completedAt": "2026-10-29T03:59:21.839Z",
+          "logSha256": "fb8cfa4bd62a824c81da07e10a7d21629cfdecbf70bcdc178f652dc21899f6f6"
+        },
+        {
+          "name": "latency-1-p01-final",
+          "pair": 1,
+          "label": "p01-final",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-final",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=ordinary,image",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\latency-pair-1-p01-final.log",
+          "startedAt": "2026-10-29T03:59:21.840Z",
+          "code": 0,
+          "completedAt": "2026-10-29T03:59:50.427Z",
+          "logSha256": "930d501a5e17157e4a2fd11bf0d691f54eb6dbccbefe9cd37e8965e3025e6df7"
+        },
+        {
+          "name": "latency-2-p01-final",
+          "pair": 2,
+          "label": "p01-final",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-final",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=ordinary,image",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\latency-pair-2-p01-final.log",
+          "startedAt": "2026-10-29T03:59:50.428Z",
+          "code": 0,
+          "completedAt": "2026-10-29T04:00:19.131Z",
+          "logSha256": "9a57a5b7709a81c1c64dfde4199b4e2d8bc8dd5de6af95e3f54e04a80eed872f"
+        },
+        {
+          "name": "latency-2-p01-main-before",
+          "pair": 2,
+          "label": "p01-main-before",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-main-before",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=ordinary,image",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\latency-pair-2-p01-main-before.log",
+          "startedAt": "2026-10-29T04:00:19.132Z",
+          "code": 0,
+          "completedAt": "2026-10-29T04:00:48.636Z",
+          "logSha256": "3498d984c9edd712cbccfbbcaa3259d08d8ce88a924be2a12ae29667a786cd44"
+        },
+        {
+          "name": "latency-3-p01-main-before",
+          "pair": 3,
+          "label": "p01-main-before",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-main-before",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=ordinary,image",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\latency-pair-3-p01-main-before.log",
+          "startedAt": "2026-10-29T04:00:48.637Z",
+          "code": 0,
+          "completedAt": "2026-10-29T04:01:16.847Z",
+          "logSha256": "554286ada064f2062e85231cbf1b64638ef6e10bc4979283d0db47e86e3353f1"
+        },
+        {
+          "name": "latency-3-p01-final",
+          "pair": 3,
+          "label": "p01-final",
+          "script": "scripts/p01-memory-investigation.mjs",
+          "args": [
+            "--label=p01-final",
+            "--mode=isolated",
+            "--rounds=1",
+            "--scenes=ordinary,image",
+            "--raw-cdp"
+          ],
+          "log": "E:\\code\\Markumo\\test-results\\p01\\latency-pair-3-p01-final.log",
+          "startedAt": "2026-10-29T04:01:16.856Z",
+          "code": 0,
+          "completedAt": "2026-10-29T04:01:45.435Z",
+          "logSha256": "e5712a125acbbfa4839126c1b4d50c0e02409684d9b5169e33cd8af4e6d9a48a"
+        }
+      ],
+      "completedAt": "2026-10-29T04:01:45.436Z"
+    }
+  ],
+  "extraMixedRetention": {
+    "source": {
+      "file": "E:\\code\\Markumo\\test-results\\p01\\p01-final-profile-1793246510784\\results.json",
+      "sha256": "f2c3bdababdc1ef8613bf1bb417c2131fc4433aacbf3861c5d108abffe431abb"
+    },
+    "log": {
+      "file": "E:\\code\\Markumo\\test-results\\p01\\final-mixed-profile.log",
+      "sha256": "fac30fc83df4f78a1d7ed6de14a08c1c465d7d6260155411c1bf074f6050c420"
+    },
+    "completedAt": "2026-10-29T04:04:21.985Z",
+    "buildSha256": "3d503fe3659fe2f8539955655c537b299b839a2fa1c5d3b005b8c3d14548781a"
+  },
+  "rust": {
+    "source": {
+      "file": "E:\\code\\Markumo\\test-results\\p01\\rust-validation.json",
+      "sha256": "abab096a17e98160373dcd86a1406ea6b3c987238efda4385b3648e09cc4e73a"
+    },
+    "startedAt": "2026-10-29T03:54:36.352Z",
+    "commands": [
+      {
+        "name": "cargo-check",
+        "executable": "cargo",
+        "args": [
+          "check",
+          "--locked",
+          "--manifest-path",
+          "src-tauri/Cargo.toml"
+        ],
+        "log": "E:\\code\\Markumo\\test-results\\p01\\cargo-check-final.log",
+        "startedAt": "2026-10-29T03:54:36.359Z",
+        "completedAt": "2026-10-29T03:55:37.564Z",
+        "code": 0,
+        "logSha256": "6bc3d85ad5ffd910e129fa2da9af1da2ac23fc8153a2781f23524442b55c5b88"
+      },
+      {
+        "name": "cargo-test",
+        "executable": "cargo",
+        "args": [
+          "test",
+          "--locked",
+          "--manifest-path",
+          "src-tauri/Cargo.toml",
+          "--lib"
+        ],
+        "log": "E:\\code\\Markumo\\test-results\\p01\\cargo-test-final.log",
+        "startedAt": "2026-10-29T03:55:37.566Z",
+        "completedAt": "2026-10-29T03:56:03.575Z",
+        "code": 0,
+        "logSha256": "0197649936cc79042f06ed149599e2fbdf349aee1fa4e6065967f2687a519dc5"
+      }
+    ],
+    "completedAt": "2026-10-29T03:56:03.576Z"
+  },
+  "artifacts": [
+    {
+      "file": "E:\\code\\Markumo\\docs\\performance\\p01-memory-investigation-20261028.md",
+      "bytes": 37400,
+      "sha256": "7e95d5856887b5c3e0725ef3430ae9006cb11a387b269d41f17f01d787bf372d"
+    },
+    {
+      "file": "E:\\code\\Markumo\\docs\\performance\\p01-memory-tables-20261028.md",
+      "bytes": 21402,
+      "sha256": "9627b4b4b6b2e65976ce65c1ffc809d0476c04bf95cba9452bb4575332a0af3c"
+    },
+    {
+      "file": "E:\\code\\Markumo\\docs\\performance\\p01-memory-results-20261028.json",
+      "bytes": 18518279,
+      "sha256": "b4b55946a5e419020d720586d84c2d1b3077c75111579159f7b534d70bd558eb"
+    },
+    {
+      "file": "E:\\code\\Markumo\\docs\\performance\\p01-memory-diagnostics-20261028.json",
+      "bytes": 6646105,
+      "sha256": "a9dfa08b9bd72b6f348491dbb293cd6118352caa1a9b9305beefda4c317fbaf7"
+    },
+    {
+      "file": "E:\\code\\Markumo\\docs\\performance\\p01-memory-growth-raw-20261028.svg",
+      "bytes": 118801,
+      "sha256": "4e682117f33af7caab45eb9d862c04d28ed61435d438107f687bb42832f7819c"
+    },
+    {
+      "file": "E:\\code\\Markumo\\docs\\performance\\p01-memory-growth-raw-20261028.csv",
+      "bytes": 1547111,
+      "sha256": "ba70e58cb900ce19d23990312a70c64f79d5c68db911ea993853b6e693aba42d"
+    },
+    {
+      "file": "E:\\code\\Markumo\\docs\\performance\\p01-memory-growth-interleaved-20261028.svg",
+      "bytes": 91470,
+      "sha256": "48f91fed117a364762bd348f71cd0082828414d11a635888235ff6891a0c8e44"
+    },
+    {
+      "file": "E:\\code\\Markumo\\docs\\performance\\p01-memory-growth-playwright-20261028.svg",
+      "bytes": 104603,
+      "sha256": "096896ecc21933f85bef8fb549c39f49b132ca634ece46189f1c7bbb803f6ba3"
+    },
+    {
+      "file": "E:\\code\\Markumo\\docs\\performance\\p01-memory-growth-sequence-20261028.svg",
+      "bytes": 86627,
+      "sha256": "a7fcc31c835559ebea27205a23b0530a93c8c78625f4d8c3bf7af236c3f2e935"
+    }
+  ],
+  "notes": [
+    "Natural benchmark completion is not a proof of a universal Private Bytes limit.",
+    "Superseded/incomplete attempts remain listed and do not supply replacement points.",
+    "No push, release or version change was performed by this investigation."
+  ]
+}

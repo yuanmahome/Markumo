@@ -10,6 +10,7 @@ if local_packages.exists():
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+matplotlib.rcParams['svg.hashsalt'] = 'Markumo-P01-20261028'
 
 destination = root / 'docs/performance'
 data = json.loads((destination / 'p01-memory-results-20261028.json').read_text(encoding='utf-8'))
@@ -29,9 +30,9 @@ rows = []
 def draw(axis, report, scene, stage, coordinate, include_cold=False):
     groups = {}
     for sample in report['samples']:
-        if sample['scene'] != scene:
-            continue
         for point in sample['points']:
+            if point.get('workload', sample['scene']) != scene:
+                continue
             if point['stage'] != stage and not (include_cold and point['stage'] == 'cold'):
                 continue
             x = point.get(coordinate, 0)
@@ -57,7 +58,9 @@ def decorate(axes, title, filename, panels):
         axis.legend(frameon=False, fontsize=8)
     fig = axes[0].figure
     fig.suptitle(title, fontsize=11)
-    fig.savefig(destination / f'{filename}.svg')
+    svg = destination / f'{filename}.svg'
+    fig.savefig(svg, metadata={'Date': data['generatedAt']})
+    svg.write_text('\n'.join(line.rstrip() for line in svg.read_text(encoding='utf-8').splitlines()) + '\n', encoding='utf-8')
     fig.savefig(root / f'test-results/p01/{filename}.png', dpi=140)
     plt.close(fig)
 
@@ -104,4 +107,12 @@ for report in data.get('cohorts', []):
     draw(axes[1], report, 'mixed240', 'closed-natural', 'plannedMs')
 decorate(axes, 'Interleaved historical controls (round 2 reversed): n=3; median and full range; minimal CDP; no forced GC',
          'p01-memory-growth-interleaved-20261028', [('Mixed workload', 'Completed cycles'), ('Natural recovery after cycle 240', 'Planned wait after close (seconds)')])
+fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), layout='constrained')
+for report in data['acceptance']:
+    if report['kind'] != 'Fixed-order natural sequence':
+        continue
+    draw(axes[0], report, 'mixed240', 'cycle-closed', 'cycle')
+    draw(axes[1], report, 'mixed240', 'closed-natural', 'plannedMs')
+decorate(axes, 'Fixed-order accumulated workload: n=3 new processes/profiles per round; median and full range; minimal CDP; no forced GC',
+         'p01-memory-growth-sequence-20261028', [('Mixed cycle checkpoints after prior media/pane loads', 'Completed cycles'), ('Natural recovery after cumulative mixed cycle 240', 'Planned wait after close (seconds)')])
 print(destination / 'p01-memory-growth-raw-20261028.svg')

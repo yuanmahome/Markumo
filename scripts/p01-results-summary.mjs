@@ -133,8 +133,21 @@ if(acceptance.length){
  assert(sources.every(report=>JSON.stringify(report.os)===JSON.stringify(environment.os)&&JSON.stringify(report.hardware)===JSON.stringify(environment.hardware)),'Cross-version OS/hardware mismatch')
  for(const name of Object.keys(environment.fixtures))if(sources.every(report=>report.fixtures[name]))assert(sources.every(report=>report.fixtures[name].sha256===environment.fixtures[name].sha256),'Cross-version fixture changed: '+name)
 }
+const latencyControl=[]
+if(fs.existsSync('test-results/p01/latency-matrix.json')){
+ const matrix=JSON.parse(fs.readFileSync('test-results/p01/latency-matrix.json','utf8'))
+ if(matrix.completedAt)for(const label of ['p01-main-before','p01-final']){
+  const list=matrix.steps.filter(step=>step.label===label&&step.code===0).map(step=>({pair:step.pair,report:reportForStep(matrix,step.name)}))
+  assert.equal(list.length,3,'Latency follow-up requires three pairs')
+  assert(list.every(({report})=>report.build.sha256===list[0].report.build.sha256&&report.runtime===list[0].report.runtime&&JSON.stringify(report.display)===JSON.stringify(list[0].report.display)),'Latency source mismatch')
+  latencyControl.push({label,build:list[0].report.build,runtime:list[0].report.runtime,display:list[0].report.display,n:3,sourceReports:list.map(({report})=>report.evidence),scenes:Object.fromEntries(['ordinary','image'].map(scene=>{
+   const runs=list.map(({pair,report})=>({pair,durationMs:report.samples.find(sample=>sample.scene===scene).operations.find(operation=>operation.scene===scene).durationMs,source:report.evidence}))
+   return[scene,{runs,medianMs:median(runs.map(run=>run.durationMs)),minMs:Math.min(...runs.map(run=>run.durationMs)),maxMs:Math.max(...runs.map(run=>run.durationMs))}]
+  }))})
+ }
+}
 const destination=path.resolve('docs/performance/p01-memory-results-20261028.json')
-fs.writeFileSync(destination,JSON.stringify({generatedAt:new Date().toISOString(),unit:'MiB=1048576 bytes; raw point processes use bytes; Working Set sums include shared pages',reports,cohorts,acceptance})+'\n')
+fs.writeFileSync(destination,JSON.stringify({generatedAt:new Date().toISOString(),unit:'MiB=1048576 bytes; raw point processes use bytes; Working Set sums include shared pages',reports,cohorts,acceptance,latencyControl})+'\n')
 console.log('SAVED',destination)
 for(const report of reports){
  console.log(report.label,report.mode)
