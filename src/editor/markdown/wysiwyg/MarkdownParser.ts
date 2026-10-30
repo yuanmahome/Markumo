@@ -94,7 +94,7 @@ tokenizer.core.ruler.after('inline','markumo_tasks', state => {
     if(token.type==='list_item_open') stack.push(token)
     if(token.type==='list_item_close') stack.pop()
     if(token.type!=='inline' || !stack.length) continue
-    const first=token.children?.[0], match=first?.type==='text' && /^\[([ xX])\] /.exec(first.content)
+    const first=token.children?.[0], match=first?.type==='text' && /^\[([ xX])\](?: |$)/.exec(first.content)
     if(match){stack[stack.length-1].meta={checked:match[1]!==' '};first!.content=first!.content.slice(match[0].length)}
   }
 })

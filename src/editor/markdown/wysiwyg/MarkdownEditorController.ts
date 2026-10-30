@@ -964,7 +964,7 @@ export class MarkdownEditorController implements LiveEditor {
         this.releaseIdleCodeEditors()
         this.updateTools()
         const sel = this.selection
-        this.options.selected(sel.anchor, sel.head)
+        if (!tr.getMeta('historySelection')) this.options.selected(sel.anchor, sel.head)
         this.scheduleInlineEntry()
         this.updateFenceAutocomplete()
         this.slashController?.update()
@@ -997,7 +997,14 @@ export class MarkdownEditorController implements LiveEditor {
         }
       }
       const update: LiveUpdate = { bridge, transactions: prepared.definitionsChanged ? [] : applied.transactions }
-      if (prepared.patch && !this.options.publish(before, prepared.patch, update, !!tr.getMeta('isolated'))) {
+      let selection = { anchor: bridge.sourcePosition(nextState.selection.anchor), head: bridge.sourcePosition(nextState.selection.head) }
+      const local = this.inlineSource?.selection()
+      if (local && tr.getMeta('inlineSourceEditor') === this.inlineSource) {
+        selection = { anchor: this.inlineSource!.sourceFrom + local.anchor, head: this.inlineSource!.sourceFrom + local.head }
+      }
+      // Save the post-edit selection in the same history transaction, so redo
+      // can restore it rather than reusing the selection from before the edit.
+      if (prepared.patch && !this.options.publish(before, prepared.patch, update, !!tr.getMeta('isolated'), selection)) {
         this.view.updateState(this.view.state)
         notice('文档版本已变化或为只读；已拒绝 Markdown 修改。')
         return false
@@ -1084,6 +1091,18 @@ export class MarkdownEditorController implements LiveEditor {
     for (const code of this.codeViews) {
       if (code.existingEditor) code.maybeDetachEditor()
     }
+  }
+
+  restoreSelection(selection: { anchor: number; head: number }) {
+    if (this.disposed || this.composing) return
+    this.closeInline()
+    this.focusEpoch++
+    this.pendingInline = null
+    const doc = this.view.state.doc
+    const resolve = (pos: number) => doc.resolve(Math.min(doc.content.size, this.bridge.documentPosition(pos)))
+    const restored = TextSelection.between(resolve(selection.anchor), resolve(selection.head))
+    this.view.dispatch(this.view.state.tr.setSelection(restored).setMeta('historySelection', true).scrollIntoView())
+    this.focus()
   }
 
   focus() {
@@ -2717,7 +2736,7 @@ export class MarkdownEditorController implements LiveEditor {
     // as a single canonical edit, rather than serializing it as escaped text.
     const next = source.slice(0, from) + reference + source.slice(to) + '\n\n' + definition
     const patch = textPatch(source, next)
-    if (patch && this.options.publish(source, patch, undefined, true)) {
+    if (patch && this.options.publish(source, patch, undefined, true, { anchor: from + reference.length, head: from + reference.length })) {
       this.sync(next)
       this.reveal(from + reference.length)
     }

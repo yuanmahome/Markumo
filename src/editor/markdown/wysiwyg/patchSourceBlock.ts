@@ -81,7 +81,25 @@ export function sourceTextPosition(node:Node,raw:string,position:number,reverse=
   let cursor=0
   const opening=node.type.name==='code_block'?/^ {0,3}(?:`{3,}|~{3,})[^\n]*\n/.exec(raw)?.[0].length||0:0
   const body=raw.slice(opening),plain=decodedText(body),verbatim=decodedText(body,true)
+  let itemIndex=0,itemTokens:ReturnType<typeof tokenizer.parse>|undefined,lineStarts:number[]|undefined
   node.descendants((child,pos,parent)=>{
+    if(child.type.name==='list_item'){
+      const index=itemIndex++
+      if(child.firstChild?.isTextblock&&!child.firstChild.content.size){
+        // Empty items have no text atom to map. Their caret belongs after the
+        // marker (and task checkbox), not at the preceding item's last word.
+        itemTokens??=tokenizer.parse(raw,{}).filter(token=>token.type==='list_item_open')
+        if(!lineStarts){lineStarts=[0];for(let i=0;i<raw.length;i++)if(raw[i]==='\n')lineStarts.push(i+1)}
+        const line=itemTokens[index]?.map?.[0]
+        if(line!==undefined){
+          const start=lineStarts[line],newline=raw.indexOf('\n',start)
+          let at=newline<0?raw.length:newline
+          if(raw[at-1]==='\r')at--
+          const caret=pos+2
+          ranges.push({from:caret,to:caret,start:at,end:at,source:()=>at,display:()=>caret})
+        }
+      }
+    }
     if(child.type.name==='image_source'||child.type.name==='html_inline'){
       const source=String(child.attrs.source??''),at=source?raw.indexOf(source,cursor):-1
       if(at>=0){ranges.push({from:pos,to:pos+child.nodeSize,start:at,end:at+source.length,source:n=>n===pos?at:at+source.length,display:n=>n===at+source.length?pos+child.nodeSize:pos});cursor=at+source.length}
@@ -108,7 +126,7 @@ export function sourceTextPosition(node:Node,raw:string,position:number,reverse=
   })
   for(const range of ranges){
     if(reverse&&position>=range.start&&position<=range.end)return Math.max(range.from,Math.min(range.to,range.display(position)))
-    if(!reverse&&position>=range.from&&position<range.to)return range.source(position)
+    if(!reverse&&position>=range.from&&(position<range.to||position===range.from&&range.from===range.to))return range.source(position)
   }
   if(!reverse){const end=ranges.find(range=>position===range.to);if(end)return end.source(position)}
   let nearest:{distance:number;position:number}|undefined

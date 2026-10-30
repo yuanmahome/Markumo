@@ -7,6 +7,7 @@ import { createSearchQuery, expandReplacement } from './searchQuery'
 import { indentUnit, foldCode, unfoldCode } from '@codemirror/language'
 import { bracketHighlight, type BracketMode } from './brackets'
 import { coreExtensions, editorTheme } from './extensions'
+import { liveHistorySelection, liveHistoryTarget } from './liveHistorySelection'
 import { detectLanguage, loadLanguage, type LanguageName } from '../languages'
 import { TabGroup } from '../../features/tabs/TabGroup'
 import { EditorLayoutManager } from '../layout/EditorLayoutManager'
@@ -224,6 +225,7 @@ export class DocumentManager {
       doc: seed.text,
       extensions: [
         coreExtensions,
+        liveHistorySelection,
         handoff.of([]),
         brackets.of(bracketHighlight(binary || byteEditor ? 'off' : this.bracketMode)),
         caret.of(smoothCaret(this.caretAnimation)),
@@ -793,16 +795,25 @@ export class DocumentManager {
           source,anchor:saved.selection.main.anchor,head:saved.selection.main.head,resources:record.state.facet(markdownResources),typography:this.markdownTypography,clipboard:this.markdownClipboard,caretAnimation:this.caretAnimation,bracketMode:this.bracketMode,
           indentSize:this.indentSize,useTabs:this.useTabs,
           typewriterMode:this.typewriterMode,isPaneActive:()=>this.activePane===resolved,
-          publish:(expected,patch,update,isolated)=>{
+          publish:(expected,patch,update,isolated,selection)=>{
             if(this.records.get(record.meta.id)!==record||record.state.doc.toString()!==expected||record.state.readOnly)return false
             this.liveOrigin={pane:resolved,update}
             // Ordinary adjacent input uses CM's native grouping; commands keep
             // their existing full isolation on both sides of the history event.
             const userEvent=isolated?'input.markdown':patch.insert?'input.type.markdown':'delete.markdown'
-            try{this.dispatch(record.meta.id,{changes:patch,userEvent,...(isolated?{annotations:isolateHistory.of('full')}:{})})}finally{this.liveOrigin=null}
+            try{this.dispatch(record.meta.id,{changes:patch,selection,userEvent,...(isolated?{annotations:isolateHistory.of('full')}:{})})}finally{this.liveOrigin=null}
             return true
           },
-          selected:(anchor,head)=>{const selection=EditorSelection.single(Math.min(anchor,record.state.doc.length),Math.min(head,record.state.doc.length));record.panes[resolved].selection=selection;if(this.activePane===resolved)record.state=record.state.update({selection,annotations:Transaction.addToHistory.of(false)}).state;this.notify()},
+          selected:(anchor,head)=>{
+            const selection=EditorSelection.single(Math.min(anchor,record.state.doc.length),Math.min(head,record.state.doc.length))
+            record.panes[resolved].selection=selection
+            if(this.activePane===resolved&&!record.state.selection.eq(selection)){
+              // Real caret moves record the position after the preceding edit.
+              // The no-op callback after typing must not split its input group.
+              record.state=record.state.update({selection,userEvent:'select'}).state
+            }
+            this.notify()
+          },
           history:forward=>{this.focusPane(resolved,false);this.historyCommand(forward)},focus:()=>this.focusPane(resolved,false),
           compositionChanged:()=>{if(!this.disposed)this.notify()},
           openRelative:href=>window.dispatchEvent(new CustomEvent('markdown-open-relative',{detail:{id:record.meta.id,href,pane:resolved}})),
@@ -1298,7 +1309,20 @@ export class DocumentManager {
   private historyCommand(forward: boolean, selection = false) {
     const id = this.activeId, record = id && this.records.get(id)
     const command = selection ? (forward ? redoSelection : undoSelection) : forward ? redo : undo
-    if (record && id) command({ state: record.state, dispatch: tr => this.dispatch(id, tr) })
+    if (record && id) {
+      const live = this.liveViews.get(this.activePane)
+      // CM normally receives a selection event before its next command. The
+      // live view has no CM DOM, so checkpoint its final edit caret explicitly.
+      if (!selection && live?.id === id) record.state = record.state.update({ selection: record.state.selection, userEvent: 'select' }).state
+      command({ state: record.state, dispatch: tr => {
+        const target = liveHistoryTarget(tr)
+        const restored = target ? tr.startState.update(tr, { selection: target, sequential: true }) : tr
+        this.dispatch(id, restored)
+        // History owns the restored caret/range. Mapping the current PM caret
+        // through a deletion can otherwise put it in the following heading.
+        if (live?.id === id) live.editor.restoreSelection(restored.state.selection.main)
+      } })
+    }
   }
 
   gotoLine(id: string, line: number, column = 1) {

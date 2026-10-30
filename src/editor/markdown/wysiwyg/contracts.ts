@@ -32,6 +32,7 @@ export interface LiveEditor {
   readonly pendingSourceEdits?:boolean
   readonly selection:{anchor:number;head:number}
   sync(source:string,update?:unknown):void
+  restoreSelection(selection:{anchor:number;head:number}):void
   focus():void
   reveal(position:number,align?:'nearest'|'start'):void
   format(format:MarkdownFormat):boolean
@@ -62,7 +63,7 @@ export interface LiveOptions {
   typewriterMode?: boolean
   isPaneActive?(): boolean
   source:string; anchor:number; head:number; resources:MarkdownResources; typography:MarkdownTypography; clipboard?:MarkdownClipboardSettings
-  publish(expected:string,patch:{from:number;to:number;insert:string},update:unknown,isolated:boolean):boolean
+  publish(expected:string,patch:{from:number;to:number;insert:string},update:unknown,isolated:boolean,selection?:{anchor:number;head:number}):boolean
   selected(anchor:number,head:number):void
   compositionChanged?():void
   history(forward:boolean):void
