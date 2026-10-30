@@ -5,6 +5,7 @@ import { isTrailingParagraph, withoutTrailingParagraph } from './TrailingParagra
 import { isBlankParagraphNode } from '../blankLines'
 import { patchSourceBlock, sourceTextPosition } from './patchSourceBlock'
 import { textPatch, type SourcePatch } from './sourcePatch'
+import { parseFormattingSource } from './inlineFormatting'
 export { textPatch, type SourcePatch } from './sourcePatch'
 export class MarkdownSourceBridge {
   source:string; doc:Node; blocks:SourceBlock[]; tail:string; environment:Record<string,unknown>
@@ -88,6 +89,14 @@ export class MarkdownSourceBridge {
             const draft = node.type.schema.nodes.image_source.create({ source: inlinePatch.insert }, null, previous.firstChild!.marks)
             if (old.node.replace(from, to, new Slice(Fragment.from(draft), 0, 0)).eq(node)) inlineRaw = candidate
           }
+        }
+        if (inlineRaw === undefined && inlinePatch.inlineEdit) {
+          const { from, to, inherited } = inlinePatch.inlineEdit
+          const content = parseFormattingSource(inlinePatch.insert, inherited, this.environment)
+          // Preserve partial delimiters as real source, proving that only the
+          // exact inline span changed. Surrounding structure remains validated.
+          if (content && from >= 0 && to >= from && to <= old.node.content.size &&
+            old.node.replace(from, to, new Slice(content, 0, 0)).eq(node)) inlineRaw = candidate
         }
         if(inlineRaw===undefined)throw new Error('局部源码与文档节点不一致，拒绝修改。')
         inlineApplied=true

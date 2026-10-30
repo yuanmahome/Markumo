@@ -57,6 +57,7 @@ function createInlineMarkInputRule(
     if (parsed.childCount !== 1 || !node || !node.type.create({ ...node.attrs, sourceId: target.attrs.sourceId }, node.content, node.marks).eq(target)) {
       return null
     }
+    if (!explicitLink) tr.setMeta('inlineFormattingEdit', { pos: actualStart, kind: expectedMarks[0], offset: matchedText.length })
     return tr.setSelection(TextSelection.create(tr.doc, actualStart + content.size))
       .setStoredMarks(inherited)
       .setMeta('inlineSourcePatch', { from, to, insert: matchedText, blockId: old.id })

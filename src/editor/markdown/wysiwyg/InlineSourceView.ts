@@ -8,6 +8,8 @@ import { parseControlledImageHtml, imagePathPlaceholderOffset } from './imageHtm
 import type { MarkdownSourceBridge, SourcePatch } from './MarkdownSourceBridge'
 import { textClipboard } from '../../../features/shell/clipboard'
 import type { LiveClipboardOperation } from './LiveClipboard'
+import { isFormattingKind, parseFormattingSource } from './inlineFormatting'
+import { sourceTextPosition } from './patchSourceBlock'
 
 const syntax = parser.configure(markdownSyntaxExtensions)
 const syntaxNames: Record<string, string> = { link: 'Link', image: 'Image', strong: 'StrongEmphasis', em: 'Emphasis', strike: 'Strikethrough', code: 'InlineCode' }
@@ -207,7 +209,9 @@ export class InlineSourceView {
           return
         }
       }
-      let content = parseInlineSource(this.draft, this.inherited, environment())
+      let content = isFormattingKind(this.kind)
+        ? parseFormattingSource(this.draft, this.inherited, environment())
+        : parseInlineSource(this.draft, this.inherited, environment())
       // An empty label parses to no inline nodes. Keep the editable draft pending
       // instead of silently erasing its nonempty source from a blank paragraph.
       if (this.kind === 'link' && content && !content.childCount && this.draft.trim()) content = null
@@ -219,6 +223,20 @@ export class InlineSourceView {
       this.updateStatus()
       this.paint()
       if (selection) this.select(selection.anchor, selection.head)
+      if (!this.pending && content && selection && selection.anchor === selection.head && isFormattingKind(this.kind)) {
+        // Keep delimiters visible at the active format boundary. Once typing
+        // moves beyond a completed format, return to the rendered paragraph.
+        let active = false, formatted = false
+        syntax.parse(this.draft).iterate({ enter: node => {
+          if (node.name !== syntaxNames[this.kind]) return
+          formatted = true
+          if (selection.head >= node.from && selection.head <= node.to) active = true
+        } })
+        if (formatted && !active) {
+          const paragraph = markdownParser.schema.nodes.paragraph.create(null, content)
+          this.close(true, this.from + sourceTextPosition(paragraph, this.draft, selection.head, true))
+        }
+      }
     }
     this.input.oninput = accept
     this.insertText = text => {

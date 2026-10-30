@@ -1,4 +1,6 @@
-export interface SourcePatch { from:number;to:number;insert:string;blockId?:string;htmlOrdinal?:number;imageDraft?:{from:number;to:number} }
+import type { Mark } from 'prosemirror-model'
+
+export interface SourcePatch { from:number;to:number;insert:string;blockId?:string;htmlOrdinal?:number;imageDraft?:{from:number;to:number};inlineEdit?:{from:number;to:number;inherited:readonly Mark[]} }
 export function textPatch(before:string,after:string):SourcePatch|null {
   if(before===after)return null
   let from=0,to=before.length,end=after.length

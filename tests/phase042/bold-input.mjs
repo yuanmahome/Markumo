@@ -26,7 +26,7 @@ try{
   await reset('Start\n\nEND_SENTINEL\n');await page.keyboard.insertText('**及时答复**');const result=await state();assert.equal(result.source,'**及时答复**\n\nEND_SENTINEL\n');assert.deepEqual(result.strong,['及时答复'])
  })
  await check('complete nested inline input keeps the exact supplied spelling',async()=>{
-  await reset('Start\n\nEND_SENTINEL\n');await page.keyboard.insertText('**及时*答复***');const result=await state();assert.equal(result.source,'**及时*答复***\n\nEND_SENTINEL\n');assert.equal(result.strong.join(''),'及时答复');assert.equal(await page.locator('.md-prose em').innerText(),'答复')
+  await reset('Start\n\nEND_SENTINEL\n');await page.keyboard.insertText('**及时*答复***');const result=await state();assert.equal(result.source,'**及时*答复***\n\nEND_SENTINEL\n');assert.equal(result.strong.join(''),'及时答复');assert.equal(await page.locator('.md-prose em').textContent(),'答复')
  })
  await check('closing the token returns subsequent text to normal weight',async()=>{
   await reset('Start\n\nEND_SENTINEL\n');await page.keyboard.type('**及时答复**');await page.keyboard.insertText('，后续正文');const result=await state();assert.equal(result.source,'**及时答复**，后续正文\n\nEND_SENTINEL\n');assert.deepEqual(result.strong,['及时答复'])

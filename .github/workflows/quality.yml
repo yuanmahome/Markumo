@@ -43,6 +43,7 @@ jobs:
           node tests/phase042/bold-input.mjs
           node tests/phase042/link-input.mjs
           node tests/phase042/inline-source-recovery.mjs
+          node tests/phase042/inline-formatting-edit.mjs
           node tests/dev/instance-isolation.mjs
 
   # Rust quality

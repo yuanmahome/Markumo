@@ -16,6 +16,21 @@ export const tokenizer = new MarkdownIt('commonmark', {html:true,linkify:true}).
 // normalised by markdown-it.
 tokenizer.normalizeLinkText = (url: string) => url
 installMarkdownMath(tokenizer)
+// An unfinished emphasis delimiter is editable text. Require the usual space
+// after '*' before treating it as an empty list item, including after reload.
+tokenizer.block.ruler.before('list', 'markumo_lone_asterisk', (state, startLine, _endLine, silent) => {
+  if (state.sCount[startLine] - state.blkIndent >= 4) return false
+  const from = state.bMarks[startLine] + state.tShift[startLine]
+  if (state.src.slice(from, state.eMarks[startLine]) !== '*') return false
+  if (silent) return true
+  const open = state.push('paragraph_open', 'p', 1)
+  open.map = [startLine, startLine + 1]
+  const inline = state.push('inline', '', 0)
+  inline.content = '*'; inline.map = open.map; inline.children = []
+  state.push('paragraph_close', 'p', -1)
+  state.line = startLine + 1
+  return true
+})
 // Markdown-it strips its hidden definition tokens before inline parsing. Keep
 // the native ranges out-of-band before that step; do not reimplement its grammar.
 const referenceDefinitions = new WeakMap<object, ReturnType<typeof tokenizer.parse>>()

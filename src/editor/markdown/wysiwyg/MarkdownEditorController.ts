@@ -18,6 +18,7 @@ import { completeInlineLinkTransaction, inlineMarkdownInputRules, trackInlineLin
 import { mathBlockParts, mapMathSelection, mergeMathComposition, type MathSelection } from './MathSource'
 import { markdownTypographyStyle } from '../typography'
 import { InlineSourceView, inlineSourceRange } from './InlineSourceView'
+import { isFormattingKind } from './inlineFormatting'
 import { ModifiedLinkGesture } from './ModifiedLinkGesture'
 import { Decoration, DecorationSet } from 'prosemirror-view'
 import { CodeBlockView } from './CodeBlockView'
@@ -1005,6 +1006,15 @@ export class MarkdownEditorController implements LiveEditor {
       this.view.updateState(nextState)
       const draftEdit = tr.getMeta('inlineLinkDraftEdit') as { pos:number; offset:number } | undefined
       if (draftEdit) this.queueInlineEdit(draftEdit.pos, 'link', draftEdit.offset)
+      const formattingEdit = tr.getMeta('inlineFormattingEdit') as { pos:number; kind:string; offset:number } | undefined
+      if (formattingEdit) this.queueInlineEdit(formattingEdit.pos, formattingEdit.kind, formattingEdit.offset)
+      else if (tr.docChanged && !this.inlineSource && !this.composing && nextState.selection.empty) {
+        // Native rich/Markdown paste already contains marks, so it does not
+        // run the character input rules that provide inlineFormattingEdit.
+        const marks = nextState.storedMarks ?? nextState.selection.$from.marks()
+        const kind = marks.find(mark => isFormattingKind(mark.type.name))?.type.name
+        if (kind) this.queueInlineEdit(nextState.selection.from, kind)
+      }
       this.releaseIdleCodeEditors()
       this.updateTools()
       const sel = this.selection
@@ -1603,14 +1613,18 @@ export class MarkdownEditorController implements LiveEditor {
     const epoch = this.focusEpoch
     // The toolbar focuses the editor after running the command; wait for that
     // focus so the inline source editor is not immediately blurred and closed.
-    queueMicrotask(() => {
+    const enter = () => {
       const pending = this.pendingInline
       if (!pending || this.disposed || !this.view.hasFocus()) return
       this.pendingInline = null
       if (pending.pos > this.view.state.doc.content.size || pending.offset !== undefined && epoch !== this.focusEpoch) return
       this.openInlineAt(pending.pos, pending.kind)
       if (pending.offset !== undefined) this.inlineSource?.focus(pending.offset)
-    })
+      else if (isFormattingKind(pending.kind) && this.inlineSource?.to === pending.pos) {
+        this.inlineSource.focus(this.inlineSource.sourceTo - this.inlineSource.sourceFrom)
+      }
+    }
+    queueMicrotask(enter)
   }
 
   private imageTailPointerDown(event: PointerEvent): boolean {
@@ -1679,6 +1693,16 @@ export class MarkdownEditorController implements LiveEditor {
           return false
         }
         const patch: SourcePatch = { from:editor.sourceFrom, to:editor.sourceTo, insert:raw,blockId:editor.blockId }
+        if (isFormattingKind(kind)) {
+          let base = 0
+          for (const block of this.bridge.blocks) {
+            if (block.id === editor.blockId) {
+              patch.inlineEdit = { from: editor.from - base - 1, to: editor.to - base - 1, inherited: editor.inherited }
+              break
+            }
+            base += block.node.nodeSize
+          }
+        }
         if (kind === 'image' && content.firstChild?.type === s.nodes.image_source) {
           let base = 0
           for (const block of this.bridge.blocks) {

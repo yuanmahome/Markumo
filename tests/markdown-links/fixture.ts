@@ -64,7 +64,7 @@ function snapshot(pane = 'main') {
     manager = new DocumentManager([])
     manager.setCaretAnimation('off')
     id = manager.openFile({ token: 'fixture', path: 'C:/workspace/说明/main.md', name: 'main.md', text: source,
-      version: 'fixture', encoding: 'UTF-8', bom: false, eol: 'LF', readOnly })
+      version: 'fixture', encoding: 'UTF-8', bom: false, eol: /\r\n/.test(source) ? 'CRLF' : 'LF', readOnly })
     panes = ['main']; mount('main'); this.clear()
   },
   clear() { requests.length = 0; notices.length = 0; sourceEntries = 0; observer.takeRecords() },
