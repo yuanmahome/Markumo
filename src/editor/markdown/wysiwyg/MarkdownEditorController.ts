@@ -10,6 +10,7 @@ import { tableEditingWithDragGuard } from './tableTextSelection'
 import { tableBackspace } from './tableBackspace'
 import { TableView } from 'prosemirror-tables'
 import { gapCursor } from 'prosemirror-gapcursor'
+import { listNormalizationPlugin } from './listNormalization'
 import { LiveTableToolbar, type TableToolbarCommand } from './LiveTableToolbar'
 import { markdownSchema as s } from './MarkdownSchema'
 import { MarkdownSourceBridge, textPatch, type SourcePatch } from './MarkdownSourceBridge'
@@ -254,6 +255,7 @@ export class MarkdownEditorController implements LiveEditor {
         plugins: [
           createSmoothCaretPlugin(this.dom, () => this.caretMode),
           trailingParagraphPlugin(),
+          listNormalizationPlugin(),
           new Plugin({
             appendTransaction: (_transactions, _before, state) => {
               const seen = new Set<string>()
@@ -1056,7 +1058,6 @@ export class MarkdownEditorController implements LiveEditor {
       Object.assign(this.bridge, { source, doc: remote.bridge.doc, blocks: remote.bridge.blocks, tail: remote.bridge.tail, environment:remote.bridge.environment })
       this.view.updateState(state)
     } else {
-      const sel = this.selection
       const bridge = MarkdownSourceBridge.fromSource(source,this.bridge,sourceChange)
       reuseSourceBlocks(bridge, this.bridge)
       const doc = withTrailingParagraph(bridge.doc)
@@ -1070,8 +1071,9 @@ export class MarkdownEditorController implements LiveEditor {
       }
       this.bridge = bridge
       if (!tr.doc.eq(doc)) tr = state.tr.replaceWith(0, state.doc.content.size, doc.content)
-      const head = Math.min(tr.doc.content.size, bridge.documentPosition(sel.head))
-      tr.setSelection(Selection.near(tr.doc.resolve(head)))
+      // The replacement already maps the selection through the document diff.
+      // Mapping the old source offset back instead loses empty list items:
+      // they have no text span and resolve to the preceding item's text.
       this.inlineSource?.map(tr)
       this.view.updateState(state.apply(tr))
     }

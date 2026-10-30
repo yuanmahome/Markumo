@@ -50,7 +50,11 @@ const tokens = { ...defaultMarkdownParser.tokens,
   controlled_image:{node:'image',getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>tok.meta},
   html_block:{block:'html_block',noCloseToken:true,getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>({source:tok.content})},
   fence:{block:'code_block',noCloseToken:true,getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({params:tok.info,fence:tok.markup})},
-  bullet_list:{...defaultMarkdownParser.tokens.bullet_list,getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({bullet:tok.markup,tight:true})},
+  bullet_list:{...defaultMarkdownParser.tokens.bullet_list,getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number],tokens:ReturnType<typeof tokenizer.parse>,index:number)=>{
+    let next=index+1
+    while(tokens[next]?.type==='list_item_open')next++
+    return {bullet:tok.markup,tight:tokens[next]?.hidden??false}
+  }},
   list_item:{block:'list_item',getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({checked:tok.meta?.checked ?? null})},
   callout:{block:'callout',getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({calloutType:tok.meta?.calloutType || 'NOTE',title:tok.meta?.title || ''})},
   toc:{node:'toc',getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({raw:tok.content || '[TOC]'})},
@@ -221,16 +225,33 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
   const ranges:{from:number;to:number;raw?:boolean;isHtml?:boolean;label?:string;kind?:string}[]=[]
   if(yaml)ranges.push({from:0,to:yaml[0].replace(/\n$/,'').length,raw:true,label:'YAML Front Matter'})
   let level=0
+  let topList:{range:typeof ranges[number];itemEnd?:number}|undefined
   for(const token of [...parsed, ...definitions]){
     if(level===0 && token.map){
       const to=markdownBlockEnd(source,starts[token.map[0]],starts[token.map[1]] ?? source.length,token.type==='fence'?token.markup:undefined)
       const reference = token.type === 'reference_definition'
       const footnote = reference && String(token.meta?.label || '').startsWith('^')
-      ranges.push({from:starts[token.map[0]],to,raw:token.type==='html_block'||(reference && !footnote),
+      const range={from:starts[token.map[0]],to,raw:token.type==='html_block'||(reference && !footnote),
         kind: reference ? footnote ? 'footnote' : 'reference' : undefined,
-        label: reference ? footnote ? '脚注定义' : '链接引用定义' : token.type==='html_block'?'HTML（安全源码）':'扩展语法（保留源码）'})
+        label: reference ? footnote ? '脚注定义' : '链接引用定义' : token.type==='html_block'?'HTML（安全源码）':'扩展语法（保留源码）'}
+      ranges.push(range)
+      if(token.type==='bullet_list_open'||token.type==='ordered_list_open')topList={range}
+    }
+    if(topList&&level===1&&token.type==='list_item_open'&&token.map){
+      const from=starts[token.map[0]]
+      // Markdown permits several blank lines inside a single list. In the
+      // editor these lines own editable gap paragraphs, just as they do
+      // between other blocks. Keep those boundaries on reload and undo too.
+      if(topList.itemEnd!==undefined&&blankLineRanges(source,topList.itemEnd,from,'between').length){
+        const range={...topList.range,from}
+        topList.range.to=topList.itemEnd
+        ranges.push(range)
+        topList.range=range
+      }
+      topList.itemEnd=markdownBlockEnd(source,from,starts[token.map[1]]??source.length)
     }
     level+=token.nesting
+    if(level===0)topList=undefined
   }
   ranges.sort((a,b)=>a.from-b.from)
   const blocks:SourceBlock[]=[]; let cursor=0,hasContent=false
