@@ -948,6 +948,7 @@ export class MarkdownEditorController implements LiveEditor {
     if (this.disposed) return false
     if (tr.docChanged) cancelSmoothScroll(this.dom)
     try {
+      const previousMarks = this.view.state.storedMarks ?? this.view.state.selection.$from.marks()
       const nextDraft = trackInlineLinkDraft(this.view.state, tr, this.bridge, this.inlineLinkDraft)
       if (!this.composing && !this.inlineSource && !this.options.readOnly?.()) {
         tr = completeInlineLinkTransaction(this.view.state, tr, this.bridge, this.inlineLinkDraft)
@@ -1012,7 +1013,7 @@ export class MarkdownEditorController implements LiveEditor {
         // Native rich/Markdown paste already contains marks, so it does not
         // run the character input rules that provide inlineFormattingEdit.
         const marks = nextState.storedMarks ?? nextState.selection.$from.marks()
-        const kind = marks.find(mark => isFormattingKind(mark.type.name))?.type.name
+        const kind = marks.find(mark => isFormattingKind(mark.type.name) && !previousMarks.some(previous => previous.type === mark.type))?.type.name
         if (kind) this.queueInlineEdit(nextState.selection.from, kind)
       }
       this.releaseIdleCodeEditors()

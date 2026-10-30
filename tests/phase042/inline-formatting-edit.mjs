@@ -111,6 +111,22 @@ try {
   }
   console.log('PASS native clipboard paste shows complete active delimiters with the caret after their end')
 
+  for (const [opening, closing] of [['**', '**'], ['__', '__'], ['*', '*'], ['_', '_'], ['***', '***'], ['___', '___'], ['~~', '~~'], ['`', '`']]) {
+    await reset(opening + 'Start' + closing + '\n\n后文\n')
+    await page.evaluate(() => {
+      const view = window.f.live().view
+      let from
+      view.state.doc.descendants((node, pos) => { if (node.isText && node.text === 'Start') from = pos })
+      view.dispatch(view.state.tr.setSelection(view.state.selection.constructor.create(view.state.doc, from, from + 5)))
+      view.focus()
+    })
+    const text = opening === '`' ? '[链接](http://129.com)' : '接着输入'
+    await page.keyboard.type(text)
+    await assertApplied(opening + text + closing + '\n\n后文\n')
+    assert.equal(await input.count(), 0, 'Typing inside an existing format must not move the caret past its closing delimiter')
+  }
+  console.log('PASS replacing existing formatted text keeps subsequent characters inside the original delimiters')
+
   await reset('**爱神的箭**\n\n后文\n')
   await page.locator('.md-prose strong').click()
   await page.evaluate(() => window.f.live().inlineSource.focus(2))
