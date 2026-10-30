@@ -31,11 +31,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm build
-      - run: pnpm exec playwright install --with-deps chromium
-      - name: Markdown link browser interactions
-        run: pnpm test
-      - name: Lossless Markdown and resource ownership regressions
+      - name: Browser regressions
+        if: hashFiles('tests/**') != ''
         run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm test
           node tests/lossless/browser.mjs
           node tests/lifecycle/ownership.mjs
           node tests/workspace/delete-open-files.mjs
