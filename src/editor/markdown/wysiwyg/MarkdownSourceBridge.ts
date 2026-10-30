@@ -179,7 +179,11 @@ export class MarkdownSourceBridge {
     source+=tail
     const patch=textPatch(this.source,source)
     if(this.blocks.some(block=>!used.has(block.id)&&(block.node.attrs.kind === 'reference'||/^\s*\[[^\]]+\]:/m.test(block.raw))))definitionsChanged=true
-    return {source,patch,definitionsChanged,commit:()=>{this.source=source;this.doc=withoutTrailingParagraph(doc);this.blocks=blocks;this.tail=tail;if(definitionsChanged)this.environment=parseMarkdown(source).environment}}
+    const bridge = Object.assign(Object.create(MarkdownSourceBridge.prototype) as MarkdownSourceBridge, {
+      source, doc: withoutTrailingParagraph(doc), blocks, tail,
+      environment: definitionsChanged ? parseMarkdown(source).environment : this.environment,
+    })
+    return {source,patch,definitionsChanged,bridge,commit:()=>{Object.assign(this,bridge)}}
   }
   sourcePosition(pos:number){
     let offset=0

@@ -9,3 +9,5 @@
 - 只有用户明确要求特定分支或工作树时，才可例外。
 - 提交信息使用中文，说明实际修改内容。
 - 未经用户明确授权，不推送远程，不发布 Release，不修改版本号。
+
+Avoid unnecessary secondary labels and descriptions.Let the layout do the explaining.

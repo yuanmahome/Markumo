@@ -14,6 +14,7 @@ const smokeScripts = [
   'tests/phase042/blank-line-persistence.mjs',
   'tests/phase042/blank-line-visual-layout.mjs',
   'tests/phase042/inline-markdown-rules.mjs',
+  'tests/phase042/inline-source-recovery.mjs',
   'tests/phase042/link-input.mjs',
   'tests/phase042/smart-clipboard.mjs',
   'tests/outline/visibility.mjs',

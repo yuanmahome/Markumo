@@ -169,6 +169,7 @@ export class InlineSourceView {
     private publish: (editor: InlineSourceView, raw: string, content: Fragment) => boolean,
     private close: (focus?: boolean, position?: number) => void, history: (forward: boolean) => void,
     private documentCommand: (command: InlineCommand, selection: {anchor:number;head:number} | null) => void,
+    private changed: () => void = () => {},
   ) {
     this.accepted = this.draft = raw; this.expected = expected
     this.dom.className = `md-local-source md-source-${kind}`
@@ -195,7 +196,10 @@ export class InlineSourceView {
     const accept = () => {
       if (this.dead || this.composing) return
       this.draft = this.input.innerText.replace(/\r\n?/g, '\n')
-      if (this.kind === 'image' && !this.draft.trim()) {
+      // Once all source is deleted, the paragraph owns the empty position.
+      // Keeping a zero-width widget alive retains the old source range even
+      // when blank-line normalization moves that paragraph's source boundary.
+      if (!this.draft || this.kind === 'image' && !this.draft.trim()) {
         if (publishInput('', Fragment.empty)) {
           this.accepted = ''
           this.expected = Fragment.empty
@@ -212,9 +216,7 @@ export class InlineSourceView {
       }
       const selection = this.selection()
       if (content && publishInput(this.draft, content)) { this.accepted = this.draft; this.expected = content }
-      this.dom.classList.toggle('md-local-source-invalid', this.pending)
-      this.status.hidden = !this.pending
-      this.status.textContent = this.pending ? '此局部修改尚未应用。请修正为行内 Markdown，或按 Esc 取消未应用内容。' : ''
+      this.updateStatus()
       this.paint()
       if (selection) this.select(selection.anchor, selection.head)
     }
@@ -230,9 +232,19 @@ export class InlineSourceView {
     }
     this.input.addEventListener('compositionstart', () => { this.composingInput = true })
     this.input.addEventListener('compositionend', () => { this.composingInput = false; accept() })
+    const runHistory = (forward: boolean) => {
+      if (this.composing) return
+      // Pending source has not entered canonical history. Undo it locally first;
+      // otherwise history changes the document while sync is blocked by pending.
+      if (this.pending) {
+        if (!forward) this.cancelPending()
+        return
+      }
+      history(forward)
+    }
     this.input.onbeforeinput = event => {
       if (event.inputType === 'historyUndo' || event.inputType === 'historyRedo') {
-        event.preventDefault(); history(event.inputType === 'historyRedo')
+        event.preventDefault(); runHistory(event.inputType === 'historyRedo')
       }
     }
     this.input.onpaste = event => {
@@ -256,7 +268,7 @@ export class InlineSourceView {
         queueMicrotask(() => this.documentCommand(name, selection))
       }
       if (modifier && ['z','y'].includes(event.key.toLowerCase())) {
-        event.preventDefault(); history(event.key.toLowerCase() === 'y' || event.shiftKey); return
+        event.preventDefault(); runHistory(event.key.toLowerCase() === 'y' || event.shiftKey); return
       }
       if (modifier && ['a','f','r'].includes(event.key.toLowerCase())) {
         if (this.kind === 'image' && event.key.toLowerCase() === 'a') {
@@ -286,7 +298,7 @@ export class InlineSourceView {
       }
       if (event.key === 'Escape') {
         event.preventDefault()
-        if (this.pending) { this.draft = this.accepted; this.paint() }
+        this.cancelPending()
         if (!this.pending) this.close(true)
         return
       }
@@ -315,6 +327,20 @@ export class InlineSourceView {
   }
   get pending() { return this.draft !== this.accepted }
   get composing() { return this.composingInput }
+  private updateStatus() {
+    this.dom.classList.toggle('md-local-source-invalid', this.pending)
+    this.status.hidden = !this.pending
+    this.status.textContent = this.pending ? '此局部修改尚未应用。请修正为行内 Markdown，或按 Esc 取消未应用内容。' : ''
+    this.changed()
+  }
+  cancelPending() {
+    if (this.dead || this.composing || !this.pending) return
+    const selection = this.selection()
+    this.draft = this.accepted
+    this.paint()
+    if (selection) this.select(selection.anchor, selection.head)
+    this.updateStatus()
+  }
   async clipboard(operation: LiveClipboardOperation) {
     const selection = this.selection(), draft = this.draft
     if (!selection || this.dead || this.composing) return
@@ -385,7 +411,7 @@ export class InlineSourceView {
     } else this.select(offset ?? 0, offset ?? 0)
   }
   decorations(doc: PMNode) {
-    if (this.dead || this.to > doc.content.size) return DecorationSet.empty
+    if (this.dead || this.from < 0 || this.from > this.to || this.to > doc.content.size) return DecorationSet.empty
     const decorations = [Decoration.widget(this.kind === 'image' ? this.from : this.to, this.dom, { key:this.key, side:this.kind === 'image' ? -1 : 1, stopEvent:event=>this.kind !== 'image' || event.type !== 'contextmenu', ignoreSelection:true })]
     if (this.kind === 'image' && this.from < this.to) decorations.push(Decoration.node(this.from, this.to, {
       class: doc.nodeAt(this.from)?.type.name === 'image_source' ? 'md-image-draft-covered' : 'md-image-source-open',
@@ -394,10 +420,20 @@ export class InlineSourceView {
     return DecorationSet.create(doc, decorations)
   }
   map(tr: Transaction) {
-    if (this.dead || !tr.docChanged || tr.getMeta('inlineSourceEditor') === this) return
+    if (this.dead || !tr.docChanged) return
+    if (tr.getMeta('inlineSourceEditor') === this) {
+      // Advance only after publication succeeds, in the coordinates of this
+      // transaction. Subsequent appended transactions can then map this range.
+      this.from = tr.mapping.map(this.from, -1)
+      this.to = tr.mapping.map(this.to, 1)
+      this.expected = tr.doc.slice(this.from, this.to).content
+      const patch = tr.getMeta('inlineSourcePatch') as SourcePatch
+      this.sourceTo = this.sourceFrom + patch.insert.length
+      return
+    }
     const from = tr.mapping.mapResult(this.from, 1), to = tr.mapping.mapResult(this.to, -1)
     const shouldFocus = document.activeElement === this.input || this.dom.contains(document.activeElement)
-    if (from.deleted || to.deleted || from.pos > to.pos || !tr.doc.slice(from.pos, to.pos).content.eq(this.expected)) {
+    if (from.deleted || to.deleted || from.pos < 0 || from.pos > to.pos || to.pos > tr.doc.content.size || !tr.doc.slice(from.pos, to.pos).content.eq(this.expected)) {
       this.close(shouldFocus, from.pos)
     } else {
       this.from = from.pos
@@ -409,7 +445,6 @@ export class InlineSourceView {
     if (patch.to <= this.sourceFrom) { const delta = patch.insert.length - (patch.to - patch.from); this.sourceFrom += delta; this.sourceTo += delta }
     else if (patch.from < this.sourceTo) this.close()
   }
-  acceptRange(to: number, sourceTo: number, expected?: Fragment) { this.to = to; this.sourceTo = sourceTo; if (expected) this.expected = expected }
   destroy() {
     if (this.dead) return
     this.dead=true

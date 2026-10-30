@@ -29,6 +29,7 @@ export interface MarkdownToolbarState extends LiveToolbarState { canUndo: boolea
 export interface LiveEditor {
   viewportSourcePosition?(): number | null
   readonly composing:boolean
+  readonly pendingSourceEdits?:boolean
   readonly selection:{anchor:number;head:number}
   sync(source:string,update?:unknown):void
   focus():void

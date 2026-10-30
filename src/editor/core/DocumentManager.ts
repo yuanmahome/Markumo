@@ -150,6 +150,7 @@ export class DocumentManager {
     return (otherId && this.views.get(otherId)) || null
   }
   get hasDirtyDocuments() { return [...this.records.values()].some(record => record.meta.dirty) }
+  get hasPendingMarkdownEdits() { return [...this.liveViews.values()].some(live => live.editor.pendingSourceEdits) }
   get isComposing() {
     return this.layout.getAllLeafIds().some(pane => {
       const id = this.paneGroup(pane).activeId

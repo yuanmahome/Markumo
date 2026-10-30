@@ -879,7 +879,9 @@ export function useAppShell() {
   }
 
   function composingHint() {
-    toast('请先完成当前输入法输入，再切换或关闭文档。')
+    toast(manager.hasPendingMarkdownEdits
+      ? '有尚未应用的 Markdown 局部修改。请继续编辑，或按 Esc 取消后再切换或关闭文档。'
+      : '请先完成当前输入法输入，再切换或关闭文档。')
   }
 
   function selectDocById(id: string) {

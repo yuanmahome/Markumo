@@ -636,6 +636,12 @@ export class MarkdownEditorController implements LiveEditor {
     this.dom.addEventListener('compositionstart', this.onCompositionStart, true)
     this.dom.addEventListener('pointerdown', this.onCanvasPointerDown)
     this.dom.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !event.isComposing && !this.compositionActive && !this.view.composing && this.inlineSource?.pending && !this.inlineSource.composing) {
+        event.preventDefault(); event.stopPropagation()
+        this.inlineSource.cancelPending()
+        this.closeInline(true)
+        return
+      }
       if ((event.ctrlKey || event.metaKey) && !event.altKey) {
         if (event.key.toLowerCase() === 'f') {
           event.preventDefault()
@@ -928,6 +934,8 @@ export class MarkdownEditorController implements LiveEditor {
     return this.compositionActive || this.view.composing || !!this.inlineSource?.composing || !!this.inlineSource?.pending || [...this.codeViews].some(code => code.isComposing) || [...this.htmlViews].some(html=>html.composing)
   }
 
+  get pendingSourceEdits() { return !!this.inlineSource?.pending }
+
   get selection() {
     for(const html of this.htmlViews){const selection=html.sourceSelection;if(selection)return selection}
     if(this.inlineSource){const selection=this.inlineSource.selection();if(selection)return {anchor:this.inlineSource.sourceFrom+selection.anchor,head:this.inlineSource.sourceFrom+selection.head}}
@@ -936,17 +944,18 @@ export class MarkdownEditorController implements LiveEditor {
   }
 
   private dispatch(tr: Transaction) {
-    if (this.disposed) return
+    if (this.disposed) return false
     if (tr.docChanged) cancelSmoothScroll(this.dom)
     try {
       const nextDraft = trackInlineLinkDraft(this.view.state, tr, this.bridge, this.inlineLinkDraft)
       if (!this.composing && !this.inlineSource && !this.options.readOnly?.()) {
         tr = completeInlineLinkTransaction(this.view.state, tr, this.bridge, this.inlineLinkDraft)
       }
-      this.inlineLinkDraft = tr.getMeta('inlineSourcePatch') ? null : nextDraft
+      const nextInlineDraft = tr.getMeta('inlineSourcePatch') ? null : nextDraft
       const applied = this.view.state.applyTransaction(tr)
       const before = this.bridge.source
       if (applied.state.doc.eq(this.view.state.doc) && !tr.getMeta('inlineSourcePatch')) {
+        this.inlineLinkDraft = nextInlineDraft
         this.view.updateState(applied.state)
         this.releaseIdleCodeEditors()
         this.updateTools()
@@ -956,11 +965,10 @@ export class MarkdownEditorController implements LiveEditor {
         this.updateFenceAutocomplete()
         this.slashController?.update()
         if (tr.selectionSet || tr.docChanged) this.scheduleTypewriterAlign()
-        return
+        return true
       }
       const prepared = this.bridge.prepare(applied.state.doc, tr.getMeta('inlineSourcePatch') as SourcePatch | undefined)
-      const previous = { source: this.bridge.source, doc: this.bridge.doc, blocks: this.bridge.blocks, tail:this.bridge.tail, environment:this.bridge.environment }
-      prepared.commit()
+      const bridge = prepared.bridge
       let nextState = applied.state
       if (prepared.definitionsChanged) {
         // Definitions affect preceding and following links. Reparse semantics
@@ -969,28 +977,29 @@ export class MarkdownEditorController implements LiveEditor {
         const byFrom = new Map(fresh.blocks.map(block => [block.from, block]))
         // Keep the source-editing atom alive while its definition is temporarily
         // incomplete (Ctrl+A, typing a new URL). Reparse referring blocks only.
-        this.bridge.blocks = this.bridge.blocks.map(block => {
+        bridge.blocks = bridge.blocks.map(block => {
           const parsed = byFrom.get(block.from)
           if (block.node.attrs.kind === 'reference' || !parsed || parsed.raw !== block.raw) return block
           const node = parsed.node.type.create({ ...parsed.node.attrs, sourceId: block.id }, parsed.node.content, parsed.node.marks)
           return { ...block, node }
         })
-        this.bridge.environment = fresh.environment
-        this.bridge.doc = s.nodes.doc.create(null, this.bridge.blocks.length ? this.bridge.blocks.map(block => block.node) : s.nodes.paragraph.create())
-        const doc = withTrailingParagraph(this.bridge.doc)
+        bridge.environment = fresh.environment
+        bridge.doc = s.nodes.doc.create(null, bridge.blocks.length ? bridge.blocks.map(block => block.node) : s.nodes.paragraph.create())
+        const doc = withTrailingParagraph(bridge.doc)
         const start = nextState.doc.content.findDiffStart(doc.content), end = nextState.doc.content.findDiffEnd(doc.content)
         if (start !== null && end) {
           const overlap = Math.max(0, start - Math.min(end.a, end.b))
           nextState = nextState.apply(nextState.tr.replace(start, end.a + overlap, doc.slice(start, end.b + overlap)))
         }
       }
-      const update: LiveUpdate = { bridge: this.bridge, transactions: prepared.definitionsChanged ? [] : applied.transactions }
+      const update: LiveUpdate = { bridge, transactions: prepared.definitionsChanged ? [] : applied.transactions }
       if (prepared.patch && !this.options.publish(before, prepared.patch, update, !!tr.getMeta('isolated'))) {
-        Object.assign(this.bridge, previous)
         this.view.updateState(this.view.state)
         notice('文档版本已变化或为只读；已拒绝 Markdown 修改。')
-        return
+        return false
       }
+      this.bridge = bridge
+      this.inlineLinkDraft = nextInlineDraft
       for (const transaction of applied.transactions) this.inlineSource?.map(transaction)
       this.inlineSource?.mapSource(prepared.patch, tr.getMeta('inlineSourceEditor') === this.inlineSource)
       this.view.updateState(nextState)
@@ -1003,8 +1012,10 @@ export class MarkdownEditorController implements LiveEditor {
       this.updateFenceAutocomplete()
       this.slashController?.update()
       this.scheduleTypewriterAlign()
+      return true
     } catch (error) {
       notice(`Markdown 修改未应用：${String(error)}`)
+      return false
     }
   }
 
@@ -1663,6 +1674,10 @@ export class MarkdownEditorController implements LiveEditor {
     const editor = new InlineSourceView(from,to,range.sourceFrom,range.sourceTo,kind,range.raw,range.inherited,doc.slice(from,to).content,()=>this.bridge.environment,range.blockId,
       (editor, raw, content) => {
         if (this.disposed || this.inlineSource !== editor || this.options.readOnly?.()) return false
+        if (editor.from < 0 || editor.to < editor.from || editor.to > this.view.state.doc.content.size) {
+          notice('局部源码位置已变化，请按 Esc 退出后重试。')
+          return false
+        }
         const patch: SourcePatch = { from:editor.sourceFrom, to:editor.sourceTo, insert:raw,blockId:editor.blockId }
         if (kind === 'image' && content.firstChild?.type === s.nodes.image_source) {
           let base = 0
@@ -1674,13 +1689,7 @@ export class MarkdownEditorController implements LiveEditor {
         this.properties.hidden = true
         const tr = this.view.state.tr.replaceWith(editor.from,editor.to,content)
           .setMeta('inlineSourcePatch',patch).setMeta('inlineSourceEditor',editor)
-        const oldTo=editor.to,oldSourceTo=editor.sourceTo
-        const oldExpected = this.view.state.doc.slice(editor.from, editor.to).content
-        editor.acceptRange(editor.from+content.size,editor.sourceFrom+raw.length,content)
-        this.view.dispatch(tr)
-        const accepted=this.bridge.source.slice(patch.from,patch.from+raw.length)===raw
-        if(!accepted)editor.acceptRange(oldTo,oldSourceTo,oldExpected)
-        return accepted
+        return this.dispatch(tr)
       }, (focus, position) => { if (this.inlineSource === editor) this.closeInline(focus, position) }, forward => {
         const focused = !!editor.selection()
         this.options.history(forward)
@@ -1716,7 +1725,7 @@ export class MarkdownEditorController implements LiveEditor {
           else if(command === 'hard-break') { this.view.dispatch(this.view.state.tr.replaceSelectionWith(s.nodes.hard_break.create()).setMeta('isolated',true));this.view.focus() }
           else this.format(command)
         }
-      })
+      }, () => { if (!this.disposed) this.options.compositionChanged?.() })
     this.inlineSource = editor; this.dismissedInline = null
     this.focusEpoch++
     this.view.updateState(this.view.state)
