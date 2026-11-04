@@ -1,6 +1,6 @@
 [package]
 name = "markumo"
-version = "1.1.9"
+version = "1.1.10"
 description = "Lightweight text and Markdown editor"
 license = "AGPL-3.0-only"
 authors = ["Markumo Team"]
