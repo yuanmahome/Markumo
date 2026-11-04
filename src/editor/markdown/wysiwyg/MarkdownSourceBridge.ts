@@ -1,5 +1,5 @@
 import { Fragment, Slice, type Node } from 'prosemirror-model'
-import { parseMarkdown, type SourceBlock } from './MarkdownParser'
+import { parseMarkdown, sameBlockSemantics, type SourceBlock } from './MarkdownParser'
 import { patchTable, serializeBlock } from './MarkdownSerializer'
 import { isTrailingParagraph, withoutTrailingParagraph } from './TrailingParagraph'
 import { isBlankParagraphNode } from '../blankLines'
@@ -63,7 +63,7 @@ export class MarkdownSourceBridge {
         const parsed=parseMarkdown(candidate,this.environment).doc
         if(parsed.childCount===1){
           const parsedNode=parsed.firstChild!
-          if(parsedNode.type.create({...parsedNode.attrs,sourceId:node.attrs.sourceId},parsedNode.content,parsedNode.marks).eq(node))inlineRaw=candidate
+          if(sameBlockSemantics(parsedNode,node))inlineRaw=candidate
         }
         // During HTML composition an incomplete tag is still an editable raw
         // atom. Validate the exact old raw range AND the sole changed PM atom;
@@ -101,17 +101,24 @@ export class MarkdownSourceBridge {
         if(inlineRaw===undefined)throw new Error('局部源码与文档节点不一致，拒绝修改。')
         inlineApplied=true
       }
-      let raw=inlineRaw??(old?.node.eq(node)?old.raw:old?(patchSourceBlock(old.node,node,old.raw,this.environment)??(node.type.name==='table'&&old.node.type===node.type?patchTable(old.node,node,old.raw):null)??serializeBlock(node)):serializeBlock(node))
+      const blank=isBlankParagraphNode(node)
+      // A blank gap paragraph owns only its separator lines. Once it holds real
+      // content it becomes an ordinary block, so patching the old `"\n\n"` in
+      // place would keep those bytes AND add the next block's separator, saving
+      // two extra blank lines. Patch against the separator-free raw instead; a
+      // zero-byte gap keeps the ordinary path so typed delimiters stay literal.
+      const promotingBlank=!!old?.blank&&!blank&&/[\r\n]/.test(old.raw)
+      const patchBase=promotingBlank?old!.raw.replace(/(?:\r?\n)+$/,''):old?.raw
+      let raw=inlineRaw??(old?.node.eq(node)?old.raw:old?(patchSourceBlock(old.node,node,patchBase!,this.environment)??(node.type.name==='table'&&old.node.type===node.type?patchTable(old.node,node,old.raw):null)??serializeBlock(node)):serializeBlock(node))
       // A paragraph promoted from the trailing placeholder has no old source
       // block yet. Preserve its first typed '[' instead of serializing '\[';
       // otherwise a later completed link looks author-escaped. Prove the whole
       // paragraph semantics before accepting the unescaped spelling.
       if(!old&&node.type.name==='paragraph'&&node.childCount&&node.content.content.every(child=>child.isText)){
         const candidate=node.textContent,parsed=parseMarkdown(candidate,this.environment).doc,first=parsed.firstChild
-        if(parsed.childCount===1&&first&&first.type===node.type&&first.type.create({...first.attrs,sourceId:node.attrs.sourceId},first.content,first.marks).eq(node))raw=candidate
+        if(parsed.childCount===1&&first&&sameBlockSemantics(first,node))raw=candidate
       }
       if(!old?.node.eq(node))raw=raw.replace(/\r?\n/g,old?.raw.match(/\r?\n/)?.[0] || eol)
-      const blank=isBlankParagraphNode(node)
       if(blank)raw=old?.blank&&old.node.eq(node)?old.raw:node.textContent+eol+eol
       entries.push({node,id,old,raw,blank})
       if(node.type.name==='protected_source' && !old?.node.eq(node) && (node.attrs.kind === 'reference' || old?.node.attrs.kind === 'reference' || /^\s*\[[^\]]+\]:/m.test(raw)))definitionsChanged=true

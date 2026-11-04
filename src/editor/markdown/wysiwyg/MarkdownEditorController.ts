@@ -234,8 +234,8 @@ export class MarkdownEditorController implements LiveEditor {
         textblockTypeInputRule(/^(#{1,6})\s$/, s.nodes.heading, match => ({ level: match[1].length })),
         textblockTypeInputRule(/^```([^`\s]*)\s$/, s.nodes.code_block, match => ({ params: match[1] })),
         wrappingInputRule(/^\s*>\s$/, s.nodes.blockquote),
-        wrappingInputRule(/^\s*([-+*])\s$/, s.nodes.bullet_list),
-        wrappingInputRule(/^(\d+)\.\s$/, s.nodes.ordered_list, match => ({ order: +match[1] })),
+        wrappingInputRule(/^\s*([-+*])\s$/, s.nodes.bullet_list, match => ({ bullet: match[1], tight: true })),
+        wrappingInputRule(/^(\d+)\.\s$/, s.nodes.ordered_list, match => ({ order: +match[1], tight: true })),
         new InputRule(/^\[([ xX])\] $/, (state, match, start, end) => {
           const $from = state.doc.resolve(start)
           for (let depth = $from.depth; depth > 0; depth--) {
@@ -273,6 +273,11 @@ export class MarkdownEditorController implements LiveEditor {
                 } else {
                   seen.add(id)
                 }
+                node.descendants((child, relPos) => {
+                  if (child.attrs.sourceId) {
+                    tr.setNodeMarkup(pos + 1 + relPos, undefined, { ...child.attrs, sourceId: null })
+                  }
+                })
               })
               return tr.steps.length ? tr : null
             },
@@ -497,6 +502,7 @@ export class MarkdownEditorController implements LiveEditor {
               },
               handleDoubleClick: (view,_pos,event) => this.activateLink(view,event) || this.activateMark(view,event),
               handleTripleClick: (view,_pos,event) => this.activateLink(view,event) || this.activateMark(view,event),
+              handlePaste: (_view, event) => this.liveClipboard.pasteEvent(event),
               transformPastedHTML: html => {
                 const doc = new DOMParser().parseFromString(html, 'text/html')
                 doc.querySelectorAll('script,style,iframe,object,embed,svg,math').forEach(el => el.remove())

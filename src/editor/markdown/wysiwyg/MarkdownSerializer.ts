@@ -1,5 +1,5 @@
 import { MarkdownSerializer, defaultMarkdownSerializer } from 'prosemirror-markdown'
-import type { Mark, Node } from 'prosemirror-model'
+import type { Fragment, Mark, Node } from 'prosemirror-model'
 import { markdownSchema } from './MarkdownSchema'
 import { controlledImageHtml, parseControlledImageHtml } from './imageHtml'
 import { tableRow } from '../tableModel'
@@ -44,15 +44,17 @@ function isPlainAutolink(mark: Mark, parent: Node, index: number): boolean {
 
 /** Serializes links by the spelling the source used, never by accident. */
 const markumoLink = {
-  open(state: { write: (text: string) => void } & Record<string, unknown>, mark: Mark, parent: Node, index: number) {
+  open(state: { write: (text: string) => void; inAutolink?: boolean } & Record<string, unknown>, mark: Mark, parent: Node, index: number) {
     const plain = isPlainAutolink(mark, parent, index)
     const kind: LinkKind = plain ? (mark.attrs.autolink as LinkKind) : 'none'
     state.markumoLinkKind = kind
+    state.inAutolink = plain
     return kind === 'angle' ? '<' : kind === 'bare' ? '' : '['
   },
-  close(state: Record<string, unknown>, mark: Mark) {
+  close(state: { inAutolink?: boolean } & Record<string, unknown>, mark: Mark) {
     const kind = state.markumoLinkKind as LinkKind | undefined
     state.markumoLinkKind = undefined
+    state.inAutolink = undefined
     if (kind === 'angle') return '>'
     if (kind === 'bare') return ''
     return '](' + String(mark.attrs.href ?? '').replace(/[()"]/g, '\\$&') +
@@ -134,8 +136,22 @@ export const markdownSerializer = new MarkdownSerializer({ ...defaultMarkdownSer
   },
   table(state,node){state.write(serializeTable(node));state.closeBlock(node)},
 }, {...defaultMarkdownSerializer.marks, link: markumoLink as never, strike:{open:'~~',close:'~~',mixable:true,expelEnclosingWhitespace:true}})
+export function escapeUnescapedPipes(text: string): string {
+  return text.replace(/\|/g, (_pipe, offset: number) => {
+    let slashes = 0
+    for (let i = offset - 1; i >= 0 && text[i] === '\\'; i--) slashes++
+    return slashes % 2 === 1 ? '|' : '\\|'
+  })
+}
+
+export function serializeInlineFragment(fragment: Fragment): string {
+  return markdownSerializer.serialize(
+    markdownSchema.nodes.doc.create(null, markdownSchema.nodes.paragraph.create(null, fragment))
+  )
+}
+
 export function serializeBlock(node:Node){return markdownSerializer.serialize(markdownSchema.nodes.doc.create(null,node))}
-export function serializeCell(node:Node){return markdownSerializer.serialize(markdownSchema.nodes.doc.create(null,node.content)).replace(/\\\n/g,'<br>').replace(/\n/g,'<br>').replace(/\|/g,'\\|')}
+export function serializeCell(node:Node){return escapeUnescapedPipes(markdownSerializer.serialize(markdownSchema.nodes.doc.create(null,node.content)).replace(/\\\n/g,'<br>').replace(/\n/g,'<br>'))}
 export function serializeTable(node:Node){
   const lines:string[]=[]
   node.forEach((row,_,i)=>{

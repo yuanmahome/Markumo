@@ -1,7 +1,7 @@
 import MarkdownIt from 'markdown-it'
 import { inlineHtmlRanges } from './HtmlSourceRanges'
 import { MarkdownParser, defaultMarkdownParser } from 'prosemirror-markdown'
-import type { Node } from 'prosemirror-model'
+import { Mark, type Node } from 'prosemirror-model'
 import { markdownSchema as s } from './MarkdownSchema'
 import { parseControlledImageHtml } from './imageHtml'
 import { installMarkdownMath } from '../mathSemantics'
@@ -37,6 +37,46 @@ const referenceDefinitions = new WeakMap<object, ReturnType<typeof tokenizer.par
 tokenizer.core.ruler.before('strip_references', 'markumo_reference_ranges', state => {
   referenceDefinitions.set(state.env, state.tokens.filter(token => token.type === 'reference_definition' && token.level === 0))
 })
+function isTightListToken(tokens: ReturnType<typeof tokenizer.parse>, openIndex: number): boolean {
+  let depth = 1
+  for (let i = openIndex + 1; i < tokens.length && depth > 0; i++) {
+    const t = tokens[i]
+    if (t.type === 'bullet_list_open' || t.type === 'ordered_list_open') depth++
+    else if (t.type === 'bullet_list_close' || t.type === 'ordered_list_close') depth--
+    else if (depth === 1 && t.type === 'paragraph_open' && !t.hidden) return false
+  }
+  return true
+}
+
+/**
+ * Compare two ProseMirror block/inline trees by Markdown semantics:
+ * ignores transient `sourceId`/`editorTrailing` bookkeeping and single-item single-paragraph
+ * `tight` flags (which have identical Markdown representation).
+ */
+export function sameBlockSemantics(a: Node, b: Node): boolean {
+  if (a === b) return true
+  if (a.type !== b.type) return false
+  if (a.isText) return a.text === b.text && Mark.sameSet(a.marks, b.marks)
+  if (!Mark.sameSet(a.marks, b.marks) || a.childCount !== b.childCount) return false
+  const keys = new Set([...Object.keys(a.attrs), ...Object.keys(b.attrs)])
+  for (const key of keys) {
+    if (key === 'sourceId' || key === 'editorTrailing') continue
+    if (
+      key === 'tight' &&
+      (a.type.name === 'bullet_list' || a.type.name === 'ordered_list') &&
+      a.childCount <= 1 &&
+      (a.firstChild?.childCount ?? 0) <= 1
+    ) {
+      continue
+    }
+    if (a.attrs[key] !== b.attrs[key]) return false
+  }
+  for (let i = 0; i < a.childCount; i++) {
+    if (!sameBlockSemantics(a.child(i), b.child(i))) return false
+  }
+  return true
+}
+
 const tokens = { ...defaultMarkdownParser.tokens,
   table:{block:'table'}, thead:{ignore:true}, tbody:{ignore:true}, tr:{block:'table_row'},
   th:{block:'table_header',getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({align:String(tok.attrGet('style')||'').replace('text-align:','') || null})},
@@ -50,11 +90,14 @@ const tokens = { ...defaultMarkdownParser.tokens,
   controlled_image:{node:'image',getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>tok.meta},
   html_block:{block:'html_block',noCloseToken:true,getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>({source:tok.content})},
   fence:{block:'code_block',noCloseToken:true,getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({params:tok.info,fence:tok.markup})},
-  bullet_list:{...defaultMarkdownParser.tokens.bullet_list,getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number],tokens:ReturnType<typeof tokenizer.parse>,index:number)=>{
-    let next=index+1
-    while(tokens[next]?.type==='list_item_open')next++
-    return {bullet:tok.markup,tight:tokens[next]?.hidden??false}
-  }},
+  bullet_list:{...defaultMarkdownParser.tokens.bullet_list,getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number],tokens:ReturnType<typeof tokenizer.parse>,index:number)=>({
+    bullet:tok.markup,
+    tight:isTightListToken(tokens,index),
+  })},
+  ordered_list:{...defaultMarkdownParser.tokens.ordered_list,getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number],tokens:ReturnType<typeof tokenizer.parse>,index:number)=>({
+    order:+(tok.attrGet('start')||1),
+    tight:isTightListToken(tokens,index),
+  })},
   list_item:{block:'list_item',getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({checked:tok.meta?.checked ?? null})},
   callout:{block:'callout',getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({calloutType:tok.meta?.calloutType || 'NOTE',title:tok.meta?.title || ''})},
   toc:{node:'toc',getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({raw:tok.content || '[TOC]'})},
