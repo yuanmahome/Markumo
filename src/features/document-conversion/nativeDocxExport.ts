@@ -1,4 +1,7 @@
 import MarkdownIt, { type Token } from 'markdown-it'
+import { installMarkdownMath } from '../../editor/markdown/mathSemantics'
+import { installExportFootnotes, type ExportNote } from './ExportSemantics'
+import { markdownSemantics } from '../../editor/markdown/semantics'
 
 /**
  * Native DOCX writer.
@@ -16,6 +19,8 @@ export interface DocxImage {
   /** Bytes of the image. Type is detected from the signature. */
   data: Uint8Array
   alt: string
+  width?: number
+  height?: number
 }
 
 export interface DocxWarning {
@@ -27,6 +32,10 @@ export interface DocxOptions {
   title?: string
   /** Resolves a local/network image. Returning null reports a warning instead. */
   resolveImage?: (source: string) => Promise<DocxImage | null>
+  renderMath?: (source: string, display: boolean) => Promise<DocxImage | null>
+  renderDiagram?: (source: string) => Promise<DocxImage | null>
+  linkTargets?: Record<string, string>
+  resolveLink?: (href: string) => string | null
   signal?: AbortSignal
   /** Largest total media payload embedded into one document. */
   mediaBudgetBytes?: number
@@ -125,7 +134,7 @@ function escapeXml(value: unknown): string {
 
 /** Keeps control characters out of XML, which would make the part invalid. */
 function sanitizeText(value: string): string {
-  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+  return value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDFFF]/gu, '')
 }
 
 function imageExtension(data: Uint8Array): string {
@@ -136,7 +145,25 @@ function imageExtension(data: Uint8Array): string {
   return ''
 }
 
+/** Read intrinsic dimensions without a DOM in the worker. */
+function imageDimensions(data: Uint8Array): [number, number] | null {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+  if (imageExtension(data) === 'png' && data.length >= 24) return [view.getUint32(16), view.getUint32(20)]
+  if (imageExtension(data) === 'gif' && data.length >= 10) return [view.getUint16(6, true), view.getUint16(8, true)]
+  if (imageExtension(data) === 'jpeg') {
+    for (let i = 2; i + 9 < data.length;) {
+      if (data[i] !== 255) break
+      const marker = data[i + 1], length = view.getUint16(i + 2)
+      if ([192,193,194,195,197,198,199,201,202,203,205,206,207].includes(marker)) return [view.getUint16(i + 7), view.getUint16(i + 5)]
+      if (length < 2) break
+      i += length + 2
+    }
+  }
+  return null
+}
+
 interface EmitState {
+  resolveLink?: DocxOptions['resolveLink']
   imageRuns: Map<Token, string>
   body: string
   rels: string[]
@@ -169,7 +196,7 @@ function runProps(options: { bold?: boolean; italic?: boolean; strike?: boolean;
 }
 
 function textRun(text: string, props = ''): string {
-  return `<w:r>${props}<w:t xml:space="preserve">${escapeXml(sanitizeText(text))}</w:t></w:r>`
+  return `<w:r>${props}<w:t xml:space="preserve">${sanitizeText(text).split(/\r\n|\n|\r/).map(line => escapeXml(line).split("\t").join('</w:t><w:tab/><w:t xml:space="preserve">')).join('</w:t><w:br/><w:t xml:space="preserve">')}</w:t></w:r>`
 }
 
 /** Renders one inline token stream with marks, code, links and math fallbacks. */
@@ -193,8 +220,9 @@ function inlineRuns(children: Token[] | null, state: EmitState, baseUrl?: string
     else if (token.type === 's_close') marks.strike = false
     else if (token.type === 'link_open') {
       flushLink()
-      const href = String(token.attrGet('href') ?? '')
-      if (href && baseUrl !== null && /^(?:https?:|mailto:)/i.test(href)) {
+      const original = String(token.attrGet('href') ?? '')
+      const href = state.resolveLink?.(original) ?? original
+      if (href && baseUrl !== null && (/^(?:https?:|mailto:)/i.test(href) || href !== original && href.startsWith('file:///'))) {
         const relId = `rIdLink${++state.nextRel}`
         state.rels.push(`<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="${escapeXml(href)}" TargetMode="External"/>`)
         linkRel = relId
@@ -204,7 +232,7 @@ function inlineRuns(children: Token[] | null, state: EmitState, baseUrl?: string
         // A relative or unsupported target is written as text plus its target,
         // never as a broken relationship.
         linkHref = href
-        state.warnings.push({ kind: 'content', message: `超链接目标不是绝对 HTTP(S)/mailto，已作为文本导出：${href}` })
+        state.warnings.push({ kind: 'content', message: `链接无法安全定位（需要已保存源文档及授权目录内的目标），已作为文本保留：${href}` })
       }
     } else if (token.type === 'link_close') {
       if (linkRel) flushLink()
@@ -218,25 +246,20 @@ function inlineRuns(children: Token[] | null, state: EmitState, baseUrl?: string
       runs.push('<w:r><w:br/></w:r>')
     } else if (token.type === 'text') {
       runs.push(textRun(token.content, runProps({ ...marks, color: linkRel ? '1155CC' : undefined })))
+    } else if (token.type === 'math_inline') {
+      const math = state.imageRuns.get(token)
+      runs.push(math ?? textRun('$' + token.content + '$'))
+      if (!math) state.warnings.push({ kind: 'math', message: '行内公式渲染失败，已保留源码。' })
     } else if (token.type === 'image') {
       runs.push(state.imageRuns.get(token) ?? textRun(token.content || '[图片]'))
     } else if (token.type === 'html_inline') {
+      if (/^<br\s*\/?\s*>$/i.test(token.content)) { runs.push('<w:r><w:br/></w:r>'); continue }
       const stripped = token.content.replace(/<[^>]*>/g, '')
       if (stripped) runs.push(textRun(stripped))
     }
   }
   flushLink()
   return runs.join('')
-}
-
-/** Recognises `$...$` / `$$...$$` inside a paragraph as an explicit fallback. */
-function mathFallback(text: string, state: EmitState): string | null {
-  const block = /^\s*\$\$([\s\S]+?)\$\$\s*$/.exec(text)
-  if (block) {
-    state.warnings.push({ kind: 'math', message: '公式以 LaTeX 源码形式导出（未安装排版渲染器）' })
-    return `<w:p><w:pPr><w:shd w:val="clear" w:fill="F8F9FA"/><w:jc w:val="center"/></w:pPr>${textRun(block[1].trim(), runProps({ code: true, size: 20 }))}</w:p>`
-  }
-  return null
 }
 
 function listParagraph(state: EmitState, level: number, prefix: string, runs: string): string {
@@ -246,32 +269,50 @@ function listParagraph(state: EmitState, level: number, prefix: string, runs: st
 }
 
 async function prepareImages(tokens: Token[], state: EmitState, options: DocxOptions) {
-  for (const inline of tokens) for (const image of inline.children ?? []) {
-    if (image.type !== 'image') continue
+  for (const image of tokens.flatMap(token => token.type === 'math_block' || token.type === 'fence' && token.info.trim() === 'mermaid' ? [token] : (token.children ?? []).filter(child => child.type === 'image' || child.type === 'math_inline'))) {
     if (options.signal?.aborted) throw new Error('导出已取消')
     const source = String(image.attrGet('src') ?? '')
-    const resolved = await options.resolveImage?.(source).catch(() => null)
+    if (state.nextImage >= MAX_IMAGES || state.mediaBytes >= state.mediaBudget) {
+      state.warnings.push({kind:'image',message:'媒体超过导出预算，已保留文字。'}); continue
+    }
+    const resolved = image.type.startsWith('math_')
+      ? await options.renderMath?.(image.content, image.type === 'math_block').catch(() => null)
+      : image.type === 'fence'
+      ? await options.renderDiagram?.(image.content).catch(() => null)
+      : await options.resolveImage?.(source).catch(() => null)
     const ext = resolved && imageExtension(resolved.data)
     if (!resolved || !ext || state.mediaBytes + resolved.data.length > state.mediaBudget || state.nextImage >= MAX_IMAGES) {
       state.warnings.push({ kind: 'image', message: `图片未能嵌入（读取失败、格式不支持或超过预算），已保留替代文字：${source || '(空路径)'}` })
       continue
     }
+    const dimensions = imageDimensions(resolved.data)
+    const width = resolved.width || dimensions?.[0], height = resolved.height || dimensions?.[1]
+    if (!width || !height || !Number.isFinite(width + height)) {
+      state.warnings.push({ kind: 'image', message: '无法确定图片尺寸：' + source }); continue
+    }
+    const scale = Math.min(1, 601 / width, 780 / height)
+    const cx = Math.round(width * scale * 9525), cy = Math.round(height * scale * 9525)
     const name = `image${++state.nextImage}.${ext}`
     const relId = `rIdImg${name}`
     const id = ++state.bookmarkId
     state.media.push({ name, data: resolved.data }); state.mediaBytes += resolved.data.length
     state.rels.push(`<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${name}"/>`)
-    state.imageRuns.set(image, `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="5486400" cy="3086100"/><wp:docPr id="${id}" name="${escapeXml(sanitizeText(resolved.alt || name))}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="5486400" cy="3086100"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`)
+    state.imageRuns.set(image, `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${id}" name="${escapeXml(sanitizeText(resolved.alt || name))}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`)
     state.stats.images++
   }
 }
 
 async function buildDocumentXml(markdown: string, state: EmitState, options: DocxOptions): Promise<void> {
-  const md = new MarkdownIt('commonmark', { html: true, linkify: true }).enable(['table', 'strikethrough', 'linkify'])
+  const md = new MarkdownIt(markdownSemantics)
+  installMarkdownMath(md)
+  const notes: ExportNote[] = []
+  installExportFootnotes(md, notes)
   const tokens = md.parse(markdown, {})
+  for (const note of notes) state.footnotes.push({ id: state.footnotes.length + 1, ...note, anchors: [] })
+  if (notes.length) state.warnings.push({ kind: 'footnote', message: '脚注以文末列表形式导出（' + notes.length + ' 条）' })
   await prepareImages(tokens, state, options)
 
-  if (options.title) {
+  if (options.title && !tokens.some((token, index) => token.type === 'heading_open' && token.tag === 'h1' && tokens[index + 1]?.content === options.title)) {
     state.body += `<w:p><w:pPr><w:pStyle w:val="Title"/><w:jc w:val="center"/></w:pPr>${textRun(options.title, runProps({ bold: true, size: 48 }))}</w:p>`
   }
 
@@ -280,6 +321,12 @@ async function buildDocumentXml(markdown: string, state: EmitState, options: Doc
     if (options.signal?.aborted) throw new Error('导出已取消')
     const token = tokens[index]
 
+    if (token.type === 'math_block') {
+      const math = state.imageRuns.get(token)
+      state.body += '<w:p>' + (math ?? textRun(token.content)) + '</w:p>'
+      if (!math) state.warnings.push({ kind: 'math', message: '公式渲染失败，已保留源公式。' })
+      index++; continue
+    }
     if (token.type === 'heading_open') {
       const level = Math.min(6, Math.max(1, Number(token.tag.slice(1)) || 1))
       const inline = tokens[index + 1]
@@ -302,19 +349,13 @@ async function buildDocumentXml(markdown: string, state: EmitState, options: Doc
         index += 3
         continue
       }
-      const math = mathFallback(text, state)
-      if (math) {
-        state.body += math
-        index += 3
-        continue
-      }
       // A paragraph holding only an image becomes a real embedded picture.
       const onlyImage = inline?.children?.length === 1 && inline.children[0]?.type === 'image'
       if (onlyImage) {
         state.body += `<w:p><w:pPr><w:jc w:val="center"/></w:pPr>${inlineRuns(inline?.children ?? null,state,'')}</w:p>`
         state.stats.paragraphs++;index+=3;continue
       }
-      state.body += `<w:p><w:pPr><w:spacing w:line="360" w:lineRule="auto"/>${state.listStack.length ? `<w:ind w:left="${360 * state.listStack.length}"/>` : ''}</w:pPr>${inlineRuns(inline?.children ?? null, state, '')}</w:p>`
+      state.body += `<w:p><w:pPr>${tokens[index + 3]?.type === 'fence' && tokens[index + 3].info.trim() === 'mermaid' ? '<w:keepNext/>' : ''}<w:spacing w:line="360" w:lineRule="auto"/>${state.listStack.length ? `<w:ind w:left="${360 * state.listStack.length}"/>` : ''}</w:pPr>${inlineRuns(inline?.children ?? null, state, '')}</w:p>`
       state.stats.paragraphs++
       index += 3
       continue
@@ -322,8 +363,10 @@ async function buildDocumentXml(markdown: string, state: EmitState, options: Doc
 
     if (token.type === 'fence' || token.type === 'code_block') {
       const language = String(token.info || '').trim()
-      if (/^mermaid/i.test(language)) {
-        state.warnings.push({ kind: 'diagram', message: 'Mermaid 图表以源码形式导出（未安装图形渲染器）' })
+      if (language === 'mermaid') {
+        const diagram = state.imageRuns.get(token)
+        if (diagram) { state.body += '<w:p>' + diagram + '</w:p>'; index++; continue }
+        state.warnings.push({ kind: 'diagram', message: 'Mermaid 编译失败或超过资源预算，以下保留源码。' })
       }
       state.body += `<w:p><w:pPr><w:shd w:val="clear" w:fill="F6F8FA"/><w:spacing w:line="240" w:lineRule="auto"/><w:ind w:left="240" w:right="240"/></w:pPr>${textRun(token.content.replace(/\n$/, ''), runProps({ code: true, size: 20 }))}</w:p>`
       state.stats.paragraphs++
@@ -414,7 +457,7 @@ async function buildDocumentXml(markdown: string, state: EmitState, options: Doc
         }
         cursor++
       }
-      state.body += `<w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="D0D7DE"/><w:left w:val="single" w:sz="4" w:color="D0D7DE"/><w:bottom w:val="single" w:sz="4" w:color="D0D7DE"/><w:right w:val="single" w:sz="4" w:color="D0D7DE"/><w:insideH w:val="single" w:sz="4" w:color="D0D7DE"/><w:insideV w:val="single" w:sz="4" w:color="D0D7DE"/></w:tblBorders></w:tblPr><w:tblGrid>${'<w:gridCol/>'.repeat(columns)}</w:tblGrid>${rows.join('')}</w:tbl><w:p/>`
+      state.body += `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="80" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="80" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar><w:tblStyle w:val="TableGrid"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="D0D7DE"/><w:left w:val="single" w:sz="4" w:color="D0D7DE"/><w:bottom w:val="single" w:sz="4" w:color="D0D7DE"/><w:right w:val="single" w:sz="4" w:color="D0D7DE"/><w:insideH w:val="single" w:sz="4" w:color="D0D7DE"/><w:insideV w:val="single" w:sz="4" w:color="D0D7DE"/></w:tblBorders></w:tblPr><w:tblGrid>${(`<w:gridCol w:w="${Math.floor(9026 / columns)}"/>`).repeat(columns)}</w:tblGrid>${rows.join('').split('<w:tcPr>').join( `<w:tcPr><w:tcW w:w="${Math.floor(9026 / columns)}" w:type="dxa"/>`)}</w:tbl><w:p/>`
       state.stats.tables++
       index = cursor + 1
       continue
@@ -436,23 +479,12 @@ async function buildDocumentXml(markdown: string, state: EmitState, options: Doc
   }
 }
 
-/** Collects footnote definitions so they can be exported as an endnote section. */
-function extractFootnotes(markdown: string, state: EmitState) {
-  const pattern = /^\[\^([^\]]+)\]:[ \t]*([\s\S]*?)(?=\n\[\^|\n\n|$)/gm
-  let match: RegExpExecArray | null
-  while ((match = pattern.exec(markdown))) {
-    state.footnotes.push({ id: state.footnotes.length + 1, label: match[1], text: match[2].trim(), anchors: [] })
-  }
-  if (state.footnotes.length) {
-    state.warnings.push({ kind: 'footnote', message: `脚注以文末列表形式导出（${state.footnotes.length} 条）` })
-  }
-}
-
 /** Builds the document, returning the package bytes plus explicit warnings. */
 export async function exportMarkdownToNativeDocx(markdownContent: string, options: DocxOptions = {}): Promise<DocxResult> {
   if (options.signal?.aborted) throw new Error('导出已取消')
   if (markdownContent.length > MAX_TEXT_BYTES) throw new Error('文档超过 64 MiB，无法导出 Word')
   const state: EmitState = {
+    resolveLink: options.resolveLink ?? (href => options.linkTargets?.[href] ?? null),
     imageRuns: new Map(),
     body: '',
     rels: [],
@@ -472,7 +504,6 @@ export async function exportMarkdownToNativeDocx(markdownContent: string, option
     headingOutline: [],
   }
 
-  extractFootnotes(markdownContent, state)
   await buildDocumentXml(markdownContent, state, options)
 
   // A `[toc]` marker becomes a real, navigable heading list. Page numbers are
@@ -536,7 +567,7 @@ ${numberingXml ? '<Override PartName="/word/numbering.xml" ContentType="applicat
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
 <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Microsoft YaHei" w:eastAsia="Microsoft YaHei" w:hAnsi="Microsoft YaHei"/><w:sz w:val="24"/></w:rPr></w:rPrDefault></w:docDefaults>
 <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
-${[1, 2, 3, 4, 5, 6].map(level => `<w:style w:type="paragraph" w:styleId="Heading${level}"><w:name w:val="heading ${level}"/><w:basedOn w:val="Normal"/><w:pPr><w:outlineLvl w:val="${level - 1}"/></w:pPr><w:rPr><w:b/><w:sz w:val="${Math.max(20, 40 - level * 3)}"/></w:rPr></w:style>`).join('')}
+${[1, 2, 3, 4, 5, 6].map(level => `<w:style w:type="paragraph" w:styleId="Heading${level}"><w:name w:val="heading ${level}"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:outlineLvl w:val="${level - 1}"/></w:pPr><w:rPr><w:b/><w:sz w:val="${Math.max(20, 40 - level * 3)}"/></w:rPr></w:style>`).join('')}
 <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:rPr><w:b/><w:sz w:val="48"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:pPr><w:ind w:left="720"/></w:pPr></w:style>
 <w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/></w:style>

@@ -1,0 +1,38 @@
+{
+  "reference": "Typora 1.12.4 on Windows, native GUI input and Ctrl+S, 2026-10-27",
+  "theme": "github.css",
+  "zoom": 1,
+  "proseFontSize": 16,
+  "proseLineHeight": 1.6,
+  "contentWidth": 800,
+  "savedSamples": "typora-enter-1.md through typora-enter-5.md are exact native Typora Ctrl+S outputs",
+  "measurement": "Raster pixels from lower fence border to next upper fence border; uncertainty ±1 px",
+  "sourcePhysicalLines": [
+    { "blankLines": 1, "newlines": 2, "paragraphs": 0, "gap": 15 },
+    { "blankLines": 2, "newlines": 3, "paragraphs": 0, "gap": 15 },
+    { "blankLines": 3, "newlines": 4, "paragraphs": 1, "gap": 56 },
+    { "blankLines": 4, "newlines": 5, "paragraphs": 1, "gap": 56 },
+    { "blankLines": 5, "newlines": 6, "paragraphs": 2, "gap": 94 },
+    { "blankLines": 6, "newlines": 7, "paragraphs": 2, "gap": 94 }
+  ],
+  "input": [
+    { "paragraphs": 1, "keys": "Ctrl+Enter at first fence end", "newlines": 4, "gap": 56 },
+    { "paragraphs": 2, "keys": "Enter once in empty paragraph", "newlines": 6, "gap": 94 },
+    { "paragraphs": 3, "keys": "Enter again", "newlines": 8, "gap": 133 },
+    { "paragraphs": 4, "keys": "Enter again", "newlines": 10, "gap": 171 },
+    { "paragraphs": 5, "keys": "Enter again", "newlines": 12, "gap": 209 }
+  ],
+  "original": {
+    "sha256": "208d130a7991a8e59c6a701514518ffa60fe0e8a8bd71b0b70c841e272f99924",
+    "eol": "LF",
+    "newlinesBetweenFences": 6,
+    "editableParagraphs": 2,
+    "gap": 94,
+    "clicks": [[488, 651]],
+    "navigation": "caret y=652; Down -> y=690; Down -> Java code; Up -> y=690",
+    "enter": { "newlines": 8, "gap": 132 },
+    "delete": { "newlines": 4, "gap": 56 }
+  },
+  "evidenceDirectory": "test-results/blank-line-gui-20261027",
+  "limitations": "Space/Tab-only source lines preserve their individual content. Their visual parity and native IME candidate UI are not established by this reference."
+}

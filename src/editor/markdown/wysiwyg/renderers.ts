@@ -466,6 +466,11 @@ function preNormalizeMermaidSvg(rawSvg: string): string {
   if (!svg) return rawSvg
 
   const svgNs = 'http://www.w3.org/2000/svg'
+  // Mermaid 11 mindmap positions label groups at node centers but can omit
+  // the text anchor on SVG-only labels. Preserve their intended centering.
+  if (svg.getAttribute('aria-roledescription') === 'mindmap') {
+    for (const text of svg.querySelectorAll('.label text:not([text-anchor])')) text.setAttribute('text-anchor', 'middle')
+  }
 
   for (const fo of [...svg.querySelectorAll('foreignObject')]) {
     const labelText = (fo.textContent || '').replace(/\s+/g, ' ').trim()
@@ -482,6 +487,8 @@ function preNormalizeMermaidSvg(rawSvg: string): string {
     textEl.setAttribute('y', String(y + h / 2))
     textEl.setAttribute('text-anchor', 'middle')
     textEl.setAttribute('dominant-baseline', 'central')
+    // Mermaid styles can override presentation attributes on replacement text.
+    textEl.setAttribute('style', 'text-anchor: middle; dominant-baseline: central')
     const innerDiv = fo.querySelector('[class]')
     const safeClass = innerDiv?.getAttribute('class')?.replace(/[^A-Za-z0-9_\s-]/g, '').trim()
     textEl.setAttribute('class', safeClass ? `markumo-fo-text ${safeClass}` : 'markumo-fo-text label')

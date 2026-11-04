@@ -64,7 +64,7 @@ impl Default for MarkdownTypography {
             font_family: "system".into(),
             line_height: 1.6,
             code_line_numbers: true,
-            code_wrap: false,
+            code_wrap: true,
             image_border: true,
         }
     }
@@ -120,10 +120,10 @@ impl Default for EditorSettings {
             ui_font_size: 14,
             font_size: 14,
             font_family: "system".into(),
-            word_wrap: false,
+            word_wrap: true,
             typewriter_mode: false,
             caret_animation: "smooth".into(),
-            syntax_style: "soft".into(),
+            syntax_style: "vivid".into(),
             bracket_mode: "matching".into(),
             show_outline: false,
             outline_width: 240,
@@ -339,4 +339,17 @@ mod clipboard_tests {
         }))
         .is_err());
     }
+}
+
+#[cfg(test)]
+mod export_defaults_tests {
+ use super::*;
+ #[test] fn defaults_and_explicit_preferences() {
+  let fresh: EditorSettings = serde_json::from_str("{}").unwrap();
+  assert!(fresh.word_wrap && fresh.markdown_typography.code_wrap && fresh.markdown_clipboard.copy_across_blocks);
+  assert_eq!(fresh.syntax_style, "vivid");
+  let old: EditorSettings = serde_json::from_value(serde_json::json!({"wordWrap":false,"markdownTypography":{"codeWrap":false},"markdownClipboard":{"copyAcrossBlocks":false},"syntaxStyle":"soft","settingsVersion":6})).unwrap();
+  assert!(!old.word_wrap && !old.markdown_typography.code_wrap && !old.markdown_clipboard.copy_across_blocks);
+  assert_eq!(old.syntax_style, "soft"); assert_eq!(old.settings_version, 6);
+ }
 }

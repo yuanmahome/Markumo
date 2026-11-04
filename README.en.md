@@ -34,6 +34,31 @@ Access in-app updates from the title bar or settings. On Linux, in-app updates a
 
 Windows installers do not currently have a commercial code-signing certificate. macOS builds use ad-hoc signing and are not notarized, so first launch may require confirmation in system settings. In-app updates use a separate signature-verification mechanism.
 
+## Getting started
+
+On a fresh profile, Markumo copies a real, editable **Markumo Examples** workspace to Documents, falling back to application data when needed, and opens its README beside the file tree. Existing profiles and file association launches keep their normal workflow. Later launches restore your session. Use **Help → Open example workspace** to return without overwriting edits. See the [example guide](examples/README.md).
+
+The View menu offers live editing, source editing, and split preview. CodeMirror 6 powers text, code, Markdown source, and embedded code editors; ProseMirror powers live Markdown editing. Source preservation retains original markers, blank lines, and line endings where possible. Use source mode for precise changes to structures that cannot be edited fully in live mode.
+
+Mermaid uses a strict safe compiler; KaTeX renders formulas. Images and diagrams support enlarged previews, and local resources require file authorization. Examples cover Markdown, eleven Mermaid types, code, configuration, text, images, and PDF. Footnotes, front matter, callouts, and TOC extensions retain documented editing and export limitations.
+
+Word wrap, Markdown code-block wrapping, and cross-block Markdown copying default to enabled; syntax colors default to vivid. Wrapping changes display only. Existing explicit off settings and soft colors remain unchanged. Toggle editor wrapping in View and adjust Markdown wrapping, theme, and syntax colors in preferences.
+
+Common keys include Ctrl+O to open, Ctrl+S to save, Ctrl+F to find, Ctrl+H to replace, and Ctrl+Shift+P for the command palette. Preferences list the current bindings and alternative presets. Folder workspaces add a file tree and cross-file search; drag tabs to split panes and edit the same file in sync.
+
+## Document export
+
+Use File → Export for HTML, DOCX, PDF, or PNG and export options. Native Word export needs no Pandoc: editable OOXML text is combined with individual high-resolution PNG diagrams and formulas. SVG/WebP assets are converted for Office compatibility; images retain their aspect ratios. Relative file targets within the source directory or authorized workspace become file URLs, subject to Office security prompts. HTML blocks, footnotes, and TOCs have explicit fallback diagnostics.
+
+| Format | Availability and behavior |
+| --- | --- |
+| HTML | Shared safe rendering, embedded local images, vector Mermaid SVG |
+| DOCX | Native worker, cancellable generation, explicit resource/format fallbacks |
+| PDF | Native WebView2 vector printing on Windows. Linux/macOS native PDF export is not implemented and reports that limitation. Text remains searchable |
+| PNG | A single long raster image with canvas and resource limits; use PDF for longer documents |
+
+PDF export does not rasterize whole pages. Oversized diagrams fit the page; very long diagrams may need splitting in the source for readability. Remote images are not automatically downloaded without authorization. Office fonts and pagination vary, and emoji appearance depends on installed fonts.
+
 ## Local development
 
 ### Prerequisites

@@ -558,6 +558,22 @@ impl FileService {
         Ok(())
     }
 
+    pub fn export_link(&self, token: &str, source: &str, roots: &[PathBuf]) -> Result<String> {
+        let document = self.image_document(token)?;
+        let (path, fragment) = source.split_once('#').unwrap_or((source, ""));
+        let path = path.split_once('?').map_or(path, |(path, _)| path);
+        if path.is_empty() || path.contains(':') || path.starts_with(['/', '\\']) {
+            return fail("link_scope", "只支持文档目录内的相对文件链接");
+        }
+        let target = self.resolve_image(token, path)?;
+        if guard(document.parent().unwrap(), &target).is_err() && !roots.iter().any(|root| guard(root, &target).is_ok()) {
+            return fail("link_scope", "链接位于授权目录之外");
+        }
+        let mut url = url::Url::from_file_path(target).map_err(|_| FileError::new("link_scope", "链接路径无效"))?;
+        if !fragment.is_empty() { url.set_fragment(Some(fragment)); }
+        Ok(url.into())
+    }
+
     pub(crate) fn resolve_image(&self, token: &str, source: &str) -> Result<PathBuf> {
         let document = self.image_document(token)?;
         if source.is_empty() || source.contains(['\0', '\r', '\n']) || source.len() > 4096 {

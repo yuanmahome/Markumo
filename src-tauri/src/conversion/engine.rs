@@ -531,5 +531,5 @@ pub fn print_html(html: &str) -> Result<String> {
     }
     // First policy applies before any untrusted element; later policies cannot
     // relax it. Keep CSS/fonts/HTTPS images and the existing WebView2 layout.
-    Ok(format!("<!doctype html><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline' data: https: http:; img-src data: https: http:; font-src data: https: http:; script-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'\">{html}"))
+    Ok(format!("<!doctype html><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline' data:; img-src data:; font-src data:; script-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'\">{html}"))
 }

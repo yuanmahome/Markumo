@@ -7,7 +7,10 @@ import { loadConversionSettings, saveLastExport, loadLastExport } from './conver
 import { renderMarkdownForExport, extractDocumentTitle } from './ExportRenderer'
 import { buildCompleteHtml } from './ExportStyles'
 import { exportAppearance } from './ExportAppearance'
+import { renderExportMath } from './ExportMath'
+import MarkdownIt from 'markdown-it'
 import { shallowRef } from 'vue'
+import { rasterExportSvg, renderExportDiagram, resolveExportImage } from './ExportMedia'
 
 export class ExportController {
   readonly progress = shallowRef<{phase:'generating'|'writing'}|null>(null)
@@ -110,6 +113,13 @@ export class ExportController {
     return this.exportDocument(last.format, last.options)
   }
 
+  private linkResolver(documentToken?: string) {
+    return async (href: string): Promise<string | null> => {
+      if (!isTauri() || !documentToken) return null
+      return invoke<string>('resolve_export_link', { token: documentToken, relative: decodeURIComponent(href) })
+    }
+  }
+
   private async exportHtml(
     markdown: string,
     title: string,
@@ -120,7 +130,8 @@ export class ExportController {
   ): Promise<void> {
     const resources = createMarkdownResources(() => documentToken)
     const appearance=exportAppearance(this.manager.getMarkdownTypography())
-    const { bodyHtml } = await renderMarkdownForExport(markdown, resources, settings.embedImagesAsDataUri, includeStyles&&appearance.typography.codeLineNumbers)
+    const { bodyHtml, warnings } = await renderMarkdownForExport(markdown, resources, settings.embedImagesAsDataUri, includeStyles&&appearance.typography.codeLineNumbers, this.linkResolver(documentToken))
+    for (const warning of warnings) this.notify(warning.message)
     const fullHtml = buildCompleteHtml(title, bodyHtml, includeStyles,undefined,appearance)
 
     const bytes = new TextEncoder().encode(fullHtml)
@@ -144,7 +155,8 @@ export class ExportController {
   ): Promise<void> {
     const resources = createMarkdownResources(() => documentToken)
     const appearance=exportAppearance(this.manager.getMarkdownTypography())
-    const { bodyHtml } = await renderMarkdownForExport(markdown, resources, true,appearance.typography.codeLineNumbers)
+    const { bodyHtml, warnings } = await renderMarkdownForExport(markdown, resources, true,appearance.typography.codeLineNumbers, this.linkResolver(documentToken))
+    for (const warning of warnings) this.notify(warning.message)
     const fullHtml = buildCompleteHtml(title, bodyHtml, true, settings.pdf,appearance)
 
     if (isTauri()) {
@@ -159,7 +171,10 @@ export class ExportController {
       if (win) {
         win.document.write(fullHtml)
         win.document.close()
-        setTimeout(() => win.print(), 500)
+        await win.document.fonts.ready
+        await Promise.all([...win.document.images].map(image => image.decode().catch(() => {})))
+        await new Promise<void>(resolve => win.requestAnimationFrame(() => win.requestAnimationFrame(() => resolve())))
+        win.print()
       } else {
         throw new Error('浏览器阻止了打印窗口，请允许弹出窗口后重试。')
       }
@@ -179,18 +194,22 @@ export class ExportController {
     // first because it needs no external tool and reports its own warnings.
     const resources = createMarkdownResources(() => documentToken)
     const { generateDocx } = await import('./docxWorkerClient')
+    const linkTargets: Record<string, string> = {}
+    if (isTauri() && documentToken) {
+      const tokens = new MarkdownIt().parse(markdown, {})
+      for (const token of tokens.flatMap(token => token.children ?? [])) {
+        const href = token.type === 'link_open' ? String(token.attrGet('href') || '') : null
+        if (!href || /^(?:[a-z][a-z0-9+.-]*:|[/#])/i.test(href)) continue
+        try { linkTargets[href] = await invoke<string>('resolve_export_link', { token: documentToken, relative: decodeURIComponent(href) }) } catch { /* Writer emits an accurate fallback. */ }
+      }
+    }
     const result = await generateDocx(markdown, {
+      linkTargets,
       signal,
       title,
-      resolveImage: async source => {
-        if (!source || /^(?:https?:)?\/\//i.test(source)) return null
-        try {
-          const bytes = await resources.loadLocal(source)
-          return { data: bytes, alt: source }
-        } catch {
-          return null
-        }
-      },
+      renderMath: (source, display) => renderExportMath(source, display, signal),
+      renderDiagram: source => renderExportDiagram(source, signal),
+      resolveImage: source => resolveExportImage(source, resources, signal),
     })
     for (const warning of result.warnings) this.notify(warning.message)
     const bytes = result.bytes
@@ -215,8 +234,9 @@ export class ExportController {
   ): Promise<void> {
     const resources = createMarkdownResources(() => documentToken)
     const appearance=exportAppearance(this.manager.getMarkdownTypography())
-    const { bodyHtml } = await renderMarkdownForExport(markdown, resources, true,appearance.typography.codeLineNumbers)
+    const { bodyHtml, warnings } = await renderMarkdownForExport(markdown, resources, true,appearance.typography.codeLineNumbers, this.linkResolver(documentToken))
 
+    for (const warning of warnings) this.notify(warning.message)
     // Isolate export CSS from the editor and give html2canvas a complete,
     // styled document rather than an unstyled offscreen fragment.
     const frame=document.createElement('iframe')
@@ -228,17 +248,34 @@ export class ExportController {
       exported.open();exported.write(buildCompleteHtml('',bodyHtml,true,undefined,appearance));exported.close()
       await exported.fonts.ready
       await Promise.all([...exported.images].map(image=>image.decode().catch(()=>{})))
+      for (const svg of exported.querySelectorAll('svg')) {
+        const raster = await rasterExportSvg(new XMLSerializer().serializeToString(svg), '图表')
+        const img = exported.createElement('img')
+        let binary = ''; for (const byte of raster.data) binary += String.fromCharCode(byte)
+        img.src = 'data:image/png;base64,' + btoa(binary)
+        img.width = Math.round(raster.width!); img.height = Math.round(raster.height!)
+        svg.replaceWith(img); await img.decode()
+      }
       const container=exported.body
+      container.style.width = settings.png.width + 'px'
+      container.style.boxSizing = 'border-box'
+      container.style.overflowWrap = 'anywhere'
+      const wrapStyle = exported.createElement('style')
+      wrapStyle.textContent = '.markumo-code-text { white-space:pre-wrap !important; overflow-wrap:anywhere !important }'
+      exported.head.append(wrapStyle)
       container.style.background=settings.png.backgroundColor||appearance.colors.editor
       // Check document height
       const totalHeight = container.scrollHeight
-      if (totalHeight > 30000) {
+      if (totalHeight * settings.png.width * (settings.png.scale || 2) ** 2 > 64_000_000 || totalHeight > 30000) {
         throw new Error('文档超出图片最大安全画布尺寸（30,000像素），建议改用 PDF 格式导出。')
       }
       frame.style.height=`${totalHeight}px`
 
       const { default: html2canvas } = await import('html2canvas')
       const canvas = await html2canvas(container, {
+        width: settings.png.width,
+        height: totalHeight,
+        windowWidth: settings.png.width,
         scale: settings.png.scale || 2,
         backgroundColor: settings.png.backgroundColor || '#ffffff',
         useCORS: true,
@@ -246,6 +283,7 @@ export class ExportController {
       })
 
       const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
+      canvas.width = canvas.height = 0
       if (!blob) throw new Error('生成 PNG 图像失败')
 
       const buffer = await blob.arrayBuffer()

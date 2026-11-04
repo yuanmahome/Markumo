@@ -7,6 +7,7 @@ mod history;
 mod profile_migration;
 mod recovery;
 mod session;
+mod examples;
 mod workspace;
 #[cfg(feature = "segmented-prototype")]
 pub mod text_document;
@@ -207,6 +208,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(Arc::new(Mutex::new(files::FileService::default())))
         .manage(workspace_store)
+        .manage(examples::ExampleStore::default())
         .manage(session::LaunchStore::default())
         .manage(session::SessionStore::default())
         .manage(commands::update::UpdateStore::default())
@@ -221,6 +223,8 @@ pub fn run() {
             let mut service = store.lock().map_err(|_| std::io::Error::other("文件服务状态损坏"))?;
             let app_data = app.path().app_data_dir()?;
             profile_migration::migrate(&app_data)?;
+            let example_service = examples::ExampleService::configure(&app_data, app.path().resource_dir()?.join("examples"), app.path().document_dir().unwrap_or_else(|_| app_data.clone()))?;
+            *app.state::<examples::ExampleStore>().0.lock().map_err(|_| std::io::Error::other("示例状态损坏"))? = Some(example_service);
             service.configure(app_data.join("files.json"));
             // Initialization failure is reported by watch_external, not hidden.
             service.external_watcher = files::external::ExternalWatcher::new(app.handle().clone()).ok();
@@ -286,7 +290,7 @@ pub fn run() {
             commands::update::clear_update_pending, commands::update::confirm_update_startup,
             commands::app::get_app_version,
             commands::app::ensure_update_window,
-            commands::session::initialize_launch,commands::session::persist_session,
+            examples::example_workspace, commands::session::initialize_launch,commands::session::persist_session,
             commands::detach::detach_tab_to_window, commands::detach::take_detached_document,
             commands::tab_drag::begin_tab_drag,commands::tab_drag::cancel_tab_drag,
             commands::detach::detach_status,
@@ -307,7 +311,7 @@ pub fn run() {
             commands::files::media_metadata,
             commands::files::read_media_chunk,
             commands::files::open_media_default,
-            commands::files::read_markdown_image,
+            commands::files::read_markdown_image, commands::files::resolve_export_link,
             commands::files::reveal_markdown_image,
             commands::files::open_markdown_image_default,
             commands::files::choose_markdown_images,commands::files::import_markdown_image,

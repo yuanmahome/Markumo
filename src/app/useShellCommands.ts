@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core'
 import { computed, type Ref, type ComputedRef } from 'vue'
 import { EditorView } from '@codemirror/view'
 import type { Preferences, Encoding, FileOpenEncoding } from '../features/files/contracts'
@@ -318,6 +319,10 @@ export function useShellCommands(host: ShellCommandsHost) {
       { id: 'workspace', title: '切换到工作区模式', detail: '布局', category: 'action', action: () => host.setMode('workspace') },
       { id: 'sidebar', title: '显示/隐藏侧边栏', detail: '', category: 'action', action: host.toggleSidebar },
       { id: 'theme', title: '切换主题：深色 / 浅色 / 跟随系统', detail: '外观', category: 'action', action: host.toggleTheme },
+      { id: 'open-examples', title: '打开示例工作区', detail: '', category: 'action', action: async () => {
+        const path = await invoke<string>('example_workspace')
+        if (await host.openWorkspacePath(path, true)) await host.openRecent(path + '/README.md')
+      } },
       { id: 'settings', title: '打开首选项', detail: '设置', category: 'action', action: host.openSettings },
     ]
     const encodings: Encoding[] = ['UTF-8', 'UTF-16LE', 'UTF-16BE', 'GB18030', 'windows-1252']

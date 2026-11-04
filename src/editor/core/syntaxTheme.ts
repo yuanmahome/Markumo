@@ -7,9 +7,10 @@ export const syntaxStyles = ['soft', 'standard', 'vivid'] as const
 export type SyntaxStyle = typeof syntaxStyles[number]
 /** Read both the original settings and values saved by the theme-card version. */
 export function normalizeSyntaxStyle(value: unknown): SyntaxStyle {
+  if (value === 'fleet' || value === 'fleet-dark' || value === 'fleet-light') return 'soft'
   if (value === 'monokai-pro' || value === 'monokai-classic') return 'vivid'
   if (value === 'one-dark' || value === 'github-dark' || value === 'github-light') return 'standard'
-  return syntaxStyles.includes(value as SyntaxStyle) ? value as SyntaxStyle : 'soft'
+  return syntaxStyles.includes(value as SyntaxStyle) ? value as SyntaxStyle : 'vivid'
 }
 export const syntaxRoles = [
   'foreground', 'muted', 'keyword', 'control', 'string', 'number', 'boolean', 'null', 'comment', 'doc-comment',

@@ -1,4 +1,5 @@
 import type { PdfOptions } from './contracts'
+import { exportMathCss } from './ExportMath'
 import syntaxCss from '../../styles/syntax.css?raw'
 import { exportAppearance, type ExportAppearance } from './ExportAppearance'
 
@@ -157,12 +158,14 @@ a:hover {
   text-decoration: underline;
 }
 
+.markumo-diagram-export svg { max-width:100%; height:auto; }
 /* KaTeX formula centering */
 .katex-display {
   margin: 1em 0;
   text-align: center;
 }
 
+${exportMathCss}
 ${getHighlightCss()}
 ${getAppearanceCss(appearance,codeWrap)}
 `
@@ -221,11 +224,20 @@ export function getPrintCss(pdfOptions?: PdfOptions): string {
     break-after: avoid;
   }
 
-  table, pre, blockquote, img, .katex-display {
+  img, .katex-display {
     page-break-inside: avoid;
     break-inside: avoid;
   }
 
+  pre, blockquote, table { break-inside: auto; overflow: visible; }
+  pre.markumo-code > code { white-space: normal !important; }
+  .markumo-code-line { break-inside: avoid; }
+  .markumo-code-text { white-space: pre-wrap !important; overflow-wrap: anywhere !important; }
+  thead { display: table-header-group; }
+  a, td { overflow-wrap: anywhere; }
+  .markumo-diagram-export svg { max-width: 100%; max-height: 240mm; width: auto; height: auto; }
+  .markumo-diagram-export { break-inside: avoid; }
+  p:has(+ .markumo-diagram-export) { break-after: avoid; }
   tr {
     page-break-inside: avoid;
     break-inside: avoid;

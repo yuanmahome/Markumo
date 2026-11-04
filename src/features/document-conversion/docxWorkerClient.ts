@@ -22,17 +22,17 @@ export function generateDocx(markdown: string, options: DocxOptions = {}): Promi
     worker.onmessage = async event => {
       if (finished) return
       const message = event.data
-      if (message.kind === 'image') {
+      if (message.kind === 'image' || message.kind === 'diagram' || message.kind === 'math') {
         let image = null
-        try { image = await options.resolveImage?.(message.source) ?? null } catch { /* Writer reports an explicit image fallback. */ }
+        try { image = await (message.kind === 'math' ? options.renderMath?.(message.source, message.display) : message.kind === 'diagram' ? options.renderDiagram?.(message.source) : options.resolveImage?.(message.source)) ?? null } catch { /* Writer reports an explicit image fallback. */ }
         if (finished) return
         const data = image?.data.slice().buffer
-        worker.postMessage({ kind: 'image-result', id: message.id, image: data ? { data, alt: image!.alt } : null }, data ? [data] : [])
+        worker.postMessage({ kind: 'image-result', id: message.id, image: data ? { data, alt: image!.alt, width: image!.width, height: image!.height } : null }, data ? [data] : [])
       } else if (message.kind === 'result') {
         cleanup(); resolve({ bytes: new Uint8Array(message.bytes), warnings: message.warnings, stats: message.stats })
       } else if (message.kind === 'error') fail(new Error(message.message))
     }
     if (options.signal?.aborted) { cancel(); return }
-    worker.postMessage({ kind: 'start', markdown, title: options.title, mediaBudgetBytes: options.mediaBudgetBytes })
+    worker.postMessage({ kind: 'start', markdown, title: options.title, mediaBudgetBytes: options.mediaBudgetBytes, linkTargets: options.linkTargets })
   })
 }

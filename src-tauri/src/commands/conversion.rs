@@ -351,18 +351,23 @@ fn render_pdf(
         mpsc, Arc,
     };
     use tauri::{WebviewUrl, WebviewWindowBuilder};
-    use webview2_com::{Microsoft::Web::WebView2::Win32::*, PrintToPdfCompletedHandler};
+    use webview2_com::{Microsoft::Web::WebView2::Win32::*, ExecuteScriptCompletedHandler, PrintToPdfCompletedHandler};
     use windows_core::Interface;
     let work = Arc::new(PdfWorkspace::new()?);
     let input = work.path().join("print.html");
     std::fs::write(&input, conversion::print_html(html)?).map_err(|e| e.to_string())?;
     let url = url::Url::from_file_path(&input).map_err(|_| "打印文件 URL 无效")?;
     let allowed = url.clone();
+    let loaded = Arc::new(AtomicBool::new(false));
+    let page_loaded = loaded.clone();
     let window = WebviewWindowBuilder::new(
         app,
         format!("pdf-print-{}", conversion::random_id()?),
         WebviewUrl::External(url),
     )
+    .on_page_load(move |_, payload| {
+        if payload.event() == tauri::webview::PageLoadEvent::Finished { page_loaded.store(true, Ordering::Release); }
+    })
     .on_navigation(move |url| url == &allowed)
     .data_directory(work.path().join("webview-profile"))
     .visible(false)
@@ -385,7 +390,29 @@ fn render_pdf(
     let job_alive = alive.clone();
     let job_work = work.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(1200));
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut stable = 0;
+        while stable < 2 {
+            if !job_alive.load(Ordering::Acquire) { return }
+            if Instant::now() >= deadline { let _ = tx.send(Err("打印资源准备超时".into())); return }
+            if !loaded.load(Ordering::Acquire) { std::thread::sleep(Duration::from_millis(50)); continue }
+            let (ready_tx, ready_rx) = mpsc::channel();
+            // Fixed host-owned read-only probe. Document scripts remain forbidden by CSP.
+            let probe = window.with_webview(move |wv| {
+                let result = (|| -> Result<(), String> {
+                    let core = unsafe { wv.controller().CoreWebView2() }.map_err(|e| e.to_string())?;
+                    let script = windows_core::HSTRING::from("document.readyState === 'complete' && document.fonts.status === 'loaded' && Array.from(document.images).every(i => i.complete) && Array.from(document.querySelectorAll('svg')).every(s => s.getBoundingClientRect().width > 0)");
+                    let completed = ready_tx.clone();
+                    let handler = ExecuteScriptCompletedHandler::create(Box::new(move |error, value| {
+                        let _ = completed.send(error.is_ok() && value == "true"); Ok(())
+                    }));
+                    unsafe { core.ExecuteScript(&script, &handler) }.map_err(|e| e.to_string())
+                })();
+                if result.is_err() { let _ = ready_tx.send(false); }
+            });
+            if probe.is_ok() && ready_rx.recv_timeout(Duration::from_secs(1)).unwrap_or(false) { stable += 1 } else { stable = 0 }
+            std::thread::sleep(Duration::from_millis(50));
+        }
         if !job_alive.load(Ordering::Acquire) {
             return;
         }

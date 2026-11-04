@@ -6,7 +6,6 @@ src-tauri/target/
 coverage/
 playwright-report/
 test-results/
-tests/
 .markumo-dev/
 .markumo-media-test/
 .release-artifacts/

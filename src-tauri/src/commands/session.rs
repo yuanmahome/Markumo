@@ -22,6 +22,7 @@ pub struct Startup {
 
 #[tauri::command]
 pub async fn initialize_launch(
+    app: tauri::AppHandle,
     window: Window,
     launches: State<'_, LaunchStore>,
     sessions: State<'_, SessionStore>,
@@ -75,6 +76,26 @@ pub async fn initialize_launch(
                             .push(format!("工作区恢复失败：{root}：{error}")),
                     }
                 }
+            }
+        }
+        if launch.kind != LaunchKind::Detached {
+            match crate::examples::automatic(&app, launch.kind == LaunchKind::File) {
+                Ok(Some(path)) if session.is_none() => {
+                    match workspaces.lock().map_err(|e| e.to_string())?.add_workspace(path.clone()) {
+                        Ok(info) => {
+                            result.roots.push(info);
+                            result.layout.mode = "workspace".into(); result.layout.sidebar_visible = true;
+                            let readme = path.join("README.md");
+                            result.active_path = Some(readme.to_string_lossy().into_owned());
+                            let mut service = files.lock().map_err(|e| e.to_string())?;
+                            service.set_owner(&label);
+                            result.files = service.open_batch(vec![readme], None);
+                        }
+                        Err(error) => result.warnings.push(error),
+                    }
+                }
+                Err(error) => result.warnings.push(format!("示例工作区初始化失败：{error}")),
+                _ => {}
             }
         }
         let mut service = files.lock().map_err(|e| e.to_string())?;

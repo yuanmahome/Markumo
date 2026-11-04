@@ -764,3 +764,9 @@ pub async fn persist_layout(
     })
     .await
 }
+
+#[tauri::command]
+pub async fn resolve_export_link(window: Window, store: State<'_, FileStore>, workspace: State<'_, crate::commands::workspace::WorkspaceStore>, token: String, relative: String) -> Result<String> {
+    let roots = workspace.for_window(window.label()).map_err(|e| FileError::new("state", &e))?.lock().map_err(|_| FileError::new("state", "工作区授权不可用"))?.roots();
+    operate(store.inner().clone(), window.label().to_owned(), move |service| service.export_link(&token, &relative, &roots)).await
+}

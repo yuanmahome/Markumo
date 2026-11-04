@@ -61,5 +61,6 @@ export function mainMenu(state: MainMenuState): MenuGroup[] {
         cmd('merge-panes','合并所有分栏'),
       ]),
       checkbox('toggle-focus','专注模式',state.focus),checkbox('toggle-typewriter','打字机模式',!!state.typewriter)]},
+    {id:'help',title:'帮助',items:[cmd('open-examples','打开示例工作区')]},
   ]
 }
