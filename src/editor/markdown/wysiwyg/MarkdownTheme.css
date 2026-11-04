@@ -384,7 +384,7 @@ body.light .markdown-live { --text: #333; --bright: #333; --muted: #777; --line:
 
 /* One shared paint layer keeps the divider stationary across static/CM views
    and horizontal scrolling, without adding width to either gutter. */
-.markdown-live .md-code-block.has-code-numbers .md-code-surface::after {
+.markdown-live .md-code-block.has-code-numbers:not(.is-mermaid-preview) .md-code-surface::after {
   content: '';
   position: absolute;
   top: 0;
@@ -890,16 +890,6 @@ body.light .file-icon-gray { color: #6c7c92; }
 .markdown-live .md-image-properties label { display: flex; flex: 1 1 100%; gap: 8px; align-items: center; }
 .markdown-live .md-image-properties label input { min-width: 0; flex: 1; }
 .markdown-live .md-image-properties label select { flex: 1; }
-.markdown-live .md-image-lightbox { position: fixed; inset: 0; width: calc(100vw - 32px); height: calc(100vh - 32px); max-width: none; max-height: none; padding: 0; border: 1px solid var(--line); border-radius: 6px; color: var(--text); background: var(--editor); }
-.markdown-live .md-image-lightbox::backdrop { background: #000b; }
-.markdown-live .md-image-lightbox[open] { display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.markdown-live .md-image-lightbox-tools { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px; border-bottom: 1px solid var(--line); }
-.markdown-live .md-image-lightbox-tools button { padding: 4px 10px; min-height: 28px; border: 1px solid var(--line); border-radius: 4px; background: var(--soft); color: var(--text); font: var(--ui-font-size)/1.5 var(--font-sans); cursor: pointer; }
-.markdown-live .md-image-lightbox-tools button:hover { background: var(--hover); }
-.markdown-live .md-image-lightbox-tools output { min-width: 48px; text-align: center; }
-.markdown-live .md-image-lightbox-surface { min-height: 0; overflow: auto; padding: 16px; cursor: grab; touch-action: none; }
-.markdown-live .md-image-lightbox-surface:active { cursor: grabbing; }
-.markdown-live .md-image-lightbox-surface img { display: block; margin: 0 auto; max-width: none; max-height: none; }
 
 .markdown-live .md-image-placeholder {
   line-height: 1.6;

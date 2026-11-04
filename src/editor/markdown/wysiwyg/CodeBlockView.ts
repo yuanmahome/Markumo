@@ -250,6 +250,8 @@ export class CodeBlockView implements NodeView {
 
     // Mermaid specific controls
     this.diagram.className = 'md-diagram'
+    this.diagram.setAttribute('role', 'img')
+    this.diagram.setAttribute('aria-label', 'Mermaid 图表')
     this.diagramToolbar.className = 'md-diagram-toolbar'
 
     this.renderButton.type = 'button'
@@ -865,6 +867,7 @@ export class CodeBlockView implements NodeView {
       this.themeObserver = undefined
     }
     this.isEditingMermaid = editing
+    this.dom.classList.toggle('is-mermaid-preview', this.isMermaid && !editing)
     this.copyButton.hidden = this.isMermaid && !editing
     this.cmContainer.hidden = this.isMermaid && !editing
     this.diagram.hidden = !this.isMermaid
@@ -882,6 +885,7 @@ export class CodeBlockView implements NodeView {
       if (this.renderVisible || editing) {
         void this.renderMermaidDiagram()
       } else if (!this.diagram.querySelector('svg')) {
+        this.diagram.classList.remove('md-render-error')
         this.diagram.textContent = '图表加载中…'
       }
     }
@@ -898,7 +902,10 @@ export class CodeBlockView implements NodeView {
     this.diagramAbort = controller
     const generation = ++this.renderGeneration
     this.renderButton.disabled = true
-    if (!this.diagram.querySelector('svg')) this.diagram.textContent = '图表加载中…'
+    if (!this.diagram.querySelector('svg')) {
+      this.diagram.classList.remove('md-render-error')
+      this.diagram.textContent = '图表加载中…'
+    }
     try {
       const { renderDiagram } = await import('./renderers')
       await renderDiagram(
@@ -919,11 +926,15 @@ export class CodeBlockView implements NodeView {
         (this.renderVisible || this.isEditingMermaid) &&
         !!this.diagram.querySelector('svg')
       ) {
+        this.diagram.classList.remove('md-render-error')
         this.diagramDirty = false
       }
     } catch (error) {
       if (!this.dead && !controller.signal.aborted && generation === this.renderGeneration) {
-        this.diagram.textContent = `图表无法渲染：${String(error)}`
+        const message = error instanceof Error ? error.message : String(error)
+        this.diagram.classList.add('md-render-error')
+        this.diagram.textContent =
+          /^(?:图表|Mermaid|暂不支持|未能识别)/.test(message) ? message : `图表无法渲染：${message}`
         this.diagramDirty = false
       }
     } finally {

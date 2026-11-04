@@ -77,34 +77,17 @@ export async function renderMarkdownForExport(
     const mermaidBlocks = container.querySelectorAll<HTMLElement>('pre > code.language-mermaid')
     if (mermaidBlocks.length > 0) {
       try {
-        const [{ default: mermaid }, { default: purify }] = await Promise.all([
-          import('mermaid'),
-          import('dompurify'),
-        ])
-        mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: 'strict',
-          theme: 'default',
-          htmlLabels: false,
-        })
-
-        let counter = 0
+        const { compileSafeMermaidSvg } = await import('../../editor/markdown/wysiwyg/renderers')
         for (const block of Array.from(mermaidBlocks)) {
           const source = block.textContent || ''
-          const id = `markumo-export-mermaid-${++counter}`
           try {
-            const { svg } = await mermaid.render(id, source)
-            const cleanSvg = purify.sanitize(svg, {
-              USE_PROFILES: { svg: true, svgFilters: true },
-            })
+            const cleanSvg = await compileSafeMermaidSvg(source, { theme: 'default', useCache: true })
             const wrapper = doc.createElement('div')
             wrapper.className = 'markumo-diagram-export'
             wrapper.innerHTML = cleanSvg
             block.parentElement?.replaceWith(wrapper)
           } catch (e) {
             console.warn('Mermaid export render fallback:', e)
-          } finally {
-            document.getElementById('d' + id)?.remove()
           }
         }
       } catch (e) {

@@ -185,7 +185,9 @@ export function mountHtmlImages(
 ): MountedImageHandle {
   const acquiredKeys: string[] = []
   let disposed = false
-  const imgElements = Array.from(container.querySelectorAll<HTMLImageElement>('img'))
+  const imgElements = Array.from(container.querySelectorAll<HTMLImageElement>('img')).filter(
+    img => !img.closest('.md-image-slot, .md-image-preview, .md-live-image')
+  )
 
   for (const img of imgElements) {
     const zoom = Number.parseFloat(img.style.getPropertyValue('zoom'))
@@ -203,6 +205,7 @@ export function mountHtmlImages(
     img.removeAttribute('data-md-safe-src')
     img.removeAttribute('src')
     if (!rawSrc) continue
+    img.dataset.mdRawSrc = rawSrc
 
     const dest = imageDestination(rawSrc)
 

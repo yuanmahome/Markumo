@@ -29,7 +29,7 @@ import { TocNodeView } from './TocNodeView'
 import { FootnoteDefNodeView } from './FootnoteDefNodeView'
 import { renderFrontMatterCard } from './FrontMatterCard'
 import { LiveImageView } from './LiveImageView'
-import { ImagePreview } from './ImagePreview'
+import { attachMediaHoverTrigger, MediaPreview, type MediaHoverTriggerHandle } from './ImagePreview'
 import { positionImageOverlay } from './imageOverlay'
 import { controlledImageHtml, normalizeImageWidth, normalizeImageAlign } from './imageHtml'
 import { detectMimeType, imageDestination, markdownImageError } from '../images'
@@ -81,7 +81,8 @@ export class MarkdownEditorController implements LiveEditor {
   private outlineHeadingDoc?: Node
   private outlineHeadingPositions: number[] = []
   private tableToolbar: LiveTableToolbar
-  private imagePreview: ImagePreview
+  private imagePreview: MediaPreview
+  private mediaHoverTrigger?: MediaHoverTriggerHandle
   private properties = document.createElement('div')
   private propertyObserver?: ResizeObserver
   private repositionProperties = () => {
@@ -212,7 +213,12 @@ export class MarkdownEditorController implements LiveEditor {
 
     this.dom.append(this.properties, mount)
     parent.append(this.dom)
-    this.imagePreview = new ImagePreview(this.dom)
+    this.imagePreview = new MediaPreview(this.dom)
+    this.mediaHoverTrigger = attachMediaHoverTrigger(this.dom, {
+      preview: this.imagePreview,
+      getResources: () => this.options.resources,
+      isAlive: () => !this.disposed,
+    })
     this.fenceAutocomplete = new FenceAutocomplete(this.dom)
     this.slashController = new LiveSlashController(this, this.dom)
 
@@ -1529,6 +1535,22 @@ export class MarkdownEditorController implements LiveEditor {
   private updateTools() {
     this.imagePreview?.refresh()
     for(const image of this.liveImages)image.refreshLayout()
+    if (this.mediaHoverTrigger) {
+      if (this.view.state.selection instanceof NodeSelection) {
+        const selectedDom = this.view.nodeDOM(this.view.state.selection.from)
+        this.mediaHoverTrigger.syncFocusTarget(selectedDom instanceof Element ? selectedDom : null)
+      } else if (this.inlineSource?.kind === 'image') {
+        const selectedDom = this.view.nodeDOM(this.inlineSource.from)
+        this.mediaHoverTrigger.syncFocusTarget(selectedDom instanceof Element ? selectedDom : null)
+      } else if (
+        document.activeElement !== this.mediaHoverTrigger.button &&
+        !this.dom.querySelector('.md-code-block:focus-within, .md-html-block-view:focus-within, .md-html-inline-view:focus-within')
+      ) {
+        this.mediaHoverTrigger.syncFocusTarget(null)
+      } else {
+        this.mediaHoverTrigger.reposition()
+      }
+    }
     if (this.propertyTargetToken && nodeTargetKey.getState(this.view.state)?.token !== this.propertyTargetToken) {
       this.properties.hidden = true
       this.propertyTargetToken = null
@@ -2692,6 +2714,19 @@ export class MarkdownEditorController implements LiveEditor {
       }
     }
     if (link) entries.push({ label: '链接属性…', disabled: !editable, run: () => { this.closeInline(); this.linkProperties(link as HTMLElement, link.getAttribute('data-href') || '') } })
+    const diagramBox = target.closest('.md-diagram')
+    const diagramSvg = diagramBox?.querySelector<SVGSVGElement>(':scope > svg')
+    if (diagramSvg && !diagramBox?.classList.contains('md-render-error')) {
+      entries.unshift(
+        {
+          label: '放大预览',
+          run: () => {
+            this.imagePreview.openDiagram(diagramSvg, () => diagramSvg.isConnected, () => this.view.dom.focus({ preventScroll: true }))
+          },
+        },
+        'separator',
+      )
+    }
     return entries
   }
 
@@ -2751,6 +2786,8 @@ export class MarkdownEditorController implements LiveEditor {
     cancelSmoothScroll(this.dom)
     this.typewriterCleanup?.()
     this.contextMenu.close()
+    this.mediaHoverTrigger?.destroy()
+    this.mediaHoverTrigger = undefined
     this.imagePreview.destroy()
     this.fenceAutocomplete?.destroy()
     this.slashController?.destroy()

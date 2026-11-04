@@ -398,6 +398,7 @@ export function mountMarkdownImage(
       }
       const image = document.createElement('img')
       image.alt = alt
+      image.dataset.mdRawSrc = source
       image.referrerPolicy = 'no-referrer'
       image.decoding = 'async'
       if (destination.kind === 'remote') image.crossOrigin = 'anonymous'

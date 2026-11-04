@@ -1,5 +1,5 @@
 <template>
-  <div class="split-preview-pane" :style="markdownTypographyStyle(settings, true)" :data-code-numbers="settings.codeLineNumbers" :data-code-wrap="settings.codeWrap" :data-image-border="(imageBorder ?? settings.imageBorder) !== false">
+  <div ref="paneRef" class="split-preview-pane" :style="markdownTypographyStyle(settings, true)" :data-code-numbers="settings.codeLineNumbers" :data-code-wrap="settings.codeWrap" :data-image-border="(imageBorder ?? settings.imageBorder) !== false">
     <div
       ref="contentRef"
       class="split-preview-content markdown-body"
@@ -14,11 +14,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { LanguageSupport } from '@codemirror/language'
 import { openMarkdownLink } from './links'
 import { createMarkdownRenderer, type PreviewEnvironment, type PreviewSlot } from './rendering'
 import { renderMath, renderDiagram } from './wysiwyg/renderers'
+import { attachMediaHoverTrigger, MediaPreview, type MediaHoverTriggerHandle } from './wysiwyg/ImagePreview'
 import { DISPLAY_HIGHLIGHT_MAX_CHARS } from './wysiwyg/CodeBlockView'
 import { defaultMarkdownTypography, type MarkdownTypography } from './wysiwyg/contracts'
 import { markdownTypographyStyle } from './typography'
@@ -51,7 +52,20 @@ const emit = defineEmits<{
   (e: 'edit-image', from: number, snapshot: string): void
 }>()
 
+const paneRef = ref<HTMLElement | null>(null)
 const contentRef = ref<HTMLElement | null>(null)
+const mediaPreview = new MediaPreview()
+let mediaHoverTrigger: MediaHoverTriggerHandle | undefined
+
+onMounted(() => {
+  if (!disposed && paneRef.value) {
+    mediaHoverTrigger = attachMediaHoverTrigger(paneRef.value, {
+      preview: mediaPreview,
+      getResources: () => props.resources || fallbackResources,
+      isAlive: () => !disposed,
+    })
+  }
+})
 
 const revision = ref(0)
 let disposed = false
@@ -138,6 +152,9 @@ onUnmounted(() => {
   themeObserver = undefined
   if (timer) clearTimeout(timer)
   teardownHydration()
+  mediaHoverTrigger?.destroy()
+  mediaHoverTrigger = undefined
+  mediaPreview.destroy()
   contentRef.value?.replaceChildren()
   lastParsedText = ''
   lastRenderedResult = { html: '', slots: [] }
@@ -273,8 +290,9 @@ watch(
         const diagram = host.querySelector<HTMLElement>('.md-diagram')
         if (!diagram) continue
         diagramCount++
-        if (diagramCount > 16) {
-          diagram.textContent = '图表达到每次预览 16 个的预算。'
+        if (diagramCount > 512) {
+          diagram.classList.add('md-render-error')
+          diagram.textContent = '单文档图表数量超过 512 个安全上限，已暂停后续图表预览；Markdown 源码仍完整保留。'
           continue
         }
         let diagramVisible = false
@@ -287,6 +305,10 @@ watch(
           itemAbort = ctrl
           const abortFromRound = () => ctrl.abort()
           roundController.signal.addEventListener('abort', abortFromRound, { once: true })
+          if (!diagram.querySelector('svg')) {
+            diagram.classList.remove('md-render-error')
+            diagram.textContent = '正在渲染图表…'
+          }
           void renderDiagram(
             diagram,
             slot.source,
@@ -295,14 +317,18 @@ watch(
           )
             .then(() => {
               if (isCurrentRound() && !ctrl.signal.aborted && !!diagram.querySelector('svg')) {
+                diagram.classList.remove('md-render-error')
                 diagramDirty = false
+                mediaHoverTrigger?.reposition()
               }
             })
             .catch(error => {
               if (diagram.isConnected && isCurrentRound() && !ctrl.signal.aborted) {
                 diagram.classList.add('md-render-error')
-                diagram.textContent = `${error instanceof Error ? error.message : error}\n${slot.source}`
+                const message = error instanceof Error ? error.message : String(error)
+                diagram.textContent = message
                 diagramDirty = false
+                mediaHoverTrigger?.reposition()
               }
             })
             .finally(() => {
@@ -443,6 +469,7 @@ watch(
           () => {
             if (!disposed && generation === hydrateGeneration) {
               host.classList.toggle('md-image-ready', !!host.querySelector('img')?.naturalWidth)
+              mediaHoverTrigger?.reposition()
             }
           }
         )
@@ -453,6 +480,8 @@ watch(
     if (contentRef.value) {
       mountedHtmlImages = mountHtmlImages(contentRef.value, props.resources || fallbackResources)
     }
+    mediaPreview.refresh()
+    mediaHoverTrigger?.reposition()
   },
   { immediate: true, flush: 'post' }
 )

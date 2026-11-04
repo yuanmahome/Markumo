@@ -599,3 +599,162 @@ body.light :is(.markdown-live, .split-preview-pane) {
   font-size: 12px;
   padding: 4px 0;
 }
+
+/* Mermaid 错误状态（所见即所得与双栏预览一致） */
+:is(.markdown-live, .split-preview-pane) .md-diagram.md-render-error {
+  display: block;
+  color: var(--pink, #ef4444);
+  font: 12.5px/1.6 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: left;
+  padding: 12px 16px;
+  background: color-mix(in srgb, var(--pink, #ef4444) 6%, transparent);
+}
+
+/* 媒体右上角悬浮放大按钮（绝对定位，不参与文档流，零布局偏移） */
+:is(.markdown-live, .split-preview-pane) > .md-media-zoom-btn {
+  position: absolute;
+  z-index: 24;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--bar, var(--paper)) 88%, transparent);
+  backdrop-filter: blur(4px);
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.16);
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+  user-select: none;
+}
+
+:is(.markdown-live, .split-preview-pane) > .md-media-zoom-btn[hidden] {
+  display: none !important;
+}
+
+:is(.markdown-live, .split-preview-pane) > .md-media-zoom-btn:hover,
+:is(.markdown-live, .split-preview-pane) > .md-media-zoom-btn:focus-visible {
+  background: var(--hover);
+  color: var(--bright);
+  border-color: var(--accent);
+  outline: none;
+}
+
+:is(.markdown-live, .split-preview-pane) > .md-media-zoom-btn:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* 统一图片与 Mermaid 图表模态放大预览层 */
+dialog.md-image-lightbox {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: calc(100vw - 32px);
+  height: calc(100vh - 32px);
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--editor);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  overscroll-behavior: contain;
+  user-select: none;
+}
+
+dialog.md-image-lightbox [hidden] {
+  display: none !important;
+}
+
+dialog.md-image-lightbox::backdrop {
+  background: rgba(0, 0, 0, 0.72);
+}
+
+dialog.md-image-lightbox[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+dialog.md-image-lightbox .md-image-lightbox-tools {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bar, var(--editor));
+}
+
+dialog.md-image-lightbox .md-image-lightbox-tools button {
+  padding: 4px 10px;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--soft);
+  color: var(--ink);
+  font: var(--ui-font-size, 12px)/1.5 var(--font-sans);
+  cursor: pointer;
+}
+
+dialog.md-image-lightbox .md-image-lightbox-tools button:hover {
+  background: var(--hover);
+  color: var(--bright);
+}
+
+dialog.md-image-lightbox .md-image-lightbox-tools button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+dialog.md-image-lightbox .md-image-lightbox-tools output {
+  min-width: 56px;
+  text-align: center;
+  font: 12px/1.5 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--bright);
+}
+
+dialog.md-image-lightbox .md-image-lightbox-surface {
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  cursor: grab;
+  touch-action: none;
+  outline: none;
+  background: color-mix(in srgb, var(--editor) 88%, var(--soft));
+}
+
+dialog.md-image-lightbox .md-image-lightbox-surface.is-dragging {
+  cursor: grabbing;
+}
+
+dialog.md-image-lightbox .md-media-lightbox-stage {
+  margin: auto;
+  flex: none;
+  padding: 24px;
+  box-sizing: content-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+dialog.md-image-lightbox .md-media-lightbox-stage img,
+dialog.md-image-lightbox .md-media-lightbox-stage svg {
+  display: block;
+  flex: none;
+  max-width: none !important;
+  max-height: none !important;
+  user-select: none;
+}
