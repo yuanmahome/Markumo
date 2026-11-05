@@ -22,6 +22,13 @@ async function state() {
   return page.evaluate(() => ({ source: window.f.manager.getText(window.f.id), text: window.f.live().view.state.doc.textContent,
     links: [...document.querySelectorAll('.md-prose a[data-href]')].map(el => ({ text: el.textContent, href: el.dataset.href })), notices: window.f.notices }))
 }
+async function enterTemplateLabel() {
+  // Arrange the first-paragraph template through the existing fixture caret
+  // API. Native Home can be coalesced with a pending DOM selection update.
+  await page.evaluate(() => window.f.caret('[]('))
+  await page.keyboard.press('ArrowRight')
+  await page.waitForFunction(() => window.f.live().view.state.selection.from === 2)
+}
 async function check(name, run) {
   try { await run(); results.push({ name, passed: true }); console.log('PASS', name) }
   catch (error) { results.push({ name, passed: false, error: String(error), actual: error.actual }); console.log('FAIL', name, String(error), error.actual ?? '') }
@@ -48,8 +55,7 @@ try {
   await check('fill label and destination after typing an empty bracket template', async () => {
     await reset()
     await page.keyboard.type('[]()')
-    await page.keyboard.press('Home')
-    await page.keyboard.press('ArrowRight')
+    await enterTemplateLabel()
     await page.keyboard.type('11')
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('ArrowRight')
@@ -79,11 +85,7 @@ try {
     await page.keyboard.type('[]()')
     await page.keyboard.press('ArrowLeft')
     await page.keyboard.type('http://129.com')
-    await page.keyboard.press('Home')
-    await page.keyboard.press('ArrowRight')
-    // Native Home/Arrow selectionchange can trail the CDP key event. Wait for
-    // ProseMirror to observe the caret before injecting an IME-style text commit.
-    await page.waitForFunction(() => window.f.live().view.state.selection.from === 2)
+    await enterTemplateLabel()
     await page.keyboard.insertText('链接👩‍💻')
     await page.locator('.md-prose p').filter({ hasText: 'END_SENTINEL' }).click()
     const before = await state()
@@ -103,8 +105,7 @@ try {
   await check('template Chinese composition defers normalization until commit', async () => {
     await reset()
     await page.keyboard.type('[]()')
-    await page.keyboard.press('Home')
-    await page.keyboard.press('ArrowRight')
+    await enterTemplateLabel()
     await page.evaluate(() => {
       const v = window.f.live().view
       v.dom.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }))
@@ -137,8 +138,7 @@ try {
   await check('temporarily empty link label stays pending and Escape restores accepted content', async () => {
     await reset()
     await page.keyboard.type('[]()')
-    await page.keyboard.press('Home')
-    await page.keyboard.press('ArrowRight')
+    await enterTemplateLabel()
     await page.keyboard.type('X')
     await page.waitForFunction(() => window.f.live().inlineSource?.selection()?.head === 2 && document.activeElement?.matches('.md-inline-source-input'))
     const before = (await state()).source

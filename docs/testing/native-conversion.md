@@ -28,7 +28,7 @@
 
 - `pnpm typecheck`、`pnpm build`：通过。
 - `pnpm test:export`：通过，11 类 Mermaid、公式、图片、PNG 尺寸、安全过滤、Worker 取消及表格对齐。
-- `pnpm test:regression`：29/29 脚本通过，含源码无损 73/73。首次运行一项链接输入超时，独立重跑和两次整套复跑均通过。
+- `pnpm test:regression`：29/29 脚本通过，含源码无损 73/73。Linux CI 随后复现链接模板测试的原生 Home 选区竞争；测试入口改用既有 fixture 定位模板，继续真实按 ArrowRight 并验证位置、IME、源码及 Undo/Redo，连续 8 轮通过。四组新增回归已加入 CI。
 - Rust 单元测试：66/66，通过解析、安全预算、取消、跨窗口授权、目标/来源冲突、独立资源批次和失败回滚。
 - 原生转换前端交互：18 项通过，覆盖真实文件打开、重复标签、脏文档保护、源/目标取消、失败恢复、原始二进制提交、HTML 和带尺寸图片往返。
 - 中文加粗：6 类读取/模式切换/预览/Word，6 类转义/代码/CommonMark 保持，以及真实编辑器逐字输入、Undo/Redo，均通过。
@@ -45,5 +45,7 @@
 Windows 已实际安装隔离的 NSIS 包（独立标识和配置），通过真实文件菜单导入 DOCX，保存并打开 `ui-import.md`，7 个真实图片文件落盘，无未命名副本；关闭后升级 v1.2.2 保留该文件会话。通过菜单生成 `ui-import.pdf`（WebView2 原生、251087 字节）及 `ui-import.html`（619476 字节）。v1.2.2 再次通过菜单导入 `ui-final.md`，多级列表显示正确，图片实际可见；再导出 `ui-final.docx`，ZIP 内含全部 7 张图片，正文 XML 保留中文、CodeBlock、右对齐和图片尺寸。证据截图为 `test-results/native-docx/ui-v1.2.2-images.png`。PNG 长图菜单也成功输出 `ui-final.png`（1720×10056，1565873 字节）。生产配置 NSIS 构建成功，未使用测试配置覆盖生产标识或数据目录。
 
 ## 明确限制
+
+补充 Windows 实测：HTML 经“文件 → 导入”转换并保存为 `ui-html-import.md`，保留标题、加粗、列表、表格及 emoji。`**何时用：**这样` 在安装版实时排版和双栏预览均正确加粗；切换并保存后，文件 SHA-256 保持 `9A8F25F370F1C2A96C58BDED75DDF4B24D724364912AE519C9A2618B4A11E9B6`。截图保存于忽略目录中的 `ui-v1.2.2-bold-live.png`、`ui-v1.2.2-bold-split.png`、`ui-v1.2.2-html-import.png`。
 
 不承诺页面像素复原。OMML 未转 LaTeX，保留文字并警告；SmartArt/对象尽量提取文字或预览；WMF/EMF/SVG/TIFF 内嵌图不能直接导入时有占位和警告；图片裁剪/浮动环绕和页眉页脚布局不还原；字体、下划线等未列入首批支持的 Word 排版格式可能降级。复杂 HTML 表格再次导出 Word 时目前以源码文字保留并提示。原生 Word 输出的公式/图表为图片，脚注为文末列表。PDF 仅 Windows 原生实现。上述限制都不依赖外部软件回退。
