@@ -71,10 +71,22 @@ pub(crate) struct Lease {
     pub cancelled: Arc<AtomicBool>,
     used: bool,
 }
+struct PreparedDocument {
+    source: Lease,
+    document: super::docx::ast::NativeDocument,
+}
+#[derive(serde::Serialize)]
+pub struct PreparedImport {
+    pub token: String,
+    pub path: String,
+    pub warnings: Vec<super::docx::ast::Warning>,
+    pub stats: super::docx::ast::Stats,
+}
 #[derive(Default)]
 struct Registry {
     owners: HashMap<String, Arc<Owner>>,
     leases: HashMap<String, Lease>,
+    prepared: HashMap<String, PreparedDocument>,
     active: HashMap<String, usize>,
     targets: std::collections::HashSet<crate::session::PathKey>,
 }
@@ -114,6 +126,8 @@ impl ConversionStore {
             let _commit = lock(&owner.commit);
             let mut r = lock(&self.0);
             r.owners.remove(label);
+            r.prepared
+                .retain(|_, draft| !Arc::ptr_eq(&draft.source.owner, &owner));
             r.leases.retain(|_, l| {
                 if Arc::ptr_eq(&l.owner, &owner) {
                     l.cancelled.store(true, Ordering::Release);
@@ -189,7 +203,39 @@ impl ConversionStore {
             path: display,
         }))
     }
+    pub fn begin_import(
+        &self,
+        label: &str,
+        draft_token: &str,
+        target_token: &str,
+    ) -> Result<(Operation, super::docx::ast::NativeDocument)> {
+        let draft = {
+            let mut registry = lock(&self.0);
+            let owner = registry.owners.get(label).ok_or("窗口已关闭")?;
+            let draft = registry
+                .prepared
+                .get(draft_token)
+                .ok_or("导入预解析已释放或过期，请重新选择 Word")?;
+            if !Arc::ptr_eq(owner, &draft.source.owner) || draft.source.expires <= Instant::now() {
+                return Err("导入预解析不属于此窗口或已过期".into());
+            }
+            registry.prepared.remove(draft_token).unwrap()
+        };
+        let mut operation = self.begin(label, &[(target_token, Purpose::Markdown)])?;
+        operation.leases.insert(0, draft.source);
+        Ok((operation, draft.document))
+    }
     pub fn release(&self, label: &str, token: &str) {
+        {
+            let mut r = lock(&self.0);
+            if r.prepared.get(token).is_some_and(|d| {
+                r.owners
+                    .get(label)
+                    .is_some_and(|o| Arc::ptr_eq(o, &d.source.owner))
+            }) {
+                r.prepared.remove(token);
+            }
+        }
         let lease = {
             let r = lock(&self.0);
             r.leases
@@ -264,6 +310,37 @@ pub struct Operation {
     pub(crate) deadline: Instant,
 }
 impl Operation {
+    pub fn stage_import(
+        &self,
+        document: super::docx::ast::NativeDocument,
+    ) -> Result<PreparedImport> {
+        self.verify(0)?;
+        let token = random_id()?;
+        let reply = PreparedImport {
+            token: token.clone(),
+            path: self.path(0).to_string_lossy().into_owned(),
+            warnings: document.warnings.clone(),
+            stats: document.stats.clone(),
+        };
+        let mut r = lock(&self.store.0);
+        r.prepared.retain(|_, d| {
+            d.source.expires > Instant::now()
+                && d.source.owner.alive.load(Ordering::Acquire)
+                && !d.source.cancelled.load(Ordering::Acquire)
+        });
+        if r.prepared.len() >= MAX_PARALLEL {
+            return Err("预解析缓存已达上限，请取消其他导入后重试".into());
+        }
+        self.check()?;
+        r.prepared.insert(
+            token,
+            PreparedDocument {
+                source: self.leases[0].clone(),
+                document,
+            },
+        );
+        Ok(reply)
+    }
     pub fn check(&self) -> Result<()> {
         if Instant::now() >= self.deadline {
             return Err("转换超时（90 秒）".into());
@@ -329,5 +406,175 @@ impl Drop for Operation {
             }
         }
         r.active.remove(&self.label);
+    }
+}
+
+#[cfg(test)]
+mod native_import_tests {
+    use super::*;
+    use crate::conversion::{commit_import, docx::ast::*};
+    fn document() -> NativeDocument {
+        NativeDocument {
+            blocks: vec![Block::Paragraph(vec![
+                Inline::Text("中文 😀".into(), Format::default()),
+                Inline::Image {
+                    asset: "image-1.png".into(),
+                    alt: "image".into(),
+                    width: Some(100),
+                    height: Some(40),
+                },
+            ])],
+            footnotes: vec![],
+            assets: vec![("image-1.png".into(), vec![1, 2, 3])],
+            warnings: vec![],
+            stats: Stats::default(),
+        }
+    }
+    fn selection(store: &ConversionStore, owner: &str, path: &Path, purpose: Purpose) -> Selection {
+        let permit = store.dialog(owner).unwrap();
+        store
+            .selected(&permit, Some(path.into()), purpose)
+            .unwrap()
+            .unwrap()
+    }
+    fn draft(store: &ConversionStore, owner: &str, source: &Path) -> PreparedImport {
+        let selected = selection(store, owner, source, Purpose::ReadDocx);
+        let op = store
+            .begin(owner, &[(&selected.token, Purpose::ReadDocx)])
+            .unwrap();
+        op.stage_import(document()).unwrap()
+    }
+    #[test]
+    fn prepared_import_is_window_bound_single_use_and_closes() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("input.docx");
+        std::fs::write(&source, "original").unwrap();
+        let target = dir.path().join("output.md");
+        let store = ConversionStore::default();
+        store.register("a");
+        store.register("b");
+        let prepared = draft(&store, "a", &source);
+        let selected = selection(&store, "a", &target, Purpose::Markdown);
+        store.release("b", &prepared.token);
+        assert!(store
+            .begin_import("b", &prepared.token, &selected.token)
+            .is_err());
+        let (op, doc) = store
+            .begin_import("a", &prepared.token, &selected.token)
+            .unwrap();
+        assert!(store
+            .begin_import("a", &prepared.token, &selected.token)
+            .is_err());
+        commit_import(&op, doc).unwrap();
+        drop(op);
+        let output = std::fs::read_to_string(&target).unwrap();
+        assert!(output.contains("中文 😀"));
+        let base = dir.path().join("output.assets");
+        let batches = std::fs::read_dir(&base).unwrap().collect::<Vec<_>>();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(
+            std::fs::read(batches[0].as_ref().unwrap().path().join("image-1.png")).unwrap(),
+            vec![1, 2, 3]
+        );
+        let prepared = draft(&store, "a", &source);
+        store.close("a");
+        assert!(!lock(&store.0).prepared.contains_key(&prepared.token));
+        store.register("a");
+        let next = selection(&store, "a", &target, Purpose::Markdown);
+        assert!(store
+            .begin_import("a", &prepared.token, &next.token)
+            .is_err());
+    }
+    #[test]
+    fn cancellation_source_and_target_conflicts_preserve_existing_files() {
+        for mode in ["cancel", "source", "target"] {
+            let dir = tempfile::tempdir().unwrap();
+            let source = dir.path().join("input.docx");
+            let target = dir.path().join("output.md");
+            std::fs::write(&source, "original").unwrap();
+            std::fs::write(&target, "old target").unwrap();
+            let existing = dir.path().join("output.assets");
+            std::fs::create_dir(&existing).unwrap();
+            std::fs::write(existing.join("user.png"), "user image").unwrap();
+            let store = ConversionStore::default();
+            store.register("a");
+            let prepared = draft(&store, "a", &source);
+            let selected = selection(&store, "a", &target, Purpose::Markdown);
+            let (op, doc) = store
+                .begin_import("a", &prepared.token, &selected.token)
+                .unwrap();
+            match mode {
+                "cancel" => store.release("a", &selected.token),
+                "source" => std::fs::write(&source, "changed source").unwrap(),
+                _ => std::fs::write(&target, "changed target").unwrap(),
+            };
+            assert!(commit_import(&op, doc).is_err());
+            assert_eq!(
+                std::fs::read_to_string(&target).unwrap(),
+                if mode == "target" {
+                    "changed target"
+                } else {
+                    "old target"
+                }
+            );
+            assert_eq!(
+                std::fs::read_to_string(existing.join("user.png")).unwrap(),
+                "user image"
+            );
+            assert_eq!(std::fs::read_dir(existing).unwrap().count(), 1);
+        }
+    }
+    #[test]
+    fn partial_asset_failure_rolls_back_own_batch_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("input.docx");
+        let target = dir.path().join("output.md");
+        std::fs::write(&source, "source").unwrap();
+        std::fs::write(&target, "keep").unwrap();
+        let store = ConversionStore::default();
+        store.register("a");
+        let prepared = draft(&store, "a", &source);
+        let selected = selection(&store, "a", &target, Purpose::Markdown);
+        let (op, mut doc) = store
+            .begin_import("a", &prepared.token, &selected.token)
+            .unwrap();
+        doc.assets.push(("../unsafe".into(), vec![0]));
+        assert!(commit_import(&op, doc).is_err());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
+        assert!(!dir.path().join("output.assets").exists());
+    }
+    #[test]
+    fn repeated_import_has_independent_assets_and_expired_drafts_fail() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("input.docx");
+        let target = dir.path().join("output.md");
+        std::fs::write(&source, "source").unwrap();
+        let store = ConversionStore::default();
+        store.register("a");
+        for _ in 0..2 {
+            let prepared = draft(&store, "a", &source);
+            let selected = selection(&store, "a", &target, Purpose::Markdown);
+            let (op, doc) = store
+                .begin_import("a", &prepared.token, &selected.token)
+                .unwrap();
+            commit_import(&op, doc).unwrap();
+        }
+        assert_eq!(
+            std::fs::read_dir(dir.path().join("output.assets"))
+                .unwrap()
+                .count(),
+            2
+        );
+        let prepared = draft(&store, "a", &source);
+        lock(&store.0)
+            .prepared
+            .get_mut(&prepared.token)
+            .unwrap()
+            .source
+            .expires = Instant::now() - Duration::from_secs(1);
+        let selected = selection(&store, "a", &target, Purpose::Markdown);
+        assert!(store
+            .begin_import("a", &prepared.token, &selected.token)
+            .is_err());
     }
 }

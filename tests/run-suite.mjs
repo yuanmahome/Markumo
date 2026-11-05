@@ -4,6 +4,10 @@ import { execFileSync } from 'node:child_process'
 
 const mode = process.argv[2] || 'smoke'
 const smokeScripts = [
+  'tests/cjk-emphasis.mjs',
+  'tests/native-conversion.mjs',
+  'tests/frontmatter-regression.mjs',
+  'tests/reference-definitions.mjs',
   'tests/dev/instance-isolation.mjs',
   'tests/dev/windows-integrity.mjs',
   'tests/markdown-links/regression.mjs',

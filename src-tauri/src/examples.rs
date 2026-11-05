@@ -5,18 +5,41 @@ use tauri::Manager;
 #[derive(Default)]
 pub struct ExampleStore(pub Mutex<Option<ExampleService>>);
 #[derive(Serialize, Deserialize)]
-struct Progress { status: String, path: Option<PathBuf> }
+struct Progress {
+    #[serde(default)] status: String,
+    path: Option<PathBuf>,
+    #[serde(default)] resources_ready: bool,
+    #[serde(default = "pending")] presentation: String,
+}
+fn pending() -> String { "pending".into() }
 pub struct ExampleService { state: PathBuf, source: PathBuf, documents: PathBuf, fallback: PathBuf }
 impl ExampleService {
     pub fn configure(state_dir: &Path, source: PathBuf, documents: PathBuf) -> io::Result<Self> {
         fs::create_dir_all(state_dir)?;
         let service = Self { state: state_dir.join("examples-state.json"), source, documents, fallback: state_dir.join("examples") };
+        let _lock = service.lock()?;
         if !service.state.try_exists()? {
-            let existing = ["files.json", "editor-settings.json", "workspaces.json", "last-session.json", ".markumo-profile-migrated-v1", "recovery"]
+            let existing = ["files.json", "editor-settings.json", "workspaces.json", "last-session.json", "recovery"]
                 .iter().any(|name| state_dir.join(name).exists());
-            service.save(&Progress { status: if existing { "skipped" } else { "pending" }.into(), path: None })?;
+            service.save(&Progress { status: String::new(), path: None, resources_ready: false, presentation: if existing { "suppressed" } else { "pending" }.into() })?;
         }
         Ok(service)
+    }
+    // Independent windows/processes serialize; the OS releases this on exit.
+    fn lock(&self) -> io::Result<fs::File> {
+        let file = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(self.state.with_extension("lock"))?;
+        file.lock()?;
+        Ok(file)
+    }
+    pub fn workspace_path(&self) -> io::Result<Option<PathBuf>> {
+        let _lock = self.lock()?;
+        Ok(self.load()?.path)
+    }
+    pub fn acknowledge(&self) -> io::Result<()> {
+        let _lock = self.lock()?;
+        let mut state = self.load()?;
+        if state.resources_ready { state.presentation = "shown".into(); self.save(&state)?; }
+        Ok(())
     }
     fn save(&self, state: &Progress) -> io::Result<()> {
         let version = crate::files::disk_version(&self.state).map_err(io::Error::other)?;
@@ -25,14 +48,19 @@ impl ExampleService {
     fn load(&self) -> io::Result<Progress> {
         let file = fs::File::open(&self.state)?;
         if file.metadata()?.len() > 8192 { return Err(io::Error::other("示例状态过大")); }
-        Ok(serde_json::from_reader(file)?)
+        let mut state: Progress = serde_json::from_reader(file)?;
+        if state.status == "skipped" { state.presentation = "suppressed".into(); }
+        // Legacy complete meant copied, not displayed.
+        state.status.clear();
+        Ok(state)
     }
     pub fn open(&self, automatic: bool, explicit_file: bool) -> io::Result<Option<PathBuf>> {
+        let _lock = self.lock()?;
         let mut state = self.load()?;
-        if automatic && explicit_file {
-            state.status = "skipped".into(); self.save(&state)?; return Ok(None)
+        if automatic && explicit_file && state.presentation == "pending" {
+            state.presentation = "suppressed".into(); self.save(&state)?; return Ok(None)
         }
-        if automatic && state.status != "pending" { return Ok(None) }
+        if automatic && state.presentation != "pending" { return Ok(None) }
         if state.path.is_none() {
             // Reserve a new directory; never adopt an unrelated folder with the same name.
             let mut reserved = None;
@@ -50,12 +78,12 @@ impl ExampleService {
                 if reserved.is_some() { break }
             }
             state.path = Some(reserved.ok_or_else(|| io::Error::other("无法创建可写示例目录"))?);
-            state.status = "pending".into(); self.save(&state)?;
+            state.resources_ready = false; self.save(&state)?;
         }
         let target = state.path.as_ref().unwrap();
         copy_examples(&self.source, target, target, &mut 0)?;
         if !target.join("README.md").is_file() { return Err(io::Error::other("示例缺少 README.md")); }
-        state.status = "complete".into(); self.save(&state)?;
+        state.resources_ready = true; self.save(&state)?;
         Ok(state.path)
     }
 }
@@ -82,11 +110,6 @@ fn copy_examples(source: &Path, target: &Path, root: &Path, count: &mut usize) -
     }
     Ok(())
 }
-#[tauri::command]
-pub async fn example_workspace(store: tauri::State<'_, ExampleStore>) -> Result<String, String> {
-    store.0.lock().map_err(|e| e.to_string())?.as_ref().ok_or("示例服务未初始化")?
-        .open(false, false).map_err(|e| e.to_string())?.map(|p| p.to_string_lossy().into_owned()).ok_or("示例目录不可用".into())
-}
 pub fn automatic(app: &tauri::AppHandle, explicit_file: bool) -> Result<Option<PathBuf>, String> {
     app.state::<ExampleStore>().0.lock().map_err(|e| e.to_string())?.as_ref().ok_or("示例服务未初始化")?
         .open(true, explicit_file).map_err(|e| e.to_string())
@@ -104,6 +127,7 @@ mod tests {
  #[test] fn once_and_preserves_user_edits() {
   let (_temp, service) = fixture(); let path = service.open(true, false).unwrap().unwrap();
   fs::write(path.join("README.md"), "我的修改").unwrap();
+  service.acknowledge().unwrap();
   assert!(service.open(true, false).unwrap().is_none());
   assert_eq!(service.open(false, false).unwrap(), Some(path.clone()));
   assert_eq!(fs::read_to_string(path.join("README.md")).unwrap(), "我的修改");
@@ -119,7 +143,7 @@ mod tests {
  }
  #[test] fn interruption_retries_without_overwriting() {
   let (_temp, service) = fixture(); fs::rename(&service.source, service.source.with_extension("backup")).unwrap();
-  assert!(service.open(true, false).is_err()); assert_eq!(service.load().unwrap().status, "pending");
+  assert!(service.open(true, false).is_err()); assert_eq!(service.load().unwrap().presentation, "pending");
   let target = service.load().unwrap().path.unwrap(); fs::write(target.join("README.md"), "用户文件").unwrap();
   fs::rename(service.source.with_extension("backup"), &service.source).unwrap();
   assert_eq!(service.open(true, false).unwrap(), Some(target.clone()));
@@ -135,6 +159,31 @@ mod tests {
  #[test] fn concurrent_windows_initialize_once() {
   let (_temp, service) = fixture(); let service = std::sync::Arc::new(Mutex::new(service));
   let handles: Vec<_> = (0..4).map(|_| { let service = service.clone(); std::thread::spawn(move || service.lock().unwrap().open(true, false).unwrap()) }).collect();
-  assert_eq!(handles.into_iter().filter_map(|h| h.join().unwrap()).count(), 1);
+  let paths: Vec<_> = handles.into_iter().filter_map(|h| h.join().unwrap()).collect();
+  assert_eq!(paths.len(), 4); assert!(paths.iter().all(|p| p == &paths[0]));
  }
+ #[test] fn initialized_is_not_shown_and_restart_retries() {
+  let (_temp, service) = fixture(); let path = service.open(true, false).unwrap().unwrap();
+  assert!(service.load().unwrap().resources_ready);
+  assert_eq!(service.load().unwrap().presentation, "pending");
+  let restarted = ExampleService::configure(service.state.parent().unwrap(), service.source.clone(), service.documents.clone()).unwrap();
+  assert_eq!(restarted.open(true, false).unwrap(), Some(path));
+ }
+ #[test] fn migration_marker_alone_is_not_an_existing_user() {
+  let temp = tempfile::tempdir().unwrap(); fs::write(temp.path().join(".markumo-profile-migrated-v1"), "legacy").unwrap();
+  let service = ExampleService::configure(temp.path(), temp.path().join("source"), temp.path().join("docs")).unwrap();
+  assert_eq!(service.load().unwrap().presentation, "pending");
+ }
+ #[test] fn independent_services_initialize_same_directory() {
+  let (_temp, service) = fixture();
+  let profile = service.state.parent().unwrap().to_owned();
+  let source = service.source.clone(); let documents = service.documents.clone();
+  let handles: Vec<_> = (0..4).map(|_| {
+   let profile = profile.clone(); let source = source.clone(); let documents = documents.clone();
+   std::thread::spawn(move || ExampleService::configure(&profile, source, documents).unwrap().open(false, false).unwrap().unwrap())
+  }).collect();
+  let paths: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+  assert!(paths.iter().all(|p| p == &paths[0]));
+ }
+
 }

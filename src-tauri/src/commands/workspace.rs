@@ -781,3 +781,49 @@ fn shell_path(path: &std::path::Path) -> Vec<u16> {
     wide.push(0);
     wide
 }
+
+#[derive(Serialize)]
+pub struct ExampleWorkspace { workspace: WorkspaceInfo, file: OpenFile }
+
+#[tauri::command]
+pub async fn open_example_workspace(
+    window: Window,
+    examples: State<'_, crate::examples::ExampleStore>,
+    workspaces: State<'_, WorkspaceStore>,
+    files: State<'_, FileStore>,
+) -> Result<ExampleWorkspace, String> {
+    let path = examples.0.lock().map_err(|e| e.to_string())?.as_ref().ok_or("示例服务未初始化")?
+        .open(false, false).map_err(|e| e.to_string())?.ok_or("示例目录不可用")?;
+    let ws = workspaces.for_window(window.label())?;
+    let mut ws = ws.lock().map_err(|e| e.to_string())?;
+    let workspace = ws.add_workspace(path.clone())?;
+    let readme = path.join("README.md");
+    let root = ws.root_for_path(&readme)?;
+    let readme = crate::workspace::guard::validate_under_root(root, &readme).map_err(|e| e.to_string())?;
+    let mut files = files.lock().map_err(|e| e.to_string())?;
+    files.set_owner(window.label());
+    let file = files.open_selected(readme, None).map_err(|e| e.to_string())?;
+    Ok(ExampleWorkspace { workspace, file })
+}
+
+// The UI acknowledges after adopting both the directory tree and README.
+#[tauri::command]
+pub async fn acknowledge_example_workspace(
+    window: Window,
+    token: String,
+    files: State<'_, FileStore>,
+    examples: State<'_, crate::examples::ExampleStore>,
+    workspaces: State<'_, WorkspaceStore>,
+) -> Result<(), String> {
+    let examples = examples.0.lock().map_err(|e| e.to_string())?;
+    let service = examples.as_ref().ok_or("示例服务未初始化")?;
+    let Some(path) = service.workspace_path().map_err(|e| e.to_string())? else { return Ok(()) };
+    let ws = workspaces.for_window(window.label())?;
+    let ws = ws.lock().map_err(|e| e.to_string())?;
+    let mut files = files.lock().map_err(|e| e.to_string())?;
+    files.set_owner(window.label());
+    let accepted = files.session_path(&token).map_err(|e| e.to_string())?;
+    let readme = path.join("README.md").canonicalize().map_err(|e| e.to_string())?;
+    if accepted == readme && ws.root_for_path(&readme).is_ok() { service.acknowledge().map_err(|e| e.to_string())?; }
+    Ok(())
+}

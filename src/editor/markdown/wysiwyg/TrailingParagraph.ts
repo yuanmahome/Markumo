@@ -1,3 +1,4 @@
+import { isReferenceDefinition } from './referenceNavigation'
 import { Fragment, type Node } from 'prosemirror-model'
 import { Plugin } from 'prosemirror-state'
 import { markdownSchema as schema } from './MarkdownSchema'
@@ -11,6 +12,14 @@ function needsTrailingParagraph(node: Node) {
     node.type === schema.nodes.paragraph && node.childCount === 1 && ['image', 'image_source'].includes(node.firstChild?.type.name ?? '')
 }
 
+function needsDocumentTail(doc: Node) {
+  let last: Node | undefined
+  doc.forEach(node => {
+    if (!isReferenceDefinition(node) && !(isTrailingParagraph(node) && !node.content.size)) last = node
+  })
+  return last ? needsTrailingParagraph(last) : doc.childCount > 0
+}
+
 function placeholder() {
   return schema.nodes.paragraph.create({ sourceId: 'editor-trailing', editorTrailing: true })
 }
@@ -18,7 +27,7 @@ function placeholder() {
 /** The editable canvas has a trailing paragraph; canonical Markdown does not
  * acquire extra bytes or a dirty flag until the user actually enters content. */
 export function withTrailingParagraph(doc: Node) {
-  return doc.lastChild && needsTrailingParagraph(doc.lastChild)
+  return doc.lastChild && !isTrailingParagraph(doc.lastChild) && needsDocumentTail(doc)
     ? doc.copy(doc.content.append(Fragment.from(placeholder()))) : doc
 }
 
@@ -41,11 +50,11 @@ export function trailingParagraphPlugin() {
         const at = tr.mapping.map(pos)
         if (node.content.size || index !== state.doc.childCount - 1) {
           tr.setNodeMarkup(at, undefined, { ...node.attrs, editorTrailing: false })
-        } else if (index === 0 || !needsTrailingParagraph(state.doc.child(index - 1))) {
+        } else if (!needsDocumentTail(state.doc)) {
           tr.delete(at, at + node.nodeSize)
         }
       })
-      if (tr.doc.lastChild && needsTrailingParagraph(tr.doc.lastChild)) tr.insert(tr.doc.content.size, placeholder())
+      if (tr.doc.lastChild && !isTrailingParagraph(tr.doc.lastChild) && needsDocumentTail(tr.doc)) tr.insert(tr.doc.content.size, placeholder())
       return tr.docChanged ? tr : null
     },
   })

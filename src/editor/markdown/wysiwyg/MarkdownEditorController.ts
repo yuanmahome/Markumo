@@ -1,3 +1,5 @@
+import { referenceNavigation, isReferenceDefinition } from './referenceNavigation'
+import { referenceDefinitionPanel } from './ReferenceDefinitionPanel'
 import { EditorState, Plugin, TextSelection, Selection, NodeSelection, AllSelection, type Transaction, type Command } from 'prosemirror-state'
 import { EditorView, type NodeView } from 'prosemirror-view'
 import { Slice, type Node } from 'prosemirror-model'
@@ -39,7 +41,7 @@ import { HtmlBlockView } from './HtmlBlockView'
 import { HtmlInlineView } from './HtmlInlineView'
 import { HtmlSourceView, isHtmlSourceNode } from './HtmlSourceView'
 import { inlineHtmlRanges } from './HtmlSourceRanges'
-import { markdownParser, parseMarkdown } from './MarkdownParser'
+import { markdownParser, parseMarkdown, referenceDefinition } from './MarkdownParser'
 import { reuseSourceBlocks } from './reuseSourceBlocks'
 import { serializeBlock } from './MarkdownSerializer'
 import { createAutoLinkPlugin } from './AutoLinkSync'
@@ -121,6 +123,7 @@ export class MarkdownEditorController implements LiveEditor {
   private onFocusOwnerChanged = () => { this.focusEpoch++ }
   private copySettings = defaultMarkdownClipboard()
   private liveClipboard!: LiveClipboard
+  private closeReferenceEditor: (() => void) | null = null
   private contextMenu = new LiveContextMenu(notice, () => this.view.focus())
   private pendingSource: string | null = null
   private wasReadOnly = false
@@ -328,6 +331,7 @@ export class MarkdownEditorController implements LiveEditor {
               },
             },
           }),
+          referenceNavigation(),
           keymap({
             'Mod-z': () => { options.history(false); return true },
             'Mod-y': () => { options.history(true); return true },
@@ -1828,6 +1832,8 @@ export class MarkdownEditorController implements LiveEditor {
   }
 
   private linkProperties(anchorEl: HTMLElement, href: string) {
+    const reference = anchorEl.getAttribute('data-reference-label')
+    if (reference) { this.editReferenceDefinition(reference, anchorEl); return }
     this.properties.classList.remove('md-image-properties')
     this.propertyTargetToken = null
     this.properties.replaceChildren()
@@ -2011,6 +2017,7 @@ export class MarkdownEditorController implements LiveEditor {
               alt: altInput.value,
               title: titleInput.value || null,
               width,
+              height: width === target.node.attrs.width ? target.node.attrs.height : null,
               align: normalizeImageAlign(alignment.value),
             })
             .setMeta('isolated', true)
@@ -2112,19 +2119,66 @@ export class MarkdownEditorController implements LiveEditor {
     notice('链接协议或路径未获允许。')
   }
 
+  private editReferenceDefinition(label: string, anchor: HTMLElement) {
+    if (this.options.readOnly?.()) return
+    this.closeInline()
+    this.closeReferenceEditor?.()
+    // markdown-it's normalized token labels and document order implement
+    // case/whitespace folding and first-definition-wins, including duplicates.
+    const block = this.bridge.blocks.find(block => isReferenceDefinition(block.node) && referenceDefinition(block.raw)?.label === label)
+    if (!block) { notice('找不到引用定义，可在源码模式中修改。'); return }
+    let expected = block.raw
+    const current = () => {
+      let found: {node: Node; pos: number} | undefined
+      this.view.state.doc.forEach((node, pos) => { if (node.attrs.sourceId === block.id && isReferenceDefinition(node)) found = {node, pos} })
+      return found?.node.attrs.source === expected ? found : undefined
+    }
+    this.closeReferenceEditor = referenceDefinitionPanel(expected, anchor, {
+      change: source => {
+        const target = current()
+        if (!target || this.options.readOnly?.()) return false
+        this.view.dispatch(this.view.state.tr.setNodeMarkup(target.pos, undefined, {...target.node.attrs, source})
+          .setMeta('referenceDefinitionEdit', true).setMeta('isolated', true))
+        if (this.bridge.blocks.find(b => b.id === block.id)?.raw !== source) return false
+        expected = source
+        return true
+      },
+      remove: () => {
+        const target = current()
+        const span = this.bridge.blocks.find(candidate => candidate.id === block.id)
+        if (!target || !span || this.options.readOnly?.()) return
+        // Delete only the definition bytes. Its surrounding separators may also
+        // separate a following duplicate from a paragraph and must survive.
+        const before = this.bridge.source
+        const patch = {from: span.from, to: span.to, insert: ''}
+        const next = before.slice(0, patch.from) + before.slice(patch.to)
+        if (this.options.publish(before, patch, undefined, true)) this.sync(next)
+      },
+      history: redo => this.options.history(redo),
+      closed: () => { this.closeReferenceEditor = null },
+      focus: () => this.view.focus(),
+    })
+  }
+
   private protectedView(node: Node, view: EditorView, getPos: () => number | undefined): NodeView {
-    const reference = node.attrs.kind === 'reference'
+    if (isReferenceDefinition(node)) {
+      const dom = document.createElement('div')
+      dom.className = 'md-reference-definition'
+      dom.contentEditable = 'false'
+      dom.setAttribute('aria-hidden', 'true')
+      return { dom, ignoreMutation: () => true, update: next => isReferenceDefinition(next),
+        selectNode: () => {}, deselectNode: () => {} }
+    }
     const dom = document.createElement('div')
     const details = document.createElement('details')
     const summary = document.createElement('summary')
     const input = document.createElement('textarea')
     const preview = document.createElement('div')
 
-    details.className = reference ? 'md-protected md-reference-source' : 'md-protected'
-    dom.className = reference ? 'md-extension md-reference-definition' : 'md-extension'
+    details.className = 'md-protected'
+    dom.className = 'md-extension'
     dom.contentEditable = 'false'
-    const referenceLabel = String(node.attrs.source).match(/^\s*\[((?:\\.|[^\]])+)\]:/)?.[1].replace(/\s+/g, ' ').slice(0, 60)
-    summary.textContent = reference ? `链接引用定义${referenceLabel ? ` [${referenceLabel}]` : ''} · 展开源码` : node.attrs.label
+    summary.textContent = node.attrs.label
     input.value = node.attrs.source
     input.setAttribute('aria-label', node.attrs.label)
     input.spellcheck = false
@@ -2132,7 +2186,7 @@ export class MarkdownEditorController implements LiveEditor {
     const sizeSource = () => { input.rows = Math.min(10, Math.max(2, input.value.split('\n').length)) }
     sizeSource()
     details.append(summary)
-    if (!reference) details.append(input)
+    details.append(input)
     details.ontoggle = () => { if (details.open && !input.parentElement) { details.append(input); sizeSource() } }
     dom.append(preview, details)
 
@@ -2231,7 +2285,7 @@ export class MarkdownEditorController implements LiveEditor {
       ignoreMutation: () => true,
       update: next => {
         if (next.type !== node.type) return false
-        if ((next.attrs.kind === 'reference') !== reference) return false
+        if (isReferenceDefinition(next)) return false
         if (/^\$\$[\s\S]*\$\$$/.test(String(next.attrs.source).trim())) return false
         if (isHtmlSourceNode(next)) return false
         node = next
@@ -2693,21 +2747,13 @@ export class MarkdownEditorController implements LiveEditor {
             run: () => this.updateImageAt(pos, { align }),
           })) },
           { label: '转换图片语法', disabled: !editable, children: [
-            { label: 'Markdown ![](src)', checked: !node.attrs.htmlSource && !node.attrs.width && !node.attrs.align && !node.attrs.zoom, run: () => this.updateImageAt(pos, { htmlSource: null, width: null, align: null, zoom: null }) },
-            { label: 'HTML <img>', checked: !!node.attrs.htmlSource || !!node.attrs.width || !!node.attrs.align || !!node.attrs.zoom, run: () => this.updateImageAt(pos, { htmlSource: controlledImageHtml({ src: node.attrs.src, alt: node.attrs.alt, title: node.attrs.title, width: node.attrs.width, align: node.attrs.align, zoom: node.attrs.zoom }, true) }) },
+            { label: 'Markdown ![](src)', checked: !node.attrs.htmlSource && !node.attrs.width && !node.attrs.height && !node.attrs.align && !node.attrs.zoom, run: () => this.updateImageAt(pos, { htmlSource: null, width: null, height: null, align: null, zoom: null }) },
+            { label: 'HTML <img>', checked: !!node.attrs.htmlSource || !!node.attrs.width || !!node.attrs.height || !!node.attrs.align || !!node.attrs.zoom, run: () => this.updateImageAt(pos, { htmlSource: controlledImageHtml({ src: node.attrs.src, alt: node.attrs.alt, title: node.attrs.title, width: node.attrs.width, height: node.attrs.height, align: node.attrs.align, zoom: node.attrs.zoom }, true) }) },
           ] },
           { label: '放大预览', disabled: !node.attrs.src, run: () => this.previewImageAt(pos) },
           { label: '复制图片路径', disabled: !node.attrs.src, run: () => { void navigator.clipboard?.writeText(String(node.attrs.src)) } },
-          { label: '跳转到图片引用定义', disabled: !/!\[[\s\S]*\]\[[^\]]*\]/.test(inlineSourceRange(this.bridge, this.view.state.doc, pos, pos + 1, 'image')?.raw ?? ''), run: () => {
-            const raw = inlineSourceRange(this.bridge, this.view.state.doc, pos, pos + 1, 'image')?.raw ?? ''
-            const match = /^!\[([\s\S]*)\]\[([^\]]*)\]$/.exec(raw)
-            const label = (match?.[2] || match?.[1] || '').trim().replace(/\s+/g, ' ').toUpperCase()
-            const definition = this.bridge.blocks.find(block => {
-              const name = /^\s*\[([^\]]+)\]:/.exec(block.raw)?.[1]
-              return name?.trim().replace(/\s+/g, ' ').toUpperCase() === label
-            })
-            if (definition) { this.closeInline(); queueMicrotask(() => this.reveal(definition.from)) }
-            else notice('找不到图片引用定义。')
+          { label: '编辑引用定义', disabled: !editable || !node.attrs.referenceLabel, run: () => {
+            this.editReferenceDefinition(node.attrs.referenceLabel, image as HTMLElement)
           } },
           { label: '删除图片', disabled: !editable, run: () => this.deleteImageAt(pos) },
           'separator',
@@ -2719,6 +2765,8 @@ export class MarkdownEditorController implements LiveEditor {
         return entries
       }
     }
+    const reference = link?.getAttribute('data-reference-label')
+    if (reference) entries.unshift({label: '编辑引用定义', disabled: !editable, run: () => this.editReferenceDefinition(reference, link as HTMLElement)}, 'separator')
     if (link) entries.push({ label: '链接属性…', disabled: !editable, run: () => { this.closeInline(); this.linkProperties(link as HTMLElement, link.getAttribute('data-href') || '') } })
     const diagramBox = target.closest('.md-diagram')
     const diagramSvg = diagramBox?.querySelector<SVGSVGElement>(':scope > svg')

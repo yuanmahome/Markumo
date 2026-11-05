@@ -107,6 +107,8 @@ export class LiveImageView implements NodeView {
       // CSS zoom scales an already-clamped large image and can overflow at 200%.
       image.style.removeProperty('zoom')
       image.style.width = width ? '100%' : this.node.attrs.zoom && image.naturalWidth ? `${image.naturalWidth * zoom}px` : ''
+      const height = this.node.attrs.height
+      image.style.aspectRatio = height && width && !String(width).endsWith('%') ? `${parseFloat(String(width))} / ${parseFloat(String(height))}` : ''
       image.style.minWidth = image.style.minHeight = '0'
     }
     const compact = this.media.classList.contains('is-broken-image') || this.media.classList.contains('is-pending-image') || !this.node.attrs.src

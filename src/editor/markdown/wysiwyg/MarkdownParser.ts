@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it'
+import { installCjkEmphasis } from '../cjkEmphasis'
 import { inlineHtmlRanges } from './HtmlSourceRanges'
 import { MarkdownParser, defaultMarkdownParser } from 'prosemirror-markdown'
 import { Mark, type Node } from 'prosemirror-model'
@@ -8,6 +9,7 @@ import { installMarkdownMath } from '../mathSemantics'
 import { blankLineRanges, markdownBlockEnd } from '../blankLines'
 
 export const tokenizer = new MarkdownIt('commonmark', {html:true,linkify:true}).enable(['table','strikethrough','linkify'])
+installCjkEmphasis(tokenizer)
 // Markdown-it decodes percent-encoding in a linkified label by default
 // (`%20` becomes a space). The editor must keep the exact source spelling: a
 // decoded label would be written back to the file on the next edit, silently
@@ -77,12 +79,19 @@ export function sameBlockSemantics(a: Node, b: Node): boolean {
   return true
 }
 
+// Same official markdown-it 15 / prosemirror-markdown @types 14 boundary as
+// markdownParser below. Delegate image semantics instead of changing alt text.
+const nativeImageAttrs = defaultMarkdownParser.tokens.image.getAttrs! as unknown as
+  (tok: ReturnType<typeof tokenizer.parse>[number], tokens: ReturnType<typeof tokenizer.parse>, index: number) => Record<string, unknown>
 const tokens = { ...defaultMarkdownParser.tokens,
   table:{block:'table'}, thead:{ignore:true}, tbody:{ignore:true}, tr:{block:'table_row'},
   th:{block:'table_header',getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({align:String(tok.attrGet('style')||'').replace('text-align:','') || null})},
   td:{block:'table_cell',getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({align:String(tok.attrGet('style')||'').replace('text-align:','') || null})},
   s:{mark:'strike'}, softbreak:{node:'soft_break'},
   reference_definition:{ignore:true},
+  image:{...defaultMarkdownParser.tokens.image,getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number],tokens:ReturnType<typeof tokenizer.parse>,index:number)=>({
+    ...nativeImageAttrs(tok,tokens,index), referenceLabel:tok.meta?.label || null,
+  })},
   math_inline:{node:'math_inline',getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>({latex:tok.content})},
   math_block:{block:'protected_source',noCloseToken:true,getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>({source:tok.content})},
   footnote_reference:{node:'footnote_reference',getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>({label:tok.content})},
@@ -106,6 +115,7 @@ const tokens = { ...defaultMarkdownParser.tokens,
   // `[text](href)` keeps its own label instead of being rewritten as a URL.
   link:{mark:'link',getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number])=>({
     href:tok.attrGet('href'),
+    referenceLabel:tok.meta?.label || null,
     title:tok.attrGet('title') || null,
     autolink:tok.markup==='linkify'?'bare':tok.markup==='autolink'?'angle':'none',
   })},
@@ -121,7 +131,7 @@ tokenizer.inline.ruler.before('escape','markumo_footnotes',(state,silent)=>{
 tokenizer.inline.ruler.before('image', 'markumo_missing_image_reference', (state, silent) => {
   const match = /^!\[((?:\\.|[^\]\\\n])*)\]\[([^\]\n]*)\]/.exec(state.src.slice(state.pos))
   if (!match) return false
-  const label = (match[2] || match[1]).trim().replace(/\s+/g, ' ').toUpperCase()
+  const label = tokenizer.utils.normalizeReference(match[2] || match[1])
   if (state.env.references?.[label]) return false
   if (!silent) {
     const token = state.push('controlled_image', 'img', 0)
@@ -331,6 +341,7 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
           alt: controlledImage.alt,
           title: controlledImage.title,
           width: controlledImage.width,
+          height: controlledImage.height,
           align: controlledImage.align,
           zoom: controlledImage.zoom ?? null,
           htmlSource: original.trim(),
@@ -372,4 +383,21 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
   }
   const doc=s.nodes.doc.create(null,blocks.length?blocks.map(b=>b.node):s.nodes.paragraph.create())
   return {doc,blocks,tail:source.slice(cursor),environment:env}
+}
+
+/** Native markdown-it semantics determine the label and winning definition.
+ * The small prefix match locates a value span only after native validation. */
+export function referenceDefinition(source: string) {
+  const env: Record<string, unknown> = {}
+  const visible = tokenizer.parse(source, env)
+  const definitions = referenceDefinitions.get(env) || []
+  if (visible.length || definitions.length !== 1) return null
+  const label = definitions[0].meta?.label as string | undefined
+  if (!label || label.startsWith('^')) return null
+  const prefix = /^ {0,3}\[(?:\\[\s\S]|[^\]\\])+\]:[ \t\r\n]*/.exec(source)
+  if (!prefix) return null
+  const destination = tokenizer.helpers.parseLinkDestination(source, prefix[0].length, source.length)
+  if (!destination.ok) return null
+  const angle = source[prefix[0].length] === '<'
+  return {label, from: prefix[0].length + (angle ? 1 : 0), to: destination.pos - (angle ? 1 : 0)}
 }

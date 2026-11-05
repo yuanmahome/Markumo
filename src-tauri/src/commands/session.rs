@@ -5,7 +5,7 @@ use crate::{
     workspace::WorkspaceInfo,
 };
 use serde::Serialize;
-use tauri::{State, Window};
+use tauri::{Manager, State, Window};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -78,13 +78,19 @@ pub async fn initialize_launch(
                 }
             }
         }
-        if launch.kind != LaunchKind::Detached {
+        // An interrupted example open can persist the root before README succeeds.
+        let example_path = app.state::<crate::examples::ExampleStore>().0.lock()
+            .ok().and_then(|store| store.as_ref().and_then(|service| service.workspace_path().ok().flatten()));
+        let empty_session = allows_automatic_example(session.as_ref(), example_path.as_deref());
+        if launch.kind != LaunchKind::Detached && (launch.kind == LaunchKind::File || empty_session) {
             match crate::examples::automatic(&app, launch.kind == LaunchKind::File) {
-                Ok(Some(path)) if session.is_none() => {
+                Ok(Some(path)) => {
                     match workspaces.lock().map_err(|e| e.to_string())?.add_workspace(path.clone()) {
                         Ok(info) => {
-                            result.roots.push(info);
+                            if !result.roots.iter().any(|root| root.root_path == info.root_path) { result.roots.push(info); }
                             result.layout.mode = "workspace".into(); result.layout.sidebar_visible = true;
+                            // The saved empty layout must not remove the freshly opened README.
+                            result.editor_layout = None;
                             let readme = path.join("README.md");
                             result.active_path = Some(readme.to_string_lossy().into_owned());
                             let mut service = files.lock().map_err(|e| e.to_string())?;
@@ -183,4 +189,36 @@ pub async fn persist_session(
     drop(file_service);
     // Bounded atomic JSON write, serialized independently of editor input.
     sessions.lock().map_err(|e| e.to_string())?.save(&session)
+}
+
+// Only an empty session or our own interrupted example workspace may be replaced.
+fn allows_automatic_example(session: Option<&crate::session::LastSession>, example: Option<&std::path::Path>) -> bool {
+    session.is_none_or(|s| s.tabs.is_empty() && (
+        s.roots.is_empty() || example.is_some_and(|example| s.roots.iter().all(|root|
+            std::path::Path::new(root).canonicalize().ok().zip(example.canonicalize().ok()).is_some_and(|(root, example)| root == example)
+        ))
+    ))
+}
+
+#[cfg(test)]
+mod example_launch_tests {
+    use super::*;
+    #[test]
+    fn retry_empty_session_but_keep_user_files_and_workspaces() {
+        let temp = tempfile::tempdir().unwrap();
+        let example = temp.path().join("example"); let user = temp.path().join("user");
+        std::fs::create_dir(&example).unwrap(); std::fs::create_dir(&user).unwrap();
+        let mut session: crate::session::LastSession = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 1, "kind": "single", "roots": [], "tabs": [], "activePath": null,
+            "layout": {"mode":"single", "sidebarVisible":false, "sidebarWidth":254}
+        })).unwrap();
+        assert!(allows_automatic_example(Some(&session), Some(&example)));
+        session.roots.push(example.to_string_lossy().into_owned());
+        assert!(allows_automatic_example(Some(&session), Some(&example)));
+        session.roots.push(user.to_string_lossy().into_owned());
+        assert!(!allows_automatic_example(Some(&session), Some(&example)));
+        session.roots.clear();
+        session.tabs.push(crate::session::SessionTab {path: "user.md".into(), encoding: "UTF-8".into()});
+        assert!(!allows_automatic_example(Some(&session), Some(&example)));
+    }
 }

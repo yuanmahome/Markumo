@@ -13,11 +13,12 @@ export interface ControlledImage {
   alt: string
   title: string | null
   width: string | null
+  height?: string | null
   align: 'left' | 'center' | 'right' | null
   zoom?: number | null
 }
 
-const ALLOWED_ATTRIBUTES = new Set(['src', 'alt', 'title', 'width', 'align', 'style'])
+const ALLOWED_ATTRIBUTES = new Set(['src', 'alt', 'title', 'width', 'height', 'align', 'style'])
 const ALIGNMENTS = new Set(['left', 'center', 'right'])
 /** `auto`, a percentage, or an explicit pixel width. Nothing else is persisted. */
 const WIDTH_PATTERN = /^(?:auto|\d{1,4}%|\d{1,5}(?:px)?)$/
@@ -89,6 +90,8 @@ export function parseControlledImageHtml(source: string): ControlledImage | null
   if (/[\0\r\n]/.test(src)) return null
 
   const width = normalizeImageWidth(values.get('width'))
+  const height = values.get('height') ?? null
+  if (height !== null && (!/^\d{1,5}(?:px)?$/.test(height) || parseFloat(height) < 1 || parseFloat(height) > 20000)) return null
   const align = normalizeImageAlign(values.get('align'))
   if (values.has('width') && width === null) return null
   if (values.has('align') && align === null) return null
@@ -98,19 +101,22 @@ export function parseControlledImageHtml(source: string): ControlledImage | null
     zoom = match ? normalizeImageZoom(Number(match[1])) : null
     if (zoom === null) return null
   }
-  return { src, alt: values.get('alt') ?? '', title: values.get('title') ?? null, width, align, ...(zoom === null ? {} : { zoom }) }
+  return { src, alt: values.get('alt') ?? '', title: values.get('title') ?? null, width, height, align, ...(zoom === null ? {} : { zoom }) }
 }
 
 /** Writes the controlled `<img>` spelling, escaped and validated. */
 export function controlledImageHtml(image: ControlledImage, forceHtml = false): string | null {
   const width = normalizeImageWidth(image.width)
+  const height = image.height
+  if (height && (!/^\d{1,5}(?:px)?$/.test(height) || parseFloat(height) < 1 || parseFloat(height) > 20000)) return null
   const align = normalizeImageAlign(image.align)
   const zoom = normalizeImageZoom(image.zoom)
-  if (!width && !align && zoom === null && !forceHtml) return null
+  if (!width && !height && !align && zoom === null && !forceHtml) return null
   const attributes = [`src="${escapeHtmlAttribute(image.src)}"`]
   if (image.alt) attributes.push(`alt="${escapeHtmlAttribute(image.alt)}"`)
   if (image.title) attributes.push(`title="${escapeHtmlAttribute(image.title)}"`)
   if (width) attributes.push(`width="${escapeHtmlAttribute(width)}"`)
+  if (height) attributes.push(`height="${escapeHtmlAttribute(height)}"`)
   if (align) attributes.push(`align="${escapeHtmlAttribute(align)}"`)
   if (zoom !== null) attributes.push(`style="zoom:${zoom}%;"`)
   return `<img ${attributes.join(' ')} />`

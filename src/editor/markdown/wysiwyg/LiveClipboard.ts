@@ -4,6 +4,7 @@ import type { EditorView } from 'prosemirror-view'
 import { CellSelection } from 'prosemirror-tables'
 import { parser as lezerMarkdownParser } from '@lezer/markdown'
 import MarkdownIt from 'markdown-it'
+import { installCjkEmphasis } from '../cjkEmphasis'
 import DOMPurify from 'dompurify'
 import { sanitizeMarkup } from '../html/sanitize'
 import { markdownSyntaxExtensions } from '../semantics'
@@ -28,6 +29,7 @@ export type LiveClipboardOperation =
 // The serializer deliberately preserves auto-links as bare Markdown URLs.
 // Re-rendering clipboard HTML must recognize those links just like Live/preview.
 const renderer = new MarkdownIt({ html: false, linkify: true })
+installCjkEmphasis(renderer)
 const inlineSyntaxParser = lezerMarkdownParser.configure(markdownSyntaxExtensions)
 const LEZER_NAME_TO_KIND: Record<string, string> = {
   InlineCode: 'code',

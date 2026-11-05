@@ -1,98 +1,18 @@
-use crate::conversion::{
-    self, BinaryBytes, ConversionStore, InputText, NativeRunner, Purpose, Selection,
-};
+use crate::conversion::{self, ConversionStore, InputText, Purpose, Selection};
 use serde::{Deserialize, Serialize};
 use std::{
-    path::{Path, PathBuf},
-    process::Stdio,
+    path::Path,
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PandocStatus {
-    pub available: bool,
-    pub version: Option<String>,
-    pub path: Option<String>,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PdfPrintOptions {
     pub paper_size: Option<String>,
     pub orientation: Option<String>,
     pub margins: Option<String>,
     pub print_background: Option<bool>,
-}
-
-fn pandoc_version(program: &Path) -> Option<String> {
-    use std::io::Read;
-    let output = tempfile::NamedTempFile::new().ok()?;
-    let mut child = conversion::pandoc_command(program)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stderr(Stdio::null())
-        .stdout(output.reopen().ok()?)
-        .spawn()
-        .ok()?;
-    let deadline = Instant::now() + Duration::from_secs(3);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                if !status.success() {
-                    return None;
-                }
-                let mut text = String::new();
-                output
-                    .reopen()
-                    .ok()?
-                    .take(4096)
-                    .read_to_string(&mut text)
-                    .ok()?;
-                return text
-                    .lines()
-                    .next()?
-                    .split_whitespace()
-                    .nth(1)
-                    .map(str::to_owned);
-            }
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-        }
-    }
-}
-pub fn find_pandoc_path() -> Option<PathBuf> {
-    let mut candidates = vec![PathBuf::from("pandoc")];
-    #[cfg(windows)]
-    for key in [
-        "ProgramFiles",
-        "ProgramFiles(x86)",
-        "LOCALAPPDATA",
-        "APPDATA",
-    ] {
-        if let Ok(path) = std::env::var(key) {
-            candidates.push(PathBuf::from(path).join("Pandoc/pandoc.exe"));
-        }
-    }
-    #[cfg(not(windows))]
-    let _ = &mut candidates;
-    candidates.into_iter().find(|p| pandoc_version(p).is_some())
-}
-#[tauri::command]
-pub async fn detect_pandoc() -> Result<PandocStatus, String> {
-    tauri::async_runtime::spawn_blocking(|| {
-        let path = find_pandoc_path();
-        PandocStatus {
-            available: path.is_some(),
-            version: path.as_deref().and_then(pandoc_version),
-            path: path.map(|p| p.to_string_lossy().into_owned()),
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -168,42 +88,38 @@ pub fn release_conversion_lease(
 ) {
     store.release(window.label(), &token);
 }
+/// Binary bodies avoid copying large payloads into JSON number arrays.
 #[tauri::command]
-pub async fn save_binary_file(
-    window: WebviewWindow,
-    store: State<'_, ConversionStore>,
-    token: String,
-    format: String,
-    bytes: BinaryBytes,
-) -> Result<(), String> {
-    let purpose = Purpose::write(&format)?;
-    if !matches!(purpose, Purpose::Html | Purpose::Png | Purpose::Docx) {
-        return Err("此命令只接受 HTML/PNG/DOCX 授权".into());
-    }
-    let op = store.begin(window.label(), &[(&token, purpose)])?;
-    tauri::async_runtime::spawn_blocking(move || conversion::save_binary(&op, &bytes.0))
-        .await
-        .map_err(|e| e.to_string())?
-}
-
-/// Raw bytes avoid a large JSON number array on the WebView main thread. The
-/// same window-bound, single-operation DOCX lease still controls the commit.
-#[tauri::command]
-pub async fn save_docx_bytes(
+pub async fn save_conversion_bytes(
     window: WebviewWindow,
     store: State<'_, ConversionStore>,
     request: tauri::ipc::Request<'_>,
 ) -> Result<(), String> {
-    let token = request.headers().get("x-markumo-conversion-token")
-        .and_then(|value| value.to_str().ok()).ok_or("缺少 Word 导出授权")?;
-    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("Word 导出需要原始二进制请求".into()) };
-    if bytes.len() > conversion::MAX_OUTPUT || !bytes.starts_with(b"PK\x03\x04") {
-        return Err("Word 输出格式无效或超过 16 MiB，未写入文件".into());
+    let token = request
+        .headers()
+        .get("x-markumo-conversion-token")
+        .and_then(|v| v.to_str().ok())
+        .ok_or("缺少转换目标授权")?;
+    let format = request
+        .headers()
+        .get("x-markumo-conversion-format")
+        .and_then(|v| v.to_str().ok())
+        .ok_or("缺少转换格式")?;
+    let purpose = Purpose::write(format)?;
+    if !matches!(purpose, Purpose::Docx | Purpose::Png | Purpose::Html) {
+        return Err("不支持的二进制转换格式".into());
     }
-    let op = store.begin(window.label(), &[(token, Purpose::Docx)])?;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("转换输出需要原始二进制请求".into());
+    };
+    if bytes.len() > conversion::MAX_OUTPUT {
+        return Err("转换输出超过 16 MiB".into());
+    }
+    let op = store.begin(window.label(), &[(token, purpose)])?;
     let bytes = bytes.clone();
     tauri::async_runtime::spawn_blocking(move || conversion::save_binary(&op, &bytes))
-        .await.map_err(|error| error.to_string())?
+        .await
+        .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 pub async fn read_conversion_html(
@@ -217,54 +133,78 @@ pub async fn read_conversion_html(
         .map_err(|e| e.to_string())?
 }
 #[tauri::command]
-pub async fn pandoc_export_docx(
+pub async fn prepare_docx_import(
     window: WebviewWindow,
     store: State<'_, ConversionStore>,
-    files: State<'_, crate::commands::files::FileStore>,
-    workspace: State<'_, crate::commands::workspace::WorkspaceStore>,
-    token: String,
-    markdown_content: InputText,
-    document_token: Option<String>,
-) -> Result<(), String> {
-    let op = store.begin(window.label(), &[(&token, Purpose::Docx)])?;
-    let owner = window.label().to_owned();
-    let files = files.inner().clone();
-    let workspace = workspace.for_window(&owner)?;
+    source_token: String,
+) -> Result<conversion::PreparedImport, String> {
+    let op = store.begin(window.label(), &[(&source_token, Purpose::ReadDocx)])?;
     tauri::async_runtime::spawn_blocking(move || {
-        let exe = find_pandoc_path().ok_or("未检测到可用的 Pandoc，请先安装 Pandoc。")?;
-        conversion::export_docx(&op, &markdown_content.0, &exe, &NativeRunner, |relative| {
-            op.check()?;
-            let token = document_token
-                .as_deref()
-                .ok_or("本地 Word 图片需要已授权的 Markdown 文档，请先保存文档。")?;
-            let roots = workspace.lock().map_err(|e| e.to_string())?.roots();
-            let mut files = files.lock().map_err(|e| e.to_string())?;
-            files.set_owner(&owner);
-            files
-                .markdown_image(token, relative, &roots, true)
-                .map_err(|e| e.to_string())
-        })
+        op.verify(0)?;
+        if !op
+            .path(0)
+            .extension()
+            .and_then(|s| s.to_str())
+            .is_some_and(|s| s.eq_ignore_ascii_case("docx"))
+        {
+            return Err("只支持 .docx；请将 .doc、.docm 或加密文档另存为标准 DOCX".into());
+        }
+        let bytes = conversion::read_bounded(op.path(0), conversion::MAX_OUTPUT)?;
+        let document = conversion::docx::parse(&bytes, &|| op.check())?;
+        op.stage_import(document)
     })
     .await
     .map_err(|e| e.to_string())?
 }
+#[derive(Serialize)]
+pub struct ImportedDocument {
+    #[serde(flatten)]
+    summary: conversion::ImportSummary,
+    file: Option<crate::files::OpenFile>,
+}
 #[tauri::command]
-pub async fn pandoc_import_docx(
+pub async fn commit_docx_import(
     window: WebviewWindow,
     store: State<'_, ConversionStore>,
-    source_token: String,
+    files: State<'_, crate::commands::files::FileStore>,
+    draft_token: String,
     target_token: String,
-) -> Result<String, String> {
-    let op = store.begin(
-        window.label(),
-        &[
-            (&source_token, Purpose::ReadDocx),
-            (&target_token, Purpose::Markdown),
-        ],
-    )?;
+) -> Result<ImportedDocument, String> {
+    let (op, document) = store.begin_import(window.label(), &draft_token, &target_token)?;
+    let files = files.inner().clone();
+    let owner = window.label().to_owned();
     tauri::async_runtime::spawn_blocking(move || {
-        let exe = find_pandoc_path().ok_or("未检测到可用的 Pandoc，请先安装 Pandoc。")?;
-        conversion::import_docx(&op, &exe, &NativeRunner)
+        let mut summary = conversion::commit_import(&op, document)?;
+        let file = if op.check().is_ok() {
+            match files.lock() {
+                Ok(mut files) => {
+                    files.set_owner(&owner);
+                    match files.open_selected(op.path(1).to_owned(), None) {
+                        Ok(f) => Some(f),
+                        Err(e) => {
+                            summary.warnings.push(conversion::docx::ast::Warning {
+                                kind: "open".into(),
+                                message: format!("导入已保存到 {}，但打开失败：{e}", summary.path),
+                            });
+                            None
+                        }
+                    }
+                }
+                Err(_) => {
+                    summary.warnings.push(conversion::docx::ast::Warning {
+                        kind: "open".into(),
+                        message: format!(
+                            "导入已保存到 {}；文件服务暂不可用，请稍后打开。",
+                            summary.path
+                        ),
+                    });
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        Ok(ImportedDocument { summary, file })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -351,7 +291,10 @@ fn render_pdf(
         mpsc, Arc,
     };
     use tauri::{WebviewUrl, WebviewWindowBuilder};
-    use webview2_com::{Microsoft::Web::WebView2::Win32::*, ExecuteScriptCompletedHandler, PrintToPdfCompletedHandler};
+    use webview2_com::{
+        ExecuteScriptCompletedHandler, Microsoft::Web::WebView2::Win32::*,
+        PrintToPdfCompletedHandler,
+    };
     use windows_core::Interface;
     let work = Arc::new(PdfWorkspace::new()?);
     let input = work.path().join("print.html");
@@ -366,7 +309,9 @@ fn render_pdf(
         WebviewUrl::External(url),
     )
     .on_page_load(move |_, payload| {
-        if payload.event() == tauri::webview::PageLoadEvent::Finished { page_loaded.store(true, Ordering::Release); }
+        if payload.event() == tauri::webview::PageLoadEvent::Finished {
+            page_loaded.store(true, Ordering::Release);
+        }
     })
     .on_navigation(move |url| url == &allowed)
     .data_directory(work.path().join("webview-profile"))
@@ -393,9 +338,17 @@ fn render_pdf(
         let deadline = Instant::now() + Duration::from_secs(20);
         let mut stable = 0;
         while stable < 2 {
-            if !job_alive.load(Ordering::Acquire) { return }
-            if Instant::now() >= deadline { let _ = tx.send(Err("打印资源准备超时".into())); return }
-            if !loaded.load(Ordering::Acquire) { std::thread::sleep(Duration::from_millis(50)); continue }
+            if !job_alive.load(Ordering::Acquire) {
+                return;
+            }
+            if Instant::now() >= deadline {
+                let _ = tx.send(Err("打印资源准备超时".into()));
+                return;
+            }
+            if !loaded.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(50));
+                continue;
+            }
             let (ready_tx, ready_rx) = mpsc::channel();
             // Fixed host-owned read-only probe. Document scripts remain forbidden by CSP.
             let probe = window.with_webview(move |wv| {
@@ -410,7 +363,15 @@ fn render_pdf(
                 })();
                 if result.is_err() { let _ = ready_tx.send(false); }
             });
-            if probe.is_ok() && ready_rx.recv_timeout(Duration::from_secs(1)).unwrap_or(false) { stable += 1 } else { stable = 0 }
+            if probe.is_ok()
+                && ready_rx
+                    .recv_timeout(Duration::from_secs(1))
+                    .unwrap_or(false)
+            {
+                stable += 1
+            } else {
+                stable = 0
+            }
             std::thread::sleep(Duration::from_millis(50));
         }
         if !job_alive.load(Ordering::Acquire) {

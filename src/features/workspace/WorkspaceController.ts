@@ -263,6 +263,22 @@ export class WorkspaceController {
     return success
   }
 
+  async openExampleWorkspace(): Promise<boolean> {
+    if (!this.gateway.openExampleWorkspace) return false
+    let accepted = false, token = ''
+    const success = await this.loadWorkspace(async () => {
+      const result = await this.gateway.openExampleWorkspace!()
+      accepted = this.fileController.accept(result.file)
+      token = this.documentManager.openedDocuments.find(doc => displayPathKey(doc.path || '') === displayPathKey(result.file.path))?.fileToken || ''
+      return result.workspace
+    }, true)
+    if (success && accepted) {
+      this.notifyOpened()
+      await this.gateway.acknowledgeExampleWorkspace?.(token)
+    }
+    return success && accepted
+  }
+
   async openDroppedWorkspace(token: string): Promise<boolean> {
     const success = await this.loadWorkspace(() => this.gateway.openDroppedWorkspace(token), true)
     if (success) this.notifyOpened()

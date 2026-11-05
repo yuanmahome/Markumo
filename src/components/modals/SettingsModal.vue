@@ -130,19 +130,6 @@
                 <input id="settings-pdf-codewrap" class="setting-switch" type="checkbox" :checked="conversionSettings.pdf.codeWrap" @change="updatePdf('codeWrap', ($event.target as HTMLInputElement).checked)" />
               </div>
 
-              <h4 class="subhead">Word (Pandoc) 状态</h4>
-              <div class="settingrow pandoc-row">
-                <div class="pandoc-info">
-                  <span class="pandoc-indicator" :class="{ ok: pandocStatus.available }"></span>
-                  <span v-if="pandocStatus.available">已检测到 Pandoc：{{ pandocStatus.version }}</span>
-                  <span v-else>未检测到 Pandoc（Word 导入导出需要 Pandoc）</span>
-                </div>
-                <div class="pandoc-actions">
-                  <button type="button" class="small-btn" @click="checkPandoc">重新检测</button>
-                  <button v-if="!pandocStatus.available" type="button" class="small-btn" @click="openPandocSite">官网下载</button>
-                </div>
-              </div>
-              <p v-if="pandocStatus.path" class="setting-hint">路径：{{ pandocStatus.path }}</p>
             </section>
 
             <!-- 6. 快捷键（全新独立完整配置体系） -->
@@ -254,8 +241,6 @@ import {
   loadConversionSettings,
   saveConversionSettings,
   type ConversionSettings,
-  getPandocStatus,
-  type PandocStatus,
 } from '../../features/document-conversion'
 import {
   type KeymapPresetId,
@@ -375,16 +360,6 @@ const fontDraft = ref(String(props.fontSize)), fontError = ref('')
 const delays = [500, 1500, 3000, 5000]
 
 const conversionSettings = ref<ConversionSettings>(loadConversionSettings())
-const pandocStatus = ref<PandocStatus>({ available: false })
-
-async function checkPandoc() {
-  pandocStatus.value = await getPandocStatus(true)
-}
-
-function openPandocSite() {
-  window.open('https://pandoc.org/installing.html', '_blank')
-}
-
 function updateConversion<K extends keyof ConversionSettings>(key: K, val: ConversionSettings[K]) {
   conversionSettings.value[key] = val
   saveConversionSettings(conversionSettings.value)
@@ -419,7 +394,6 @@ watch(visible, value => {
     searchQuery.value=''
     shortcutFilter.value='all'
     conversionSettings.value = loadConversionSettings()
-    void checkPandoc()
   }
 })
 
@@ -729,30 +703,6 @@ select:disabled { opacity:.45 }
   padding-bottom: 4px;
   border-bottom: 1px dashed var(--line);
 }
-.pandoc-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.pandoc-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-.pandoc-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--muted);
-}
-.pandoc-indicator.ok {
-  background: #2ea44f;
-}
-.pandoc-actions {
-  display: flex;
-  gap: 6px;
-}
 .small-btn {
   padding: 4px 10px;
   font-size: 12px;
@@ -790,7 +740,7 @@ select:disabled { opacity:.45 }
 .settingrow{flex-wrap:wrap;gap:8px;padding:4px 0}.settingrow > label,.settingrow > .setting-label{flex:1 1 140px}.settingrow > :deep(.segmented-control){flex:0 1 auto;min-width:0}
 .settingrow > input[type=number]{width:90px;max-width:100%;background:var(--editor);color:var(--ink);border:1px solid var(--line);border-radius:5px;padding:5px;font:inherit}
 .indent-control{display:flex;gap:8px;align-items:center;max-width:100%;flex-wrap:wrap}.indent-control input{width:52px;min-height:30px;background:var(--editor);color:var(--ink);border:1px solid var(--line);border-radius:5px;font:inherit}
-.number-control{flex-wrap:wrap;max-width:100%}.pandoc-row{flex-wrap:wrap}.pandoc-info{min-width:0;overflow-wrap:anywhere}
+.number-control{flex-wrap:wrap;max-width:100%}
 .settings-content{overflow-anchor:auto}
 .settings-content:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}.settings-section{scroll-margin-top:20px}
 @media(prefers-reduced-motion:reduce){.fade-enter-active,.fade-leave-active,.setting-switch,.setting-switch::before{transition:none}}

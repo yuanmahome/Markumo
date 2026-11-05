@@ -1,4 +1,3 @@
-import { invoke } from '@tauri-apps/api/core'
 import { computed, type Ref, type ComputedRef } from 'vue'
 import { EditorView } from '@codemirror/view'
 import type { Preferences, Encoding, FileOpenEncoding } from '../features/files/contracts'
@@ -222,11 +221,11 @@ export function useShellCommands(host: ShellCommandsHost) {
       { id: 'history', title: '历史版本…', detail: '查看并恢复已保存的版本', category: 'action', disabled: !host.desktop || !host.activeDoc.value?.path, action: () => host.openHistory() },
       { id: 'save-utf8', title: '另存为 UTF-8', detail: '转换编码，无 BOM', category: 'action', disabled: !host.desktop || host.fileBusy.value || host.activeDoc.value?.kind === 'javaClass' || host.activeDoc.value?.encoding === 'Hex', action: () => void host.saveActive(true, 'UTF-8') },
       { id: 'import-html', title: '导入 HTML…', detail: 'HTML 转 Markdown', category: 'action', action: () => void host.runFileOperation(() => host.importController.importDocument('html')) },
-      { id: 'import-docx', title: '导入 Word (.docx)…', detail: 'Word 转 Markdown (Pandoc)', category: 'action', action: () => void host.runFileOperation(() => host.importController.importDocument('docx')) },
+      { id: 'import-docx', title: '导入 Word (.docx)…', detail: 'Word 转 Markdown', category: 'action', action: () => void host.runFileOperation(() => host.importController.importDocument('docx')) },
       { id: 'export-pdf', title: '导出 PDF…', detail: '导出为 PDF 文档', category: 'action', disabled: !host.exportController.canExportActive(), action: () => void host.runFileOperation(() => host.exportController.exportDocument('pdf')) },
       { id: 'export-html', title: '导出 HTML…', detail: '包含排版样式', category: 'action', disabled: !host.exportController.canExportActive(), action: () => void host.runFileOperation(() => host.exportController.exportDocument('html')) },
       { id: 'export-html-plain', title: '导出 HTML（无主题样式）…', detail: '语义化纯 HTML', category: 'action', disabled: !host.exportController.canExportActive(), action: () => void host.runFileOperation(() => host.exportController.exportDocument('html-plain')) },
-      { id: 'export-docx', title: '导出 Word (.docx)…', detail: 'Markdown 转 Word (Pandoc)', category: 'action', disabled: !host.exportController.canExportActive(), action: () => void host.runFileOperation(() => host.exportController.exportDocument('docx')) },
+      { id: 'export-docx', title: '导出 Word (.docx)…', detail: 'Markdown 转 Word', category: 'action', disabled: !host.exportController.canExportActive(), action: () => void host.runFileOperation(() => host.exportController.exportDocument('docx')) },
       { id: 'export-png', title: '导出 PNG 长图…', detail: '整页高清长图', category: 'action', disabled: !host.exportController.canExportActive(), action: () => void host.runFileOperation(() => host.exportController.exportDocument('png')) },
       { id: 'export-repeat', title: '使用上一次设置导出', detail: '', category: 'action', disabled: !host.exportController.canExportActive(), action: () => void host.runFileOperation(() => host.exportController.exportRepeat()) },
       { id: 'export-settings', title: '导出设置…', detail: '首选项', category: 'action', action: () => host.openSettings('conversion') },
@@ -320,8 +319,7 @@ export function useShellCommands(host: ShellCommandsHost) {
       { id: 'sidebar', title: '显示/隐藏侧边栏', detail: '', category: 'action', action: host.toggleSidebar },
       { id: 'theme', title: '切换主题：深色 / 浅色 / 跟随系统', detail: '外观', category: 'action', action: host.toggleTheme },
       { id: 'open-examples', title: '打开示例工作区', detail: '', category: 'action', action: async () => {
-        const path = await invoke<string>('example_workspace')
-        if (await host.openWorkspacePath(path, true)) await host.openRecent(path + '/README.md')
+        await host.workspace.openExampleWorkspace()
       } },
       { id: 'settings', title: '打开首选项', detail: '设置', category: 'action', action: host.openSettings },
     ]

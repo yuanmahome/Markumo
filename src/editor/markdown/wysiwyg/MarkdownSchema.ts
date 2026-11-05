@@ -104,10 +104,12 @@ nodes.image = {
   attrs: {
     ...nodes.image.attrs,
     width: { default: null },
+    height: { default: null },
     align: { default: null },
     htmlSource: { default: null },
     zoom: { default: null },
     unresolvedReference: { default: null },
+    referenceLabel: { default: null },
   },
   parseDOM: [
     {
@@ -119,6 +121,7 @@ nodes.image = {
           title: el.getAttribute('title') || null,
           alt: el.getAttribute('alt') || null,
           width: el.getAttribute('width') || el.style.width || null,
+          height: el.getAttribute('height') || null,
           align: el.getAttribute('align') || (el.style.textAlign || el.style.float || null),
         }
       },
@@ -134,10 +137,11 @@ export const markdownSchema = new Schema({ nodes, marks: commonmark.spec.marks.a
   // `autolink` records how the source spelled this link so serialization can
   // put it back unchanged: a bare linkified URL must stay bare, an angle
   // autolink keeps its brackets, and an explicit `[text](href)` keeps both.
-  attrs: { ...baseLink.attrs, autolink: { default: 'none' } },
+  attrs: { ...baseLink.attrs, autolink: { default: 'none' }, referenceLabel: { default: null } },
   toDOM: mark => ['a', {
     href: safeMarkdownURL(mark.attrs.href) || undefined,
     'data-href': mark.attrs.href,
+    'data-reference-label': mark.attrs.referenceLabel || undefined,
     'data-autolink': mark.attrs.autolink,
     title: mark.attrs.title,
   }, 0],

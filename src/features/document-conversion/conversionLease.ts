@@ -8,3 +8,9 @@ export async function releaseConversion(selection: ConversionSelection | null): 
     })
   }
 }
+
+export function saveConversionBytes(target: ConversionSelection, format: 'html' | 'docx' | 'png', bytes: Uint8Array) {
+  return invoke<void>('save_conversion_bytes', bytes, {headers: {
+    'x-markumo-conversion-token': target.token, 'x-markumo-conversion-format': format,
+  }})
+}

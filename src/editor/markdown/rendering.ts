@@ -1,4 +1,5 @@
 import MarkdownIt from 'markdown-it'
+import { installCjkEmphasis } from './cjkEmphasis'
 import { blankLineRanges, markdownBlockEnd } from './blankLines'
 import { syntaxSpans } from '../core/syntaxSpans'
 import { LanguageSupport } from '@codemirror/language'
@@ -26,6 +27,7 @@ export { markdownSemantics } from './semantics'
 export { fenceLanguage } from '../languages'
 export function createMarkdownRenderer(onLanguageReady: () => void = () => {}, preview = false) {
   const md = new MarkdownIt(markdownSemantics)
+  installCjkEmphasis(md)
   if (preview) {
     md.core.ruler.before('strip_references', 'markumo_blank_lines', state => {
       const starts=[0]

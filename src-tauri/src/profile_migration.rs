@@ -31,6 +31,7 @@ pub fn migrate(current: &Path) -> io::Result<()> {
         Ok(_) => (),
     }
     fs::create_dir_all(current)?;
+    let mut imported = false;
     for name in PREFERENCES {
         let destination = current.join(name);
         if destination.try_exists()? {
@@ -64,7 +65,9 @@ pub fn migrate(current: &Path) -> io::Result<()> {
             }
         }
         write_new(current, &destination, &bytes)?;
+        imported = true;
     }
+    if !imported { return Ok(()); }
     // Mark only a completed import. Backups stay untouched, and deleting a new
     // preference later must not resurrect stale data from the retired profile.
     write_new(

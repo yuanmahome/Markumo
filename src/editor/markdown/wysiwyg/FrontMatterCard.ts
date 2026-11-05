@@ -98,7 +98,7 @@ export function renderFrontMatterCard(
   titleVal.placeholder = '（未设置文档标题）'
   titleVal.disabled = readOnly
   titleVal.onchange = () => {
-    const nextYaml = updateFrontMatterField(yamlSource, 'title', titleVal.value.trim())
+    const nextYaml = updateFrontMatterField(yamlSource, 'title', titleVal.value)
     // `null` means the block became unsafe to rewrite: revert and let the user
     // edit the source instead of writing a guessed value.
     if (nextYaml === null) {
@@ -164,6 +164,8 @@ export function renderFrontMatterCard(
     createdWrap.append(createdLabel, document.createTextNode(` ${parsed.created}`))
     metaRow.append(createdWrap)
   }
+
+  if (parsed.updated) metaRow.append(textElement('span', 'md-frontmatter-meta-item', `更新: ${parsed.updated}`))
 
   if (parsed.otherCount > 0) {
     const otherWrap = document.createElement('span')

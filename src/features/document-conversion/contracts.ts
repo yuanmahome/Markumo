@@ -4,11 +4,10 @@ export type ImportFormat = 'html' | 'docx'
 /** Native, single-use authorization. Never persist this in export settings. */
 export interface ConversionSelection { path: string; token: string }
 
-export interface PandocStatus {
-  available: boolean
-  version?: string
-  path?: string
-}
+export interface ConversionWarning { kind: string; message: string }
+export interface ConversionResult { path?: string; warnings: ConversionWarning[]; stats?: Record<string, number> }
+export interface PreparedImport extends ConversionSelection { warnings: ConversionWarning[]; stats: Record<string, number> }
+export interface ImportedDocument extends ConversionResult { path: string; file: import('../files/contracts').OpenFile | null }
 
 export interface PdfOptions {
   paperSize: 'A4' | 'Letter'

@@ -1,7 +1,10 @@
+import type { ConversionWarning } from './contracts'
 import MarkdownIt, { type Token } from 'markdown-it'
+import { installCjkEmphasis } from '../../editor/markdown/cjkEmphasis'
 import { installMarkdownMath } from '../../editor/markdown/mathSemantics'
 import { installExportFootnotes, type ExportNote } from './ExportSemantics'
 import { markdownSemantics } from '../../editor/markdown/semantics'
+import { parseControlledImageHtml, type ControlledImage } from '../../editor/markdown/wysiwyg/imageHtml'
 
 /**
  * Native DOCX writer.
@@ -23,7 +26,7 @@ export interface DocxImage {
   height?: number
 }
 
-export interface DocxWarning {
+export interface DocxWarning extends ConversionWarning {
   kind: 'image' | 'math' | 'diagram' | 'footnote' | 'toc' | 'content'
   message: string
 }
@@ -269,7 +272,7 @@ function listParagraph(state: EmitState, level: number, prefix: string, runs: st
 }
 
 async function prepareImages(tokens: Token[], state: EmitState, options: DocxOptions) {
-  for (const image of tokens.flatMap(token => token.type === 'math_block' || token.type === 'fence' && token.info.trim() === 'mermaid' ? [token] : (token.children ?? []).filter(child => child.type === 'image' || child.type === 'math_inline'))) {
+  for (const image of tokens.flatMap(token => token.type === 'markumo_image_block' || token.type === 'math_block' || token.type === 'fence' && token.info.trim() === 'mermaid' ? [token] : (token.children ?? []).filter(child => child.type === 'image' || child.type === 'math_inline'))) {
     if (options.signal?.aborted) throw new Error('导出已取消')
     const source = String(image.attrGet('src') ?? '')
     if (state.nextImage >= MAX_IMAGES || state.mediaBytes >= state.mediaBudget) {
@@ -286,7 +289,16 @@ async function prepareImages(tokens: Token[], state: EmitState, options: DocxOpt
       continue
     }
     const dimensions = imageDimensions(resolved.data)
-    const width = resolved.width || dimensions?.[0], height = resolved.height || dimensions?.[1]
+    let width = resolved.width || dimensions?.[0], height = resolved.height || dimensions?.[1]
+    const sizing = image.meta?.controlledImage as ControlledImage | undefined
+    if (width && height && sizing) {
+      const naturalRatio = width / height
+      const specifiedWidth = sizing.width && sizing.width !== 'auto' ? parseFloat(sizing.width) * (sizing.width.endsWith('%') ? 601 / 100 : 1) : null
+      const specifiedHeight = sizing.height ? parseFloat(sizing.height) : null
+      if (specifiedWidth) { width = specifiedWidth; height = specifiedHeight || width / naturalRatio }
+      else if (specifiedHeight) { height = specifiedHeight; width = height * naturalRatio }
+      width *= (sizing.zoom ?? 100) / 100; height *= (sizing.zoom ?? 100) / 100
+    }
     if (!width || !height || !Number.isFinite(width + height)) {
       state.warnings.push({ kind: 'image', message: '无法确定图片尺寸：' + source }); continue
     }
@@ -297,17 +309,28 @@ async function prepareImages(tokens: Token[], state: EmitState, options: DocxOpt
     const id = ++state.bookmarkId
     state.media.push({ name, data: resolved.data }); state.mediaBytes += resolved.data.length
     state.rels.push(`<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${name}"/>`)
-    state.imageRuns.set(image, `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${id}" name="${escapeXml(sanitizeText(resolved.alt || name))}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`)
+    state.imageRuns.set(image, `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${id}" name="${escapeXml(sanitizeText(image.content || resolved.alt || name))}" descr="${escapeXml(sanitizeText(image.content || resolved.alt || name))}"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${id}" name="${name}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`)
     state.stats.images++
   }
 }
 
 async function buildDocumentXml(markdown: string, state: EmitState, options: DocxOptions): Promise<void> {
   const md = new MarkdownIt(markdownSemantics)
+  installCjkEmphasis(md)
   installMarkdownMath(md)
   const notes: ExportNote[] = []
   installExportFootnotes(md, notes)
   const tokens = md.parse(markdown, {})
+  // Accept only the editor's allow-listed image form. This also keeps imported
+  // Word images (including explicit dimensions) as media during a second export.
+  for (const block of tokens) for (const token of [block, ...(block.children ?? [])]) {
+    if (token.type !== 'html_block' && token.type !== 'html_inline') continue
+    const image = parseControlledImageHtml(token.content)
+    if (!image) continue
+    token.type = token.type === 'html_block' ? 'markumo_image_block' : 'image'
+    token.attrSet('src', image.src); token.content = image.alt
+    token.meta = { ...token.meta, controlledImage: image }
+  }
   for (const note of notes) state.footnotes.push({ id: state.footnotes.length + 1, ...note, anchors: [] })
   if (notes.length) state.warnings.push({ kind: 'footnote', message: '脚注以文末列表形式导出（' + notes.length + ' 条）' })
   await prepareImages(tokens, state, options)
@@ -368,7 +391,7 @@ async function buildDocumentXml(markdown: string, state: EmitState, options: Doc
         if (diagram) { state.body += '<w:p>' + diagram + '</w:p>'; index++; continue }
         state.warnings.push({ kind: 'diagram', message: 'Mermaid 编译失败或超过资源预算，以下保留源码。' })
       }
-      state.body += `<w:p><w:pPr><w:shd w:val="clear" w:fill="F6F8FA"/><w:spacing w:line="240" w:lineRule="auto"/><w:ind w:left="240" w:right="240"/></w:pPr>${textRun(token.content.replace(/\n$/, ''), runProps({ code: true, size: 20 }))}</w:p>`
+      state.body += `<w:p><w:pPr><w:pStyle w:val="CodeBlock"/><w:shd w:val="clear" w:fill="F6F8FA"/><w:spacing w:line="240" w:lineRule="auto"/><w:ind w:left="240" w:right="240"/></w:pPr>${textRun(token.content.replace(/\n$/, ''), runProps({ code: true, size: 20 }))}</w:p>`
       state.stats.paragraphs++
       index++
       continue
@@ -444,13 +467,17 @@ async function buildDocumentXml(markdown: string, state: EmitState, options: Doc
       let cells: string[] = []
       let header = false
       let columns = 0
+      let alignment = ''
       while (cursor < tokens.length && tokens[cursor].type !== 'table_close') {
         const current = tokens[cursor]
         if (current.type === 'tr_open') { cells = []; header = false }
-        else if (current.type === 'th_open') { header = true }
+        else if (current.type === 'th_open' || current.type === 'td_open') {
+          header = current.type === 'th_open'
+          alignment = /text-align:\s*(left|center|right)/.exec(String(current.attrGet('style') || ''))?.[1] || ''
+        }
         else if (current.type === 'th_close' || current.type === 'td_close') {
           const inline = tokens[cursor - 1]
-          cells.push(`<w:tc><w:tcPr>${header ? '<w:shd w:val="clear" w:fill="F6F8FA"/>' : ''}</w:tcPr><w:p>${inlineRuns(inline?.children ?? null, state, '')}</w:p></w:tc>`)
+          cells.push(`<w:tc><w:tcPr>${header ? '<w:shd w:val="clear" w:fill="F6F8FA"/>' : ''}</w:tcPr><w:p>${alignment ? `<w:pPr><w:jc w:val="${alignment}"/></w:pPr>` : ''}${inlineRuns(inline?.children ?? null, state, '')}</w:p></w:tc>`)
         } else if (current.type === 'tr_close') {
           columns = Math.max(columns, cells.length)
           rows.push(`<w:tr>${cells.join('')}</w:tr>`)
@@ -470,7 +497,10 @@ async function buildDocumentXml(markdown: string, state: EmitState, options: Doc
       continue
     }
 
-    if (token.type === 'html_block') {
+    if (token.type === 'markumo_image_block') {
+      state.body += `<w:p>${state.imageRuns.get(token) ?? textRun(token.content || '[图片]')}</w:p>`
+      state.stats.paragraphs++
+    } else if (token.type === 'html_block') {
       state.body += `<w:p>${textRun(token.content, runProps({code:true}))}</w:p>`
       state.warnings.push({kind:'content',message:'HTML 块以源码文字保留；未宣称支持 Word HTML 排版。'})
       state.stats.paragraphs++
@@ -569,6 +599,7 @@ ${numberingXml ? '<Override PartName="/word/numbering.xml" ContentType="applicat
 <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
 ${[1, 2, 3, 4, 5, 6].map(level => `<w:style w:type="paragraph" w:styleId="Heading${level}"><w:name w:val="heading ${level}"/><w:basedOn w:val="Normal"/><w:pPr><w:keepNext/><w:outlineLvl w:val="${level - 1}"/></w:pPr><w:rPr><w:b/><w:sz w:val="${Math.max(20, 40 - level * 3)}"/></w:rPr></w:style>`).join('')}
 <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:rPr><w:b/><w:sz w:val="48"/></w:rPr></w:style>
+<w:style w:type="paragraph" w:styleId="CodeBlock"><w:name w:val="Code Block"/><w:basedOn w:val="Normal"/><w:rPr><w:rFonts w:ascii="Consolas" w:hAnsi="Consolas"/><w:sz w:val="20"/></w:rPr></w:style>
 <w:style w:type="paragraph" w:styleId="ListParagraph"><w:name w:val="List Paragraph"/><w:pPr><w:ind w:left="720"/></w:pPr></w:style>
 <w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/></w:style>
 <w:style w:type="paragraph" w:styleId="TOC1"><w:name w:val="toc 1"/></w:style>

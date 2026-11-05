@@ -1392,7 +1392,11 @@ export function useAppShell() {
         await sessionWriter.flush(true)
       }
       if (launch.ownsSession) await recovery.start()
-      if (current()) await nextTick()
+      if (current()) {
+        await nextTick()
+        const readme = manager.openedDocuments.find(doc => /[\\/]README\.md$/i.test(doc.path || ''))
+        if (launch.roots.length && readme?.fileToken) await invoke('acknowledge_example_workspace', {token: readme.fileToken})
+      }
       return launch.ownsSession ? 'owner' : 'temporary'
     },
     release: async launch => {
@@ -1536,6 +1540,7 @@ export function useAppShell() {
     unsubscribe()
     manager.dispose()
     exportController.dispose()
+    importController.dispose()
   })
 
   // --- Return Exact Interface for App.vue ---
@@ -1605,6 +1610,12 @@ export function useAppShell() {
     activeDoc,
     activeDocId,
     exportProgress: exportController.progress,
+    importResult: importController.result,
+    exportResult: exportController.result,
+    dismissImportWarnings: () => { importController.result.value = null },
+    dismissExportWarnings: () => { exportController.result.value = null },
+    importProgress: importController.progress,
+    cancelImport: () => importController.cancelImport(),
     cancelExport: () => exportController.cancelExport(),
     paletteActions: commands.paletteActions,
     menuGroups: commands.menuGroups,

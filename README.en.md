@@ -13,7 +13,7 @@ A lightweight desktop editor for text and Markdown. Open a single file or organi
 - **Tabs and split panes**: drag tabs, split horizontally or vertically, edit the same document across panes, and restore your previous session.
 - **Files and workspaces**: a file tree, recent files, quick open, workspace search and replace, and drag-and-drop support for files and folders.
 - **Images and PDFs**: built-in viewers that share tabs and split panes with text documents. The PDF viewer supports continuous scrolling, thumbnails, and outline navigation.
-- **Import and export**: import HTML and Word; export HTML, PDF, Word, and long PNG images. Word import requires a separate [Pandoc installation](https://pandoc.org/installing.html).
+- **Import and export**: import HTML and Word; export HTML, PDF, Word, and long PNG images. Word conversion is built in and needs no external converter.
 - **Customization**: themes, fonts, syntax colors, smooth caret animation, and focus mode, with Markumo, Fleet, and Typora shortcut presets and custom bindings.
 - **File protection**: unsaved-change prompts, autosave, file history, crash recovery, and external-change conflict detection.
 - **In-app updates**: check for and download updates, verify their signatures, and choose when to install and restart.
@@ -48,7 +48,7 @@ Common keys include Ctrl+O to open, Ctrl+S to save, Ctrl+F to find, Ctrl+H to re
 
 ## Document export
 
-Use File → Export for HTML, DOCX, PDF, or PNG and export options. Native Word export needs no Pandoc: editable OOXML text is combined with individual high-resolution PNG diagrams and formulas. SVG/WebP assets are converted for Office compatibility; images retain their aspect ratios. Relative file targets within the source directory or authorized workspace become file URLs, subject to Office security prompts. HTML blocks, footnotes, and TOCs have explicit fallback diagnostics.
+Use File → Export for HTML, DOCX, PDF, or PNG and export options. Native Word export uses built-in conversion: editable OOXML text is combined with individual high-resolution PNG diagrams and formulas. SVG/WebP assets are converted for Office compatibility; images retain their aspect ratios. Relative file targets within the source directory or authorized workspace become file URLs, subject to Office security prompts. HTML blocks, footnotes, and TOCs have explicit fallback diagnostics.
 
 | Format | Availability and behavior |
 | --- | --- |

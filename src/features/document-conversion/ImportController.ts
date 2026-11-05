@@ -1,116 +1,115 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
+import { shallowRef } from 'vue'
 import type { DocumentManager } from '../../editor/core/DocumentManager'
-import type { ImportFormat, ConversionSelection } from './contracts'
+import type { ConversionResult, ConversionSelection, ImportFormat, ImportedDocument, PreparedImport } from './contracts'
 import { releaseConversion } from './conversionLease'
 import { importHtmlToMarkdown } from './HtmlImporter'
-import { getPandocStatus, importDocxToMarkdown } from './PandocBridge'
+import { sameFilePath } from '../files/pathKey'
+import { tauriFiles } from '../files/tauriFiles'
 
 export class ImportController {
-  constructor(
-    private manager: DocumentManager,
-    private notify: (message: string) => void
-  ) {}
-
+  readonly progress = shallowRef<{ phase: 'parsing' | 'choosing' | 'writing' } | null>(null)
+  readonly result = shallowRef<ConversionResult | null>(null)
+  private active: AbortController | null = null
+  private leases = new Set<ConversionSelection>()
+  constructor(private manager: DocumentManager, private notify: (message: string) => void) {}
+  cancelImport(): boolean {
+    if (!this.active || this.progress.value?.phase === 'writing') return false
+    this.active.abort()
+    for (const lease of this.leases) void releaseConversion(lease)
+    return true
+  }
+  dispose() { this.cancelImport() }
+  private check(signal: AbortSignal) { if (signal.aborted) throw new DOMException('导入已取消', 'AbortError') }
+  private track<T extends ConversionSelection>(selection: T | null) {
+    if (selection) this.leases.add(selection)
+    return selection
+  }
   async importDocument(format: ImportFormat): Promise<string | null> {
-    if (format === 'html') {
-      return this.importHtml()
-    } else if (format === 'docx') {
-      return this.importDocx()
-    }
-    return null
-  }
-
-  private async importHtml(): Promise<string | null> {
-    let source: ConversionSelection | null = null
-
+    if (this.active) { this.notify('已有导入进行中，请完成或取消后重试。'); return null }
+    const task = new AbortController()
+    this.active = task; this.result.value = null; this.progress.value = { phase: 'choosing' }
     try {
-      this.notify('正在读取并转换 HTML…')
-
-      let htmlContent = ''
-      if (isTauri()) {
-        source = await invoke<ConversionSelection | null>('import_open_dialog', { format: 'html' })
-        if (!source) return null
-        htmlContent = await invoke<string>('read_conversion_html', { token: source.token })
-      } else {
-        const input = document.createElement('input')
-        input.type = 'file'
-        input.accept = '.html,.htm'
-        const picked = await new Promise<File | null>(resolve => {
-          input.onchange = () => resolve(input.files?.[0] || null)
-          input.oncancel = () => resolve(null)
-          input.click()
-        })
-        if (!picked) return null
-        htmlContent = await picked.text()
-      }
-
-      const result = importHtmlToMarkdown(htmlContent)
-
-      // Create new Untitled Markdown document in DocumentManager
-      const docId = this.manager.createUntitled('md')
-      if (docId) {
-        this.manager.dispatch(docId, {
-          changes: { from: 0, insert: result.markdown },
-        })
-        this.manager.select(docId)
-        return docId
-      }
-      return null
+      return format === 'docx' ? await this.importDocx(task.signal) : await this.importHtml(task.signal)
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error)
-      this.notify(`导入 HTML 失败：${msg}`)
+      if (task.signal.aborted) { this.notify('导入已取消。'); return null }
+      this.notify(`导入失败：${error instanceof Error ? error.message : String(error)}`)
       throw error
     } finally {
-      await releaseConversion(source)
+      await Promise.all([...this.leases].map(releaseConversion))
+      this.leases.clear(); this.active = null; this.progress.value = null
     }
   }
-
-  private async importDocx(): Promise<string | null> {
-    if (!isTauri()) {
-      this.notify('Word 导入需要桌面版运行环境。')
-      return null
-    }
-
-    const status = await getPandocStatus()
-    if (!status.available) {
-      this.notify('未检测到 Pandoc。Word 导入需要安装 Pandoc，请先前往 https://pandoc.org 安装。')
-      return null
-    }
-
-    let source: ConversionSelection | null = null
-    let target: ConversionSelection | null = null
-    try {
-      source = await invoke<ConversionSelection | null>('import_open_dialog', { format: 'docx' })
+  private async importHtml(signal: AbortSignal): Promise<string | null> {
+    let content: string
+    if (isTauri()) {
+      const source = this.track(await invoke<ConversionSelection | null>('import_open_dialog', { format: 'html' }))
       if (!source) return null
-
-      // 2. Pick target md path
-      const defaultMdName = source.path.replace(/\.docx$/i, '.md').split(/[/\\]/).pop() || 'Imported.md'
-      target = await invoke<ConversionSelection | null>('export_save_dialog', {
-        defaultName: defaultMdName,
-        format: 'markdown',
+      this.check(signal)
+      this.progress.value = { phase: 'parsing' }
+      content = await invoke<string>('read_conversion_html', { token: source.token })
+    } else {
+      const input = document.createElement('input')
+      input.type = 'file'; input.accept = '.html,.htm'
+      const file = await new Promise<File | null>(resolve => {
+        input.onchange = () => resolve(input.files?.[0] ?? null)
+        input.oncancel = () => resolve(null)
+        input.click()
       })
-      if (!target) return null
-
-      this.notify('正在使用 Pandoc 转换 Word 文档…')
-      const markdown = await importDocxToMarkdown(source, target)
-
-      // Create new document or open file in DocumentManager
-      const docId = this.manager.createUntitled('md')
-      if (docId) {
-        this.manager.dispatch(docId, {
-          changes: { from: 0, insert: markdown },
-        })
-        this.manager.select(docId)
-      }
-
-      return target.path
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error)
-      this.notify(`导入 Word 失败：${msg}`)
-      throw error
-    } finally {
-      await releaseConversion(source)
-      await releaseConversion(target)
+      if (!file) return null
+      if (file.size > 16 * 1024 * 1024) throw new Error('HTML 超过 16 MiB 安全上限。')
+      content = await file.text()
     }
+    this.check(signal)
+    await new Promise<void>(resolve => setTimeout(resolve, 0))
+    const converted = importHtmlToMarkdown(content)
+    this.check(signal)
+    this.result.value = { warnings: [] }
+    const id = this.manager.createUntitled('md')
+    if (!id) return null
+    this.manager.dispatch(id, { changes: { from: 0, insert: converted.markdown } })
+    this.manager.select(id)
+    return id
+  }
+  private async importDocx(signal: AbortSignal): Promise<string | null> {
+    if (!isTauri()) { this.notify('Word 导入需要桌面版运行环境。'); return null }
+    const source = this.track(await invoke<ConversionSelection | null>('import_open_dialog', { format: 'docx' }))
+    if (!source) return null
+    this.check(signal)
+    this.progress.value = { phase: 'parsing' }
+    const prepared = this.track(await invoke<PreparedImport>('prepare_docx_import', { sourceToken: source.token }))!
+    this.check(signal)
+    this.result.value = { warnings: prepared.warnings, stats: prepared.stats }
+    for (const warning of prepared.warnings) this.notify(warning.message)
+    this.progress.value = { phase: 'choosing' }
+    const target = this.track(await invoke<ConversionSelection | null>('export_save_dialog', {
+      defaultName: source.path.split(/[/\\]/).pop()!.replace(/\.docx$/i, '.md'), format: 'markdown',
+    }))
+    if (!target) return null
+    this.check(signal)
+    if (this.manager.openedDocuments.some(doc => sameFilePath(doc.path, target.path) && doc.dirty)) {
+      throw new Error('目标文件有未保存的编辑，请保存文档或选择其他位置。')
+    }
+    this.progress.value = { phase: 'writing' }
+    const saved = await invoke<ImportedDocument>('commit_docx_import', { draftToken: prepared.token, targetToken: target.token })
+    this.result.value = { path: saved.path, warnings: saved.warnings, stats: saved.stats }
+    for (const warning of saved.warnings.filter(w => !prepared.warnings.some(p => p.kind === w.kind && p.message === w.message))) this.notify(warning.message)
+    if (!saved.file) { this.notify(`已保存至 ${saved.path}，请从文件菜单打开。`); return saved.path }
+    const file = saved.file
+    const existing = this.manager.openedDocuments.find(doc => sameFilePath(doc.path, file.path))
+    if (existing) {
+      const oldToken = existing.fileToken
+      if (this.manager.reloadFile(existing.id, file)) {
+        if (oldToken && oldToken !== file.token) await tauriFiles.release(oldToken)
+        this.manager.select(existing.id)
+      } else {
+        await tauriFiles.release(file.token)
+        this.notify(`已保存至 ${saved.path}；当前编辑缓冲区已保留，请稍后重新加载。`)
+      }
+    } else if (!this.manager.openFile(file)) {
+      await tauriFiles.release(file.token)
+      this.notify(`已保存至 ${saved.path}，请完成当前输入后再打开。`)
+    }
+    return saved.path
   }
 }

@@ -68,7 +68,7 @@ Windows WebView2 原生专项 8/8：未保存正文、模式/编码/光标/滚�
 
 ## 执行命令与结果
 
-- pnpm check（含 typecheck 和 build）：通过。构建仍有既有大块体积及 Pandoc 外部模块提示。
+- pnpm check（含 typecheck 和 build）：通过。构建仍有既有大块体积及 旧外部转换模块提示。
 - pnpm test：28 项交互通过。
 - pnpm test:regression：12/12 浏览器套件通过；Windows A–N 另以同一最终探针二进制执行。
 - cargo check --manifest-path src-tauri/Cargo.toml：通过。

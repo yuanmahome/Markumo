@@ -1,8 +1,8 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { DocumentManager } from '../../editor/core/DocumentManager'
 import { createMarkdownResources } from '../../editor/markdown/images'
-import type { ExportFormat, ConversionSettings, ConversionSelection } from './contracts'
-import { releaseConversion } from './conversionLease'
+import type { ExportFormat, ConversionSettings, ConversionSelection, ConversionResult } from './contracts'
+import { releaseConversion, saveConversionBytes } from './conversionLease'
 import { loadConversionSettings, saveLastExport, loadLastExport } from './conversionSettings'
 import { renderMarkdownForExport, extractDocumentTitle } from './ExportRenderer'
 import { buildCompleteHtml } from './ExportStyles'
@@ -14,6 +14,7 @@ import { rasterExportSvg, renderExportDiagram, resolveExportImage } from './Expo
 
 export class ExportController {
   readonly progress = shallowRef<{phase:'generating'|'writing'}|null>(null)
+  readonly result = shallowRef<ConversionResult | null>(null)
   private activeExport: AbortController | null = null
   cancelExport(): boolean {
     if (!this.activeExport || this.progress.value?.phase !== 'generating') return false
@@ -37,7 +38,7 @@ export class ExportController {
   }
 
   async exportDocument(format: ExportFormat, customSettings?: Partial<ConversionSettings>): Promise<string | null> {
-    if(this.activeExport){this.notify('已有 Word 导出进行中，请完成或取消后重试。');return null}
+    if(this.activeExport){this.notify('已有导出进行中，请完成或取消后重试。');return null}
     if (!this.canExportActive()) {
       this.notify('当前活动文件不是 Markdown 文档，无法导出。')
       return null
@@ -54,8 +55,8 @@ export class ExportController {
     const defaultFilename = `${rawName}.${ext}`
 
     let target: ConversionSelection | null = null
-    const cancellation = format === 'docx' ? new AbortController() : null
-    if(cancellation)this.activeExport=cancellation
+    const cancellation = new AbortController()
+    this.activeExport=cancellation; this.result.value=null; this.progress.value={phase:'generating'}
 
     try {
       if (isTauri()) {
@@ -72,19 +73,23 @@ export class ExportController {
       }
 
       const targetPath = target.path
+      const cancelNative = () => { void releaseConversion(target) }
+      cancellation.signal.addEventListener('abort', cancelNative, {once: true})
+      if (cancellation.signal.aborted) throw new DOMException('导出已取消', 'AbortError')
       this.notify('正在准备导出…')
 
       if (format === 'html' || format === 'html-plain') {
-        await this.exportHtml(textSnapshot, docTitle, target, format === 'html', settings, doc.fileToken)
+        await this.exportHtml(textSnapshot, docTitle, target, format === 'html', settings, doc.fileToken, cancellation.signal)
       } else if (format === 'pdf') {
-        await this.exportPdf(textSnapshot, docTitle, target, settings, doc.fileToken)
+        await this.exportPdf(textSnapshot, docTitle, target, settings, doc.fileToken, cancellation.signal)
       } else if (format === 'docx') {
         this.progress.value={phase:'generating'}
         await this.exportDocx(textSnapshot, docTitle, doc.path, target, doc.fileToken, cancellation!.signal)
       } else if (format === 'png') {
-        await this.exportPng(textSnapshot, target, settings, doc.fileToken)
+        await this.exportPng(textSnapshot, target, settings, doc.fileToken, cancellation.signal)
       }
 
+      this.result.value ??= {path: targetPath, warnings: []}
       saveLastExport({
         format,
         targetPath,
@@ -126,21 +131,21 @@ export class ExportController {
     target: ConversionSelection,
     includeStyles: boolean,
     settings: ConversionSettings,
-    documentToken?: string
+    documentToken?: string,
+    signal?: AbortSignal
   ): Promise<void> {
     const resources = createMarkdownResources(() => documentToken)
     const appearance=exportAppearance(this.manager.getMarkdownTypography())
     const { bodyHtml, warnings } = await renderMarkdownForExport(markdown, resources, settings.embedImagesAsDataUri, includeStyles&&appearance.typography.codeLineNumbers, this.linkResolver(documentToken))
+    if (signal?.aborted) throw new DOMException('导出已取消', 'AbortError')
+    this.result.value = {path: target.path, warnings}
     for (const warning of warnings) this.notify(warning.message)
     const fullHtml = buildCompleteHtml(title, bodyHtml, includeStyles,undefined,appearance)
 
     const bytes = new TextEncoder().encode(fullHtml)
     if (isTauri()) {
-      await invoke('save_binary_file', {
-        token: target.token,
-        format: 'html',
-        bytes: Array.from(bytes),
-      })
+      this.progress.value={phase:'writing'}
+      await saveConversionBytes(target, 'html', bytes)
     } else {
       this.downloadBlob(new Blob([bytes], { type: 'text/html;charset=utf-8' }), target.path)
     }
@@ -151,11 +156,14 @@ export class ExportController {
     title: string,
     target: ConversionSelection,
     settings: ConversionSettings,
-    documentToken?: string
+    documentToken?: string,
+    signal?: AbortSignal
   ): Promise<void> {
     const resources = createMarkdownResources(() => documentToken)
     const appearance=exportAppearance(this.manager.getMarkdownTypography())
     const { bodyHtml, warnings } = await renderMarkdownForExport(markdown, resources, true,appearance.typography.codeLineNumbers, this.linkResolver(documentToken))
+    if (signal?.aborted) throw new DOMException('导出已取消', 'AbortError')
+    this.result.value = {path: target.path, warnings}
     for (const warning of warnings) this.notify(warning.message)
     const fullHtml = buildCompleteHtml(title, bodyHtml, true, settings.pdf,appearance)
 
@@ -190,8 +198,7 @@ export class ExportController {
     signal?: AbortSignal
   ): Promise<void> {
     if (!target) throw new Error('未指定导出路径')
-    // Pandoc stays available as the advanced path, but the native writer runs
-    // first because it needs no external tool and reports its own warnings.
+    // Native OOXML generation and ZIP work run in a cancellable Worker.
     const resources = createMarkdownResources(() => documentToken)
     const { generateDocx } = await import('./docxWorkerClient')
     const linkTargets: Record<string, string> = {}
@@ -211,6 +218,7 @@ export class ExportController {
       renderDiagram: source => renderExportDiagram(source, signal),
       resolveImage: source => resolveExportImage(source, resources, signal),
     })
+    this.result.value = {path: target.path, warnings: result.warnings, stats: result.stats}
     for (const warning of result.warnings) this.notify(warning.message)
     const bytes = result.bytes
     if(signal?.aborted)throw new DOMException('导出已取消','AbortError')
@@ -219,7 +227,7 @@ export class ExportController {
     // starts, the UI reports "writing" and never claims it was cancelled.
     this.progress.value={phase:'writing'}
     if (isTauri()) {
-      await invoke('save_docx_bytes', bytes, { headers: {'x-markumo-conversion-token':target.token} })
+      await saveConversionBytes(target, 'docx', bytes)
     } else {
       this.downloadBlob(new Blob([bytes as unknown as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }), target.path)
     }
@@ -230,11 +238,15 @@ export class ExportController {
     markdown: string,
     target: ConversionSelection,
     settings: ConversionSettings,
-    documentToken?: string
+    documentToken?: string,
+    signal?: AbortSignal
   ): Promise<void> {
     const resources = createMarkdownResources(() => documentToken)
     const appearance=exportAppearance(this.manager.getMarkdownTypography())
     const { bodyHtml, warnings } = await renderMarkdownForExport(markdown, resources, true,appearance.typography.codeLineNumbers, this.linkResolver(documentToken))
+
+    if (signal?.aborted) throw new DOMException('导出已取消', 'AbortError')
+    this.result.value = {path: target.path, warnings}
 
     for (const warning of warnings) this.notify(warning.message)
     // Isolate export CSS from the editor and give html2canvas a complete,
@@ -282,6 +294,7 @@ export class ExportController {
         logging: false,
       })
 
+      if (signal?.aborted) { canvas.width=canvas.height=0; throw new DOMException('导出已取消','AbortError') }
       const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'))
       canvas.width = canvas.height = 0
       if (!blob) throw new Error('生成 PNG 图像失败')
@@ -290,11 +303,9 @@ export class ExportController {
       const bytes = new Uint8Array(buffer)
 
       if (isTauri()) {
-        await invoke('save_binary_file', {
-          token: target.token,
-          format: 'png',
-          bytes: Array.from(bytes),
-        })
+        if (signal?.aborted) throw new DOMException('导出已取消','AbortError')
+        this.progress.value={phase:'writing'}
+        await saveConversionBytes(target, 'png', bytes)
       } else {
         this.downloadBlob(blob, target.path)
       }

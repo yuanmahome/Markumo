@@ -47,6 +47,9 @@ try {
   const abort=new AbortController();abort.abort();let cancelled=false;try{await generateDocx(md,{signal:abort.signal})}catch{cancelled=true}if(!cancelled)throw Error('cancellation')
   const failure=await generateDocx('![missing](missing.png)\n\n```mermaid\ninvalid!\n```',{renderDiagram:s=>media.renderExportDiagram(s)})
   if(!failure.warnings.some(w=>w.kind==='diagram')||!failure.warnings.some(w=>w.kind==='image'))throw Error('missing diagnostics')
+  const table=await generateDocx('| Left | Center | Right |\n| :--- | :---: | ---: |\n| A | B | C |\n\n```js\nline1\nline2\n```')
+  const tablePackage=new TextDecoder().decode(table.bytes)
+  if(!tablePackage.includes('<w:jc w:val="center"/>')||!tablePackage.includes('<w:jc w:val="right"/>')||!tablePackage.includes('<w:pStyle w:val="CodeBlock"/>'))throw Error('table alignment or code paragraph semantics lost')
   return {galleryHtml:buildCompleteHtml('Mermaid gallery',gallery.bodyHtml,true),galleryBytes:[...galleryWord.bytes],html:buildCompleteHtml('导出验收',rendered.bodyHtml,true,{paperSize:'A4',orientation:'portrait',margins:'normal',printBackground:true}),bytes:[...word.bytes],warnings:word.warnings,stats:word.stats,diagrams}
  },{md,tutorial,resources})
  fs.writeFileSync(path.join(output,'gallery.html'),result.galleryHtml)

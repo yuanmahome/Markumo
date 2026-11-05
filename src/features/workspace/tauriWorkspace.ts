@@ -97,6 +97,11 @@ export const tauriWorkspace: WorkspaceGateway = {
     return invoke<OpenFile>('open_workspace_file', { path, encoding: encoding ?? null })
   },
 
+  async openExampleWorkspace() {
+    const result = await invoke<{workspace: RawWorkspaceInfo; file: OpenFile}>('open_example_workspace')
+    return {workspace: mapInfo(result.workspace), file: result.file}
+  },
+  async acknowledgeExampleWorkspace(token) { await invoke('acknowledge_example_workspace', {token}) },
   async openDroppedWorkspace(token: string): Promise<WorkspaceInfo> {
     return mapInfo(await invoke<RawWorkspaceInfo>('open_dropped_workspace', { token }))
   },

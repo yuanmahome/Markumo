@@ -952,10 +952,6 @@ body.light .file-icon-gray { color: #6c7c92; }
   white-space: pre;
   font: 13px/1.6 var(--font-mono);
 }
-.markdown-live .md-reference-source { margin: .25em 0; border: 0; background: transparent; font: 12px/1.5 var(--font-sans); }
-.markdown-live .md-reference-source summary { padding: 2px 0; opacity: .65; }
-.markdown-live .md-reference-source[open] { border: 1px solid var(--line); border-radius: 4px; }
-.markdown-live .md-reference-source[open] summary { padding: 4px 8px; }
 
 .markdown-live .md-math-output {
   overflow: auto;
@@ -1195,3 +1191,22 @@ kbd,
 /* Editor-only image preference; no wrapper padding, export or Mermaid rules. */
 .markdown-live[data-image-border="true"] :is(.md-live-image img,.md-html-preview img,.md-html-inline-content img) { box-sizing: border-box; border: 1px solid var(--md-image-border-color, var(--line)); border-radius: 4px; }
 .markdown-live[data-image-border="false"] :is(.md-live-image img,.md-html-preview img,.md-html-inline-content img) { border: 0; border-radius: 0; }
+
+/* Source atoms retain PM positions without participating in reading layout.
+   referenceNavigation handles caret and adjacent deletion across these nodes. */
+.markdown-live .md-reference-definition {
+  position: absolute; width: 0; height: 0; min-height: 0; margin: 0; padding: 0; border: 0;
+  overflow: hidden; line-height: 0; pointer-events: none;
+}
+.md-reference-panel {
+  position: fixed; z-index: 1200; width: min(460px, calc(100vw - 16px));
+  padding: 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--editor); color: var(--ink); box-shadow: 0 4px 20px #0002;
+}
+.md-reference-panel input, .md-reference-panel textarea {
+  display: block; box-sizing: border-box; width: 100%; margin-bottom: 8px;
+  padding: 6px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--editor); color: inherit; font: 13px/1.5 var(--font-mono);
+}
+.md-reference-panel textarea { resize: vertical; }
+.md-reference-panel button { padding: 4px 10px; }

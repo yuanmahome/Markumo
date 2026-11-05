@@ -1,6 +1,6 @@
 [package]
 name = "markumo"
-version = "1.2.1"
+version = "1.2.2"
 description = "Lightweight text and Markdown editor"
 license = "AGPL-3.0-only"
 authors = ["Markumo Team"]
@@ -44,8 +44,7 @@ getrandom = "0.4"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 zip = { version = "4.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }
-rustls = { version = "0.23", default-features = false, features = ["ring"] }
+quick-xml = "0.42.0"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_System_Com", "Win32_System_DataExchange", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }
