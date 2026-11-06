@@ -37,6 +37,7 @@ jobs:
           pnpm exec playwright install --with-deps chromium
           node tests/cjk-emphasis.mjs
           node tests/native-conversion.mjs
+          node tests/table-roundtrip.mjs
           node tests/frontmatter-regression.mjs
           node tests/reference-definitions.mjs
           pnpm test

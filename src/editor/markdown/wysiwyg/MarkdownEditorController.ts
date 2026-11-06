@@ -510,6 +510,22 @@ export class MarkdownEditorController implements LiveEditor {
               transformPastedHTML: html => {
                 const doc = new DOMParser().parseFromString(html, 'text/html')
                 doc.querySelectorAll('script,style,iframe,object,embed,svg,math').forEach(el => el.remove())
+                // GFM has one header row and column-wide alignment. Normalize
+                // imported Word/Typora tables before they become PM nodes so
+                // the live tree and its persisted representation agree.
+                for (const table of doc.querySelectorAll('table')) {
+                  const rows = [...table.rows]
+                  const align = [...(rows[0]?.cells ?? [])].map(cell => cell.style.textAlign || cell.getAttribute('align'))
+                  rows.forEach((row, r) => [...row.cells].forEach((cell, c) => {
+                    const tag = r === 0 ? 'th' : 'td'
+                    if (cell.tagName.toLowerCase() !== tag) {
+                      const replacement = doc.createElement(tag)
+                      for (const attr of [...cell.attributes]) replacement.setAttribute(attr.name, attr.value)
+                      replacement.append(...cell.childNodes); cell.replaceWith(replacement); cell = replacement
+                    }
+                    if (['left', 'center', 'right'].includes(align[c] || '')) cell.dataset.markumoAlign = align[c]!
+                  }))
+                }
                 for (const el of doc.body.querySelectorAll('*')) {
                   for (const attr of [...el.attributes]) {
                     if (
@@ -520,12 +536,38 @@ export class MarkdownEditorController implements LiveEditor {
                       el.removeAttribute(attr.name)
                     }
                   }
+                  if (el instanceof HTMLElement && ['TH', 'TD'].includes(el.tagName)) {
+                    const align = el.dataset.markumoAlign
+                    if (['left', 'center', 'right'].includes(align || '')) el.style.textAlign = align!
+                    delete el.dataset.markumoAlign
+                  }
                 }
                 return doc.body.innerHTML
               },
             },
           }),
           tableEditingWithDragGuard(),
+          new Plugin({
+            // prosemirror-tables creates new body cells with default attrs.
+            // GFM alignment belongs to columns, including newly inserted rows.
+            appendTransaction: (transactions, _old, state) => {
+              if (!transactions.some(tr => tr.docChanged)) return null
+              const tr = state.tr
+              state.doc.descendants((table, pos) => {
+                if (table.type.name !== 'table') return
+                const header = table.firstChild
+                if (!header) return false
+                table.forEach((row, rowOffset, r) => row.forEach((cell, cellOffset, c) => {
+                  const align = header.maybeChild(c)?.attrs.align ?? null
+                  if (r && cell.attrs.align !== align) {
+                    tr.setNodeMarkup(pos + 2 + rowOffset + cellOffset, undefined, { ...cell.attrs, align })
+                  }
+                }))
+                return false
+              })
+              return tr.docChanged ? tr : null
+            },
+          }),
         ],
       }),
       nodeViews: {

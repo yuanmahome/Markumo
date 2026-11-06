@@ -6,6 +6,7 @@ const mode = process.argv[2] || 'smoke'
 const smokeScripts = [
   'tests/cjk-emphasis.mjs',
   'tests/native-conversion.mjs',
+  'tests/table-roundtrip.mjs',
   'tests/frontmatter-regression.mjs',
   'tests/reference-definitions.mjs',
   'tests/dev/instance-isolation.mjs',

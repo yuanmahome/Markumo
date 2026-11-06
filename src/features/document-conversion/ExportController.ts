@@ -63,6 +63,8 @@ export class ExportController {
         target = await invoke<ConversionSelection | null>('export_save_dialog', {
           defaultName: defaultFilename,
           format: format === 'html-plain' ? 'html' : format,
+          documentToken: doc.fileToken,
+          defaultDirectory: settings.defaultExportDir,
         })
         if (!target) {
           // User cancelled dialog

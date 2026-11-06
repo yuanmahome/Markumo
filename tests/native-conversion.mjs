@@ -53,6 +53,28 @@ try {
   // A cancelled task is also allowed to retry immediately, with no retained lease.
   window.isTauri=true; window.__TAURI_INTERNALS__={invoke:async(command)=>command==='export_save_dialog'?null:undefined}
   check(await exp.exportDocument('html')===null&&!exp.progress.value,'export dialog cancellation recovers UI')
+  const {saveConversionSettings,saveLastExport}=await import('/src/features/document-conversion/conversionSettings.ts')
+  saveConversionSettings({defaultExportDir:'D:\\默认 导出'})
+  let active={id:'a',name:'系统理解.md',path:'D:\\Work\\中文 Docs\\系统理解.md',fileToken:'file-a',kind:'text',mode:'live'}
+  const before=JSON.stringify(active),dialogs=[]
+  const dirExport=new ExportController({get activeDocument(){return active},getText(){return '| A |\\n| --- |'},getMarkdownTypography(){return {}}},()=>{})
+  window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+    if(command!=='export_save_dialog')throw Error('Cancelled export must not generate output: '+command)
+    dialogs.push(args);return null
+  }}
+  for(const format of ['html','docx','pdf','png']){
+    check(await dirExport.exportDocument(format)===null,'cancel '+format)
+    const args=dialogs.at(-1)
+    check(args.documentToken==='file-a'&&args.defaultDirectory==='D:\\默认 导出'&&args.defaultName===`系统理解.${format}`&&args.format===format,'export '+format+' passes identity, preference and filename')
+  }
+  check(JSON.stringify(active)===before,'export never changes source path or workspace metadata')
+  active={...active,id:'b',name:'第二个.md',fileToken:'file-b',path:'C:\\单文件\\第二个.md'}
+  saveLastExport({format:'pdf',targetPath:'Z:\\untrusted-history.pdf',options:{},timestamp:Date.now()})
+  await dirExport.exportRepeat()
+  check(dialogs.at(-1).documentToken==='file-b'&&dialogs.at(-1).defaultName==='第二个.pdf'&&!('targetPath' in dialogs.at(-1)),'repeat reopens native dialog for current document without trusting historic target')
+  active={id:'draft',name:'未保存.md',kind:'text',mode:'live'}
+  await dirExport.exportDocument('png')
+  check(!dialogs.at(-1).documentToken&&dialogs.at(-1).defaultDirectory==='D:\\默认 导出','unsaved export uses configured directory hint without forged source token')
   delete window.__TAURI_INTERNALS__; delete window.isTauri
   const {generateDocx}=await import('/src/features/document-conversion/docxWorkerClient.ts')
   const {parseControlledImageHtml}=await import('/src/editor/markdown/wysiwyg/imageHtml.ts')

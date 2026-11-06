@@ -1,7 +1,8 @@
 import { DocumentManager } from '/src/editor/core/DocumentManager.ts'
 import { EditorView } from '@codemirror/view'
 import { undoDepth, redoDepth } from '@codemirror/commands'
-import { TextSelection } from 'prosemirror-state'
+import { TextSelection, NodeSelection } from 'prosemirror-state'
+import { addRowAfter, deleteRow, addColumnAfter, deleteColumn } from 'prosemirror-tables'
 import { relativeMarkdownLink, safeMarkdownURL } from '/src/editor/markdown/links.ts'
 import { createApp, h } from 'vue'
 import SplitPreview from '/src/editor/markdown/splitPreview.vue'
@@ -57,6 +58,16 @@ function snapshot(pane = 'main') {
 (window as any).f = {
   get manager() { return manager }, get id() { return id }, get panes() { return panes },
   requests, notices, live, snapshot, relativeMarkdownLink, safeMarkdownURL,
+  tableCommand(name: 'addRowAfter' | 'deleteRow' | 'addColumnAfter' | 'deleteColumn') {
+    const view = live()!.view
+    return { addRowAfter, deleteRow, addColumnAfter, deleteColumn }[name](view.state, tr => view.dispatch(tr.setMeta('isolated', true)))
+  },
+  selectTable() {
+    const view = live()!.view
+    let at = 0
+    view.state.doc.descendants((node, pos) => { if (node.type.name === 'table') at = pos })
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, at)))
+  },
   signals() { return signals.map(signal => signal.aborted) },
   reset(source: string, readOnly = false) {
     preview?.unmount(); preview = undefined

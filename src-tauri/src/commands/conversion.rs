@@ -1,10 +1,10 @@
 use crate::conversion::{self, ConversionStore, InputText, Purpose, Selection};
 use serde::{Deserialize, Serialize};
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
-use tauri::{AppHandle, State, WebviewWindow};
+use tauri::{AppHandle, Manager, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,19 +20,34 @@ pub async fn export_save_dialog(
     app: AppHandle,
     window: WebviewWindow,
     store: State<'_, ConversionStore>,
+    files: State<'_, crate::commands::files::FileStore>,
     default_name: String,
     format: String,
+    document_token: Option<String>,
+    default_directory: Option<String>,
 ) -> Result<Option<Selection>, String> {
     let purpose = Purpose::write(&format)?;
     let permit = store.dialog(window.label())?;
     let store = store.inner().clone();
+    let files = files.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        let source = export_document_path(&files, window.label(), document_token.as_deref());
+        // The preference is a dialog hint only, never a file capability.
+        // Only store.selected after native confirmation authorizes the output.
+        let directory = export_directory(
+            source.as_deref(),
+            default_directory.as_deref(),
+            app.path().document_dir().ok(),
+        );
         let mut dialog = app
             .dialog()
             .file()
             .set_parent(&window)
             .set_file_name(default_name)
             .set_title("导出文档");
+        if let Some(directory) = directory {
+            dialog = dialog.set_directory(directory);
+        }
         dialog = match purpose {
             Purpose::Pdf => dialog.add_filter("PDF 文档 (*.pdf)", &["pdf"]),
             Purpose::Html => dialog.add_filter("HTML 网页 (*.html; *.htm)", &["html", "htm"]),
@@ -49,6 +64,95 @@ pub async fn export_save_dialog(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn export_document_path(
+    files: &crate::commands::files::FileStore,
+    owner: &str,
+    token: Option<&str>,
+) -> Option<PathBuf> {
+    let token = token?;
+    let mut service = files.lock().ok()?;
+    service.set_owner(owner);
+    service.revealed_path(token).ok()
+}
+
+fn export_directory(
+    source: Option<&Path>,
+    configured: Option<&str>,
+    documents: Option<PathBuf>,
+) -> Option<PathBuf> {
+    fn usable(path: &Path) -> bool {
+        path.is_absolute() && path.is_dir() && std::fs::read_dir(path).is_ok()
+    }
+    source
+        .and_then(Path::parent)
+        .filter(|path| usable(path))
+        .map(Path::to_path_buf)
+        .or_else(|| {
+            configured
+                .map(Path::new)
+                .filter(|path| usable(path))
+                .map(Path::to_path_buf)
+        })
+        .or_else(|| documents.filter(|path| usable(path)))
+}
+
+#[cfg(test)]
+mod export_directory_tests {
+    use super::*;
+    #[test]
+    fn document_hint_requires_a_current_window_grant_and_existing_source() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("系统理解.md");
+        std::fs::write(&path, "# 中文").unwrap();
+        let files = crate::commands::files::FileStore::default();
+        let opened = {
+            let mut service = files.lock().unwrap();
+            service.set_owner("a");
+            service.open_selected(path.clone(), None).unwrap()
+        };
+        assert!(export_document_path(&files, "a", None).is_none());
+        assert!(export_document_path(&files, "a", Some("forged")).is_none());
+        assert!(export_document_path(&files, "b", Some(&opened.metadata.token)).is_none());
+        assert!(export_document_path(&files, "a", Some(&opened.metadata.token)).is_some());
+        std::fs::remove_file(&path).unwrap();
+        assert!(export_document_path(&files, "a", Some(&opened.metadata.token)).is_none());
+    }
+    #[test]
+    fn current_document_precedes_preference_and_missing_directories_fall_back() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("中文 空格 😀");
+        let configured = temp.path().join("configured");
+        let documents = temp.path().join("documents");
+        for dir in [&source, &configured, &documents] {
+            std::fs::create_dir(dir).unwrap();
+        }
+        let file = source.join("系统理解.md");
+        assert_eq!(
+            export_directory(Some(&file), configured.to_str(), Some(documents.clone())),
+            Some(source.clone())
+        );
+        assert_eq!(
+            export_directory(None, configured.to_str(), Some(documents.clone())),
+            Some(configured.clone())
+        );
+        std::fs::remove_dir(&source).unwrap();
+        assert_eq!(
+            export_directory(Some(&file), configured.to_str(), Some(documents.clone())),
+            Some(configured.clone())
+        );
+        std::fs::remove_dir(&configured).unwrap();
+        assert_eq!(
+            export_directory(Some(&file), configured.to_str(), Some(documents.clone())),
+            Some(documents.clone())
+        );
+        assert_eq!(
+            export_directory(None, Some("relative"), Some(documents.clone())),
+            Some(documents)
+        );
+        assert_eq!(export_directory(None, None, None), None);
+    }
 }
 #[tauri::command]
 pub async fn import_open_dialog(

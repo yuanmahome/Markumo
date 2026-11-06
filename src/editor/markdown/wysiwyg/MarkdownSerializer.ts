@@ -3,6 +3,7 @@ import type { Fragment, Mark, Node } from 'prosemirror-model'
 import { markdownSchema } from './MarkdownSchema'
 import { controlledImageHtml, parseControlledImageHtml } from './imageHtml'
 import { tableRow } from '../tableModel'
+import { tokenizer, sameBlockSemantics } from './MarkdownParser'
 
 type LinkKind = 'bare' | 'angle' | 'none'
 
@@ -135,7 +136,9 @@ export const markdownSerializer = new MarkdownSerializer({ ...defaultMarkdownSer
     const fence=char.repeat(length)
     state.write(fence+node.attrs.params+'\n');state.text(node.textContent,false);state.write('\n'+fence);state.closeBlock(node)
   },
-  table(state,node){state.write(serializeTable(node));state.closeBlock(node)},
+  // text(false) writes each line through the state's container delimiter.
+  // write(multiline) only prefixes the first row, breaking lists/quotes on reload.
+  table(state,node){state.text(serializeTable(node),false);state.closeBlock(node)},
 }, {...defaultMarkdownSerializer.marks, link: markumoLink as never, strike:{open:'~~',close:'~~',mixable:true,expelEnclosingWhitespace:true}})
 export function escapeUnescapedPipes(text: string): string {
   return text.replace(/\|/g, (_pipe, offset: number) => {
@@ -182,4 +185,52 @@ export function patchTable(old:Node,next:Node,raw:string):string|null {
   }
   for(const p of patches.reverse())raw=raw.slice(0,p.from)+p.insert+raw.slice(p.to)
   return raw
+}
+
+/** Patch tables inside containers without reserializing list markers, gaps or siblings. */
+export function patchContainedTables(old:Node,next:Node,raw:string):string|null {
+  const changes: {before:Node;after:Node;ordinal:number}[]=[]
+  let ordinal=0
+  const walk=(a:Node,b:Node):boolean=>{
+    if(a.type.name==='table'){
+      const index=ordinal++
+      if(!a.eq(b))changes.push({before:a,after:b,ordinal:index})
+      return b.type===a.type
+    }
+    if(!a.sameMarkup(b)||a.childCount!==b.childCount)return false
+    if(a.isText)return a.eq(b)
+    for(let i=0;i<a.childCount;i++)if(!walk(a.child(i),b.child(i)))return false
+    return true
+  }
+  if(!walk(old,next)||!changes.length)return null
+  const maps=tokenizer.parse(raw,{}).filter(t=>t.type==='table_open').map(t=>t.map!)
+  const lines=raw.split('\n'), starts=[0]
+  for(const line of lines)starts.push(starts[starts.length-1]+line.length+1)
+  for(const change of changes.reverse()){
+    const map=maps[change.ordinal]
+    if(!map)return null
+    const selected=lines.slice(map[0],map[1])
+    const prefixes=selected.map(line=>line.match(/^[ \t]*(?:>[ \t]*)*(?:(?:[-+*]|\d+[.)])[ \t]+)?/)![0])
+    const bare=selected.map((line,i)=>line.slice(prefixes[i].length)).join('\n').replace(/\r/g,'')
+    const patched=patchTable(change.before,change.after,bare)??serializeTable(change.after)
+    const continuation=prefixes[1]??prefixes[0].replace(/[-+*]|\d+[.)]/g,m=>' '.repeat(m.length))
+    const replacement=patched.split('\n').map((line,i)=>(prefixes[i]??continuation)+line).join('\n')
+    const from=starts[map[0]],to=map[1]<lines.length?starts[map[1]]-1:raw.length
+    raw=raw.slice(0,from)+replacement+raw.slice(to)
+  }
+  return raw
+}
+
+/** Prove table semantics AND their container paths survive canonical source. */
+export function sameTables(a:Node,b:Node):boolean {
+  const tables=(root:Node)=>{
+    const result:{path:string;node:Node}[]=[]
+    const walk=(node:Node,path:string)=>{
+      if(node.type.name==='table'){result.push({path,node});return}
+      node.forEach((child,_,index)=>walk(child,`${path}/${node.type.name}:${index}`))
+    }
+    walk(root,'');return result
+  }
+  const left=tables(a),right=tables(b)
+  return left.length===right.length&&left.every((table,i)=>table.path===right[i].path&&sameBlockSemantics(table.node,right[i].node))
 }

@@ -1,6 +1,6 @@
 import { Fragment, Slice, type Node } from 'prosemirror-model'
 import { parseMarkdown, sameBlockSemantics, type SourceBlock } from './MarkdownParser'
-import { patchTable, serializeBlock } from './MarkdownSerializer'
+import { patchTable, patchContainedTables, sameTables, serializeBlock } from './MarkdownSerializer'
 import { isTrailingParagraph, withoutTrailingParagraph } from './TrailingParagraph'
 import { isBlankParagraphNode } from '../blankLines'
 import { patchSourceBlock, sourceTextPosition } from './patchSourceBlock'
@@ -109,7 +109,21 @@ export class MarkdownSourceBridge {
       // zero-byte gap keeps the ordinary path so typed delimiters stay literal.
       const promotingBlank=!!old?.blank&&!blank&&/[\r\n]/.test(old.raw)
       const patchBase=promotingBlank?old!.raw.replace(/(?:\r?\n)+$/,''):old?.raw
-      let raw=inlineRaw??(old?.node.eq(node)?old.raw:old?(patchSourceBlock(old.node,node,patchBase!,this.environment)??(node.type.name==='table'&&old.node.type===node.type?patchTable(old.node,node,old.raw):null)??serializeBlock(node)):serializeBlock(node))
+      let raw=inlineRaw??(old?.node.eq(node)?old.raw:old?(patchSourceBlock(old.node,node,patchBase!,this.environment)??patchContainedTables(old.node,node,old.raw)??(node.type.name==='table'&&old.node.type===node.type?patchTable(old.node,node,old.raw):null)??serializeBlock(node)):serializeBlock(node))
+      if(!old?.node.eq(node)){
+        let hasTable=false
+        node.descendants(child=>{if(child.type.name==='table')hasTable=true})
+        if(node.type.name==='table')hasTable=true
+        if(hasTable){
+          const expected=node.type.schema.nodes.doc.create(null,node)
+          let restored=parseMarkdown(raw,this.environment).doc
+          if(!sameTables(expected,restored)){
+            raw=serializeBlock(node)
+            restored=parseMarkdown(raw,this.environment).doc
+          }
+          if(!sameTables(expected,restored))throw new Error('表格无法保存为可恢复的 Markdown，已取消本次修改。')
+        }
+      }
       // A paragraph promoted from the trailing placeholder has no old source
       // block yet. Preserve its first typed '[' instead of serializing '\[';
       // otherwise a later completed link looks author-escaped. Prove the whole

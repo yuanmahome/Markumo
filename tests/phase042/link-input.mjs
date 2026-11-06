@@ -26,6 +26,10 @@ async function enterTemplateLabel() {
   // Arrange the first-paragraph template through the existing fixture caret
   // API. Native Home can be coalesced with a pending DOM selection update.
   await page.evaluate(() => window.f.caret('[]('))
+  // Let the browser publish the fixture's DOM selection before sending the
+  // physical arrow key. Under the full suite's load, a queued selectionchange
+  // can otherwise restore the previous caret after ArrowRight.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   await page.keyboard.press('ArrowRight')
   await page.waitForFunction(() => window.f.live().view.state.selection.from === 2)
 }
