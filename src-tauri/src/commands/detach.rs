@@ -257,11 +257,13 @@ pub async fn take_detached_document(
             .payload
             .clone();
         if let Some(token) = payload.file_token.as_deref() {
-            files
-                .lock()
-                .map_err(|e| e.to_string())?
-                .transfer_grant(token, &source, &label)
-                .map_err(|e| e.message)?;
+            let mut service = files.lock().map_err(|e| e.to_string())?;
+            if payload.retain_source {
+                let token = service.clone_grant_for_view(token, &source, &label).map_err(|e| e.message)?;
+                registry.handoffs.iter_mut().find(|h| h.id == id).unwrap().payload.file_token = Some(token);
+            } else {
+                service.transfer_grant(token, &source, &label).map_err(|e| e.message)?;
+            }
         }
         let payload = registry.adopt_id(&id, &label)?;
         (id, source, payload)
@@ -357,7 +359,10 @@ fn rollback(
         if handoff.adopted {
             if let Some(token) = handoff.payload.file_token.as_deref() {
                 let mut service = files.lock().map_err(|e| e.to_string())?;
-                if service.grant_owner(token) == Some(&handoff.label)
+                if handoff.payload.retain_source && service.grant_owner(token) == Some(&handoff.label) {
+                    service.set_owner(&handoff.label);
+                    service.release(token);
+                } else if service.grant_owner(token) == Some(&handoff.label)
                     && app.get_webview_window(&handoff.source).is_some()
                 {
                     service

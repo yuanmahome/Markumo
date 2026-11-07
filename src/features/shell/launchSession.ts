@@ -53,6 +53,7 @@ export class SessionWriter {
   private pending:Promise<void>=Promise.resolve()
   private error:unknown=null
   constructor(private readonly write:(input:SessionInput)=>Promise<unknown>,private readonly failed:(error:unknown)=>void){}
+  invalidate(){this.last=''}
   prime(input:SessionInput){this.last=JSON.stringify(input)}
   schedule(input:SessionInput){
     const signature=JSON.stringify(input)

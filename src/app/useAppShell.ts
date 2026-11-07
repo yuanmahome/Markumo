@@ -26,7 +26,7 @@ import {
   listenDetachCommitted,
   setDetachRequestHandler,
   takeDetachedDocument,
-  receiveDetachCommitted,receiveDetachCanceled,setHandoffBusyHandler,disposeHandoffs,
+  receiveDetachCommitted,receiveDetachCanceled,setHandoffBusyHandler,disposeHandoffs,setHandoffCommittedHandler,hasPendingHandoffs,
 } from '../features/windows/tabDetach'
 import { resolvePaneDropZone,tabDragService,type TabDragResult } from '../editor/layout/TabDragService'
 import type { SplitDirection } from '../editor/layout/types'
@@ -42,7 +42,8 @@ import { readablePath } from '../features/shell/pathDisplay'
 import { textClipboard } from '../features/shell/clipboard'
 import { EditorView } from '@codemirror/view'
 import { WindowCloseGuard, type CloseSource } from '../features/shell/WindowCloseGuard'
-import { EmptyDetachedWindow } from '../features/shell/EmptyDetachedWindow'
+import { flushWindowReleases } from '../features/shell/windowResources'
+import { EmptyWindowLifecycle } from '../features/shell/EmptyWindowLifecycle'
 import { initializeLaunch, sessionInput, SessionWriter, restoreEditorLayout } from '../features/shell/launchSession'
 import { ImageImporter, imageGateway, clipboardImages, isImageFile, imageRuleKey, type ImageSource, type NativeImageInput } from '../editor/markdown/imageImport'
 import { UpdateManager, updateState, openProjectPage } from '../features/shell/AppUpdater'
@@ -453,9 +454,10 @@ export function useAppShell() {
   async function destroyNativeWindow(){
     if(!alive)return
     const win=(await import('@tauri-apps/api/window')).getCurrentWindow()
-    startup.exit();window.dispatchEvent(new CustomEvent('markumo:dispose-window'));await win.destroy()
+    await files.flushReleases()
+    startup.exit();window.dispatchEvent(new CustomEvent('markumo:dispose-window'));await flushWindowReleases();await win.destroy()
   }
-  const windowClose = new WindowCloseGuard({
+  const windowClose: WindowCloseGuard = new WindowCloseGuard({
     status: () =>
       computeWindowCloseStatus({
         fileBusy: fileBusy.value||deletedRecoveryPending.value>0,
@@ -471,6 +473,13 @@ export function useAppShell() {
       }),
     flush: async () => {
       await flushCloseState()
+    },
+    authorizeAutomatic: async () => {
+      const id=emptyWindow.candidate()
+      if(!id)return false
+      // Flush removed tabs before native ownership transfer.
+      const allowed=await invoke<boolean>('prepare_empty_window_close',{handoffId:id})
+      return allowed&&emptyWindow.candidate()===id
     },
     confirmDirty: () => {
       if (pendingClose?.kind === 'window' && discardRef.value?.visible) return
@@ -1116,6 +1125,9 @@ export function useAppShell() {
   }
 
   async function flushCloseState() {
+    await nextTick()
+    await files.flushReleases()
+    await flushWindowReleases()
     await recovery.flushForClose()
     await startup.flushForClose(
       () => preferences.flushSettings(true),
@@ -1223,7 +1235,6 @@ export function useAppShell() {
 
   // --- Global Lifecycle (Mount / Unmount) ---
 
-  let currentLaunchKind: 'app' | 'detached' | 'file' = 'app'
 
   /**
    * Target side of a tab handoff. The body already exists in this process, so
@@ -1232,7 +1243,7 @@ export function useAppShell() {
    * document does it tell the source to release its tab.
    */
   async function adoptIncomingDocument(x?: number, y?: number,handoffId?:string): Promise<EditorDocument | null> {
-    if(!alive||fileBusy.value||files.workspaceBusy||files.activeOperationCount||manager.isComposing||discardRef.value?.visible||pendingClose){if(handoffId){await cancelDetach(handoffId);if(alive)toast('请先完成当前窗口操作，再接收标签。')}return null}
+    if(!alive||Boolean(handoffId)&&!launchReady||fileBusy.value||files.workspaceBusy||files.activeOperationCount||manager.isComposing||discardRef.value?.visible||pendingClose){if(handoffId){await cancelDetach(handoffId);if(alive)toast('请先完成当前窗口操作，再接收标签。')}return null}
     const adopted = await takeDetachedDocument(handoffId)
     if (!adopted) return null
     const { handoffId:receivedId, payload } = adopted
@@ -1324,6 +1335,10 @@ export function useAppShell() {
       manager.focusPane(pane, true)
       release=manager.holdForHandoff(docId)
       if(!release||!alive)throw Error('目标窗口尚未准备好')
+      await recovery.start(false)
+      await recovery.protectHandoff(docId)
+      // Publish before commit even while a new detached window is booting.
+      await invoke('publish_session_snapshot',{input:sessionInput(manager,workspace.roots,{mode:appMode.value,sidebarVisible:sidebarVisible.value,sidebarWidth:sidebarWidth.value})})
       await commitDetach(receivedId)
       release();release=null
       return manager.metadata(docId)
@@ -1340,14 +1355,11 @@ export function useAppShell() {
   async function adoptDetachedDocument(): Promise<EditorDocument | null> {
     return adoptIncomingDocument()
   }
-  const emptyDetached=new EmptyDetachedWindow(()=>({detached:currentLaunchKind==='detached',ready:alive&&launchReady&&!startupLoading.value,documents:manager.openedDocuments.length,busy:fileBusy.value||deletedRecoveryPending.value>0||files.workspaceBusy||files.activeOperationCount>0||manager.isComposing}),()=>windowClose.request('native'))
-  watch([revision,startupLoading,fileBusy,deletedRecoveryPending],()=>emptyDetached.refresh(),{flush:'post'})
-  const disposeEmptyDetached=()=>emptyDetached.dispose()
+  const emptyWindow: EmptyWindowLifecycle=new EmptyWindowLifecycle(()=>({ready:alive&&launchReady&&!startupLoading.value,documents:manager.openedDocuments.length,dirty:manager.hasDirtyDocuments,busy:hasPendingHandoffs()||fileBusy.value||deletedRecoveryPending.value>0||files.workspaceBusy||files.activeOperationCount>0||manager.isComposing||updateInstalling.value||Boolean(discardRef.value?.visible)||Boolean(pendingClose)}),()=>windowClose.request('handoff'))
+  watch([revision,startupLoading,fileBusy,deletedRecoveryPending],()=>emptyWindow.refresh(),{flush:'post'})
+  const disposeEmptyDetached=()=>emptyWindow.dispose()
   window.addEventListener('markumo:dispose-window',disposeEmptyDetached,{once:true})
-  function outgoingCommitted(event:{handoffId:string;documentId:string}){
-    if(!receiveDetachCommitted(event))return
-    emptyDetached.refresh()
-  }
+  function outgoingCommitted(event:{handoffId:string;documentId:string}){receiveDetachCommitted(event)}
 
   const startup = new DesktopStartup({
     protect: async scope => {
@@ -1357,13 +1369,18 @@ export function useAppShell() {
         if (!alive) return
         await windowClose.request('native')
       }))
+      await scope.register('session-owner',()=>win.listen('markumo:session-owner',()=>{
+        sessionWriter?.invalidate();scheduleSession()
+      }))
+      await scope.register('incoming-tab', async () => (await import('@tauri-apps/api/window')).getCurrentWindow().listen<{ handoffId: string; x?: number; y?: number }>('markumo:incoming-tab', event => {
+        void adoptIncomingDocument(event.payload.x, event.payload.y,event.payload.handoffId).catch(error => toast(`接收标签失败：${fileError(error)}`))
+      }))
       await scope.register('detach',()=>listenDetachCommitted(outgoingCommitted))
       await scope.register('detach-canceled',()=>win.listen<{handoffId:string;documentId:string}>('markumo:detach-canceled',event=>receiveDetachCanceled(event.payload)))
     },
     loadPreferences: current => preferences.loadPreferences(current),
     initialize: initializeLaunch,
     adopt: async (launch, current) => {
-      currentLaunchKind = launch.kind
       if (launch.kind === 'app' && !launch.ownsSession) throw Error('主会话所有权未确认，已停止恢复。')
       workspace.restoreSession(launch.roots)
       // A detached window boots with nothing restored: its body arrives through
@@ -1380,9 +1397,12 @@ export function useAppShell() {
       wasNarrow = window.innerWidth < 900
       sidebarVisible.value = launch.kind === 'app' && !!workspace.rootPath && launch.layout.sidebarVisible && !wasNarrow
       if (launch.warnings.length) toast(launch.warnings.join('\n'))
-      if (launch.ownsSession) {
+      {
         sessionWriter = new SessionWriter(
-          input => invoke('persist_session', { input }),
+          async input => {
+            const owner=await invoke<boolean>('publish_session_snapshot',{input})
+            if(owner)await invoke('persist_session',{input})
+          },
           error => toast(`会话记录失败：${fileError(error)}`),
         )
         // Confirm native persistence before exposing an editable owner window.
@@ -1391,7 +1411,7 @@ export function useAppShell() {
         }))
         await sessionWriter.flush(true)
       }
-      if (launch.ownsSession) await recovery.start()
+      await recovery.start(launch.ownsSession)
       if (current()) {
         await nextTick()
         const readme = manager.openedDocuments.find(doc => /[\\/]README\.md$/i.test(doc.path || ''))
@@ -1430,7 +1450,8 @@ export function useAppShell() {
       if(fileBusy.value||files.workspaceBusy||files.activeOperationCount||manager.isComposing){toast('请等待当前文件操作或输入完成。');return}
       void detachDocumentToWindow(manager, documentId, paneId, drop, toast)
     })
-    setHandoffBusyHandler(busy=>{files.workspaceBusy=busy;emptyDetached.refresh()})
+    setHandoffBusyHandler(busy=>{files.handoffBusy=busy;revision.value++;emptyWindow.refresh()})
+    setHandoffCommittedHandler(id=>emptyWindow.committed(id))
     window.addEventListener('editor-notice', editorNotice)
     window.addEventListener('markdown-open-relative', openRelativeLink)
     window.addEventListener('paste', imagePaste, true)
@@ -1463,9 +1484,7 @@ export function useAppShell() {
           void nativeFileDrop(event.payload).catch(error => toast(fileError(error)))
         }))
         if (!alive || !launchReady) return
-        await startup.listeners.register('incoming-tab', async () => (await import('@tauri-apps/api/window')).getCurrentWindow().listen<{ handoffId: string; x?: number; y?: number }>('markumo:incoming-tab', event => {
-          void adoptIncomingDocument(event.payload.x, event.payload.y,event.payload.handoffId).catch(error => toast(`接收标签失败：${fileError(error)}`))
-        }))
+
         if (!alive || !launchReady) return
         if (!alive || !launchReady) return
         const prefs = await tauriFiles.preferences()
@@ -1513,7 +1532,7 @@ export function useAppShell() {
   })
 
   onUnmounted(() => {
-    emptyDetached.dispose();window.removeEventListener('markumo:dispose-window',disposeEmptyDetached)
+    emptyWindow.dispose();window.removeEventListener('markumo:dispose-window',disposeEmptyDetached)
     tabDragService.dispose();setDetachRequestHandler(null);disposeHandoffs()
     window.removeEventListener('editor-notice', editorNotice)
     window.removeEventListener('markdown-open-relative', openRelativeLink)

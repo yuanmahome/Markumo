@@ -11,6 +11,7 @@ import { normalizeWindowsArtifacts } from './windows-artifacts.mjs'
 
 const arg = name => process.argv.find(value => value.startsWith(`--${name}=`))?.slice(name.length + 3)
 const ref = arg('ref') || 'WORKTREE'
+const installer=process.argv.includes('--installer')
 const fullRef = process.argv.includes('--full-ref')
 const label = arg('label') || 'before'
 assert(/^[\w-]+$/.test(label), `Invalid label: ${label}`)
@@ -63,7 +64,7 @@ if (ref !== 'WORKTREE' && !fullRef) {
   )
 }
 const inputFiles=git(ref==='WORKTREE'?['ls-files','--cached','--others','--exclude-standard','--','src','src-tauri']:['ls-tree','-r','--name-only',commit,'--','src','src-tauri']).split(/\r?\n/).filter(Boolean).sort()
-const inputManifest=()=>inputFiles.filter(file=>!file.startsWith('src-tauri/gen/')).map(file=>[file,createHash('sha256').update(originals.get(path.resolve(sourceRoot,file).replaceAll('\\','/'))??fs.readFileSync(path.resolve(sourceRoot,file))).digest('hex')])
+const inputManifest=()=>inputFiles.filter(file=>!file.startsWith('src-tauri/gen/')&&fs.existsSync(path.resolve(sourceRoot,file))).map(file=>[file,createHash('sha256').update(originals.get(path.resolve(sourceRoot,file).replaceAll('\\','/'))??fs.readFileSync(path.resolve(sourceRoot,file))).digest('hex')])
 const sourceInputs=inputManifest()
 
 const PROBE_BOOTSTRAP = `
@@ -278,12 +279,12 @@ await build({
         if (cleanId.endsWith('/src/main.ts')) {
           return PROBE_BOOTSTRAP + '\n' + code
         }
-        if(label.startsWith('dnd-')&&cleanId.endsWith('/features/windows/tabDetach.ts'))return code.replace('pending.id=started.handoffId','pending.id=started.handoffId; (window as any).__dndLastDetach=started')
+        if(label.startsWith('dnd-')&&cleanId.endsWith('/features/windows/tabDetach.ts'))return code.replace('pending.id=started.handoffId','pending.id=started.handoffId; (window as any).__dndLastDetach=started; if((window as any).__holdBusyAfterBegin)(window as any).__dndShell.fileBusy.value=true').replace('if (!isTauri()) return null', 'if((window as any).__holdIncoming)return new Promise(()=>{}); if (!isTauri()) return null')
         if(label.startsWith('dnd-')&&cleanId.endsWith('/editor/layout/TabDragService.ts'))return code.replace('export const tabDragService = TabDragService.getInstance()','export const tabDragService = TabDragService.getInstance(); (window as any).__dndDragService=tabDragService').replace('if(id!==this.dragId)return','if(id!==this.dragId)return; (window as any).__dndNativeReleases=((window as any).__dndNativeReleases||0)+1')
         if ((label==='global-search'||label.startsWith('dnd-')) && cleanId.endsWith('/app/useAppShell.ts')) {
           const anchor='  workspace.connect()'
           assert(code.includes(anchor),'Workspace search probe anchor missing')
-          let instrumented=code.replace(anchor,`${anchor}\n  ;(window as any).__nativeWorkspace = workspace;\n  ;(window as any).__nativeSearchShell = { appMode, sidebarVisible, sidebarPanel };`)
+          let instrumented=code.replace('function outgoingCommitted(event:{handoffId:string;documentId:string}){','function outgoingCommitted(event:{handoffId:string;documentId:string}){if((window as any).__dropCommit)return;if((window as any).__composeOnReceipt)(manager.paneView(manager.activePane) as any).inputState.composing=1;').replace(anchor,`${anchor}\n  ;(window as any).__nativeWorkspace = workspace;\n  ;(window as any).__nativeSearchShell = { appMode, sidebarVisible, sidebarPanel };`)
           if(label.startsWith('dnd-')){
             const at=instrumented.lastIndexOf('  return {'),end=instrumented.lastIndexOf('}')
             assert(at>0&&end>at,'Shell return probe anchor missing')
@@ -380,18 +381,19 @@ export async function renderMath(...args: Parameters<typeof __rawRenderMath>) {
 const profileDir = path.join(root, `native-profile-${label}`)
 fs.mkdirSync(profileDir, { recursive: true })
 const config = {
+  ...(installer?{productName:'Markumo Window Lifecycle Test'}:{}),
   identifier: `com.markumo.phase042-${label}`,
-  app: { appDirectoriesOverride: profileDir },
+  app: { appDirectoriesOverride: profileDir, ...(installer?{security:{capabilities:['default',{identifier:'lifecycle-test-focus',windows:['main','file-*','app-*','detached-*'],permissions:['core:window:allow-set-focus']}]}}:{}) },
   build: {
     beforeBuildCommand: null,
     frontendDist: path.relative(path.resolve('src-tauri'), dist).replaceAll('\\', '/'),
   },
-  bundle: { active: false, createUpdaterArtifacts: false },
+  bundle: { active: installer, createUpdaterArtifacts: false },
 }
 const configPath = path.join(root, `config-${label}.json`)
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2))
 
-await run(['build', '--no-bundle', '--config', configPath], 'tauri')
+await run(['build', ...(installer?['--bundles','nsis']:['--no-bundle']), '--config', configPath], 'tauri')
 assert.deepEqual(inputManifest(),sourceInputs,'Source inputs changed during Release build')
 
 const targetDir = process.env.CARGO_TARGET_DIR || path.resolve('src-tauri/target')

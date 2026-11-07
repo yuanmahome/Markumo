@@ -445,6 +445,18 @@ impl FileService {
         grant.owner = to.to_owned();
         Ok(())
     }
+    /// An explicitly retained source view needs its own capability. Copy every
+    /// restriction and identity check; never grant access from a caller path.
+    pub fn clone_grant_for_view(&mut self, token: &str, from: &str, to: &str) -> Result<String> {
+        if to.is_empty() || from == to { return fail("transfer", "目标窗口无效"); }
+        let mut grant = self.grants.get(token).filter(|g| g.owner == from).cloned()
+            .ok_or_else(|| FileError::new("scope", "文件不属于当前窗口"))?;
+        grant.owner = to.into();
+        self.next_token += 1;
+        let new_token = format!("document-{}", self.next_token);
+        self.grants.insert(new_token.clone(), grant);
+        Ok(new_token)
+    }
     pub fn grant_owner(&self, token: &str) -> Option<&str> {
         self.grants.get(token).map(|grant| grant.owner.as_str())
     }
@@ -1152,4 +1164,27 @@ fn byte_fallback_allowed(bytes: &[u8], error: &FileError) -> bool {
     // A malformed BOM-bearing text file still requires explicit correction.
     (error.code == "binary" || error.code == "encoding")
         && (bytes.starts_with(classfile::MAGIC) || encoding_rs::Encoding::for_bom(bytes).is_none())
+}
+
+#[cfg(test)]
+mod retained_view_grant_tests {
+    use super::*;
+    #[test]
+    fn retained_view_has_independent_scoped_capability() {
+        let temp=tempfile::tempdir().unwrap();let path=temp.path().join("shared.txt");
+        std::fs::write(&path,"shared text").unwrap();
+        let mut files=FileService::default();files.set_owner("source");
+        let original=files.open_selected(path,None).unwrap();
+        assert!(files.clone_grant_for_view(&original.metadata.token,"intruder","target").is_err());
+        let copied=files.clone_grant_for_view(&original.metadata.token,"source","target").unwrap();
+        assert!(files.session_path(&copied).is_err());
+        assert!(files.session_path(&original.metadata.token).is_ok());
+        files.set_owner("target");
+        assert!(files.session_path(&original.metadata.token).is_err());
+        assert!(files.session_path(&copied).is_ok());
+        files.release(&original.metadata.token); // Wrong owner cannot revoke the source.
+        assert_eq!(files.grant_owner(&original.metadata.token),Some("source"));
+        files.release(&copied);
+        files.set_owner("source");assert!(files.session_path(&original.metadata.token).is_ok());
+    }
 }

@@ -80,13 +80,13 @@ try{
    return{created:active,allDelivered:events.every((e,i)=>i===0||e.join(',')==='true,false'),stoppedUnchanged:events[0].length===beforeDispose,disconnected:observers.every(o=>o.disconnected),registrations:observers.reduce((sum,o)=>sum+o.targets.size,0)}
   });assert.equal(result.created,1);assert.equal(result.allDelivered,true);assert.equal(result.stoppedUnchanged,true);assert.equal(result.disconnected,true);assert.equal(result.registrations,0);return result
  })
- if(!baseline)await check('empty detached closure follows settled ownership, not only commit events',async()=>{
+ if(!baseline)await check('empty closure requires committed removal and waits for idle',async()=>{
   const result=await page.evaluate(async()=>{
-   const {EmptyDetachedWindow}=await import('/src/features/shell/EmptyDetachedWindow.ts')
-   const state={detached:true,ready:true,documents:0,busy:false};let closed=0,resolve
-   const closer=new EmptyDetachedWindow(()=>({...state}),()=>{closed++;return new Promise(r=>resolve=r)})
+   const {EmptyWindowLifecycle}=await import('/src/features/shell/EmptyWindowLifecycle.ts')
+   const state={ready:true,documents:0,busy:false,dirty:false};let closed=0,resolve
+   const closer=new EmptyWindowLifecycle(()=>({...state}),()=>{closed++;return new Promise(r=>resolve=r)})
    closer.refresh();await Promise.resolve();if(closed)throw Error('Initial empty window closed')
-   state.documents=1;closer.refresh();state.documents=0;state.busy=true;closer.refresh();await Promise.resolve()
+   state.documents=1;closer.refresh();state.documents=0;closer.refresh();await Promise.resolve();if(closed)throw Error('Normal last tab close must remain open');state.busy=true;closer.committed('handoff-1');await Promise.resolve()
    if(closed)throw Error('Busy handoff window closed')
    state.busy=false;closer.refresh();closer.refresh();await Promise.resolve();if(closed!==1)throw Error('Settled empty ownership must close exactly once')
    resolve();await Promise.resolve();closer.dispose();closer.refresh();return{closed}

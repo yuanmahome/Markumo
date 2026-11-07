@@ -70,10 +70,11 @@ export class RecoveryController {
     this.unsubscribe = manager.subscribe(() => this.refresh())
   }
 
-  async start() {
+  async start(showRecords = true) {
     if (this.started || this.disposed) return
     this.started = true
     this.refresh()
+    if (!showRecords) return
     try {
       await this.reload()
       if (this.records.value.length) this.visible.value = true
@@ -135,10 +136,18 @@ export class RecoveryController {
   }
 
   async flushForClose(): Promise<void> {
+    this.refresh()
     if (this.timer) clearTimeout(this.timer)
     this.timer = undefined
     for (const item of this.pending.values()) item.due = 0
     await this.flush()
+  }
+
+  async protectHandoff(id:string) {
+    const doc=this.manager.metadata(id)
+    if(!doc?.dirty)return
+    await this.flushForClose()
+    if(this.lastSaved.get(id)!==this.manager.getState(id)?.doc)throw Error('未保存文档尚未获得恢复保护')
   }
 
   /** A destructive reload must wait for this exact buffer to reach durable storage.
@@ -465,6 +474,7 @@ export class RecoveryController {
       const claim = this.claims.get(documentId)
       const input: RecoverySaveInput = {
         id: claim?.recordId || null,
+        token: doc.fileToken,
         name: doc.name,
         path: doc.path || null,
         text: item.text.toString(),

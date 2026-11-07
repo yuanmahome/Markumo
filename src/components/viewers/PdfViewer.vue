@@ -119,6 +119,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { trackWindowRelease } from '../../features/shell/windowResources'
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import type * as PDFJS from 'pdfjs-dist'
 import type { EditorDocument } from '../../types'
@@ -491,7 +492,8 @@ function onKeydown(event:KeyboardEvent){
   else host.scrollBy({top:key==='arrowdown'?48:key==='arrowup'?-48:host.clientHeight*.9*((key==='pageup'||event.shiftKey)?-1:1)})
 }
 
-async function teardown(){
+function teardown(){return trackWindowRelease(teardownResources())}
+async function teardownResources(){
   ++searchGeneration;++navSequence;searching.value=false;passwordNeeded.value=false;passwordCallback=undefined;password.value=''
   ++positionEpoch;pendingAnchor=undefined;cancelAnimationFrame(anchorFrame);cancelAnimationFrame(scrollFrame);scrollFrame=0
   const oldLoading=loading,oldWorker=worker,oldNative=nativeWorker,oldTransport=transport,oldApi=api.value

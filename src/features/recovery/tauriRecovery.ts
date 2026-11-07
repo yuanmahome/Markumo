@@ -4,6 +4,6 @@ import type { RecoveryGateway, RecoveryList, RecoveryRecord, RecoverySaveResult 
 export const tauriRecovery: RecoveryGateway = {
   list: () => invoke<RecoveryList>('recovery_list'),
   read: id => invoke<RecoveryRecord>('recovery_read', { id }),
-  save: input => invoke<RecoverySaveResult>('recovery_save', { input }),
+  save: ({token,...input}) => invoke<RecoverySaveResult>('recovery_save', { input, token:token??null }),
   remove: id => invoke<void>('recovery_delete', { id }),
 }

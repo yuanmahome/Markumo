@@ -25,6 +25,8 @@ pub const MAX_PAYLOAD_BYTES: usize = 32 * 1024 * 1024;
 #[serde(rename_all = "camelCase")]
 pub struct DetachPayload {
     #[serde(default)]
+    pub retain_source: bool,
+    #[serde(default)]
     pub kind: Option<String>,
     #[serde(default)]
     pub media: Option<serde_json::Value>,
@@ -323,6 +325,10 @@ impl DetachRegistry {
         } else {
             "canceled"
         }
+    }
+
+    pub fn committed_target(&self, id: &str, source: &str) -> Option<String> {
+        self.completed.iter().find(|(key, owner, _, _)| key == id && owner == source).map(|(_, _, target, _)| target.clone())
     }
 
     /// Drop every handoff that references a window that is gone.

@@ -27,8 +27,9 @@ export class FileController {
   readonly external: ExternalFileChangeController
   readonly saving = new Set<string>()
   get activeOperationCount() { return this.saving.size + this.external.resolvingCount }
+  handoffBusy = false
   private workspaceOperation = false
-  get workspaceBusy() { return this.workspaceOperation }
+  get workspaceBusy() { return this.workspaceOperation || this.handoffBusy }
   set workspaceBusy(value: boolean) {
     if (this.workspaceOperation === value) return
     this.workspaceOperation = value
@@ -36,9 +37,14 @@ export class FileController {
   }
   private disposed = false
   private automaticErrors = new Map<string, Set<string>>()
+  private readonly releases=new Set<Promise<unknown>>()
+  async flushReleases(){await Promise.all([...this.releases])}
   private readonly stopRelease: () => void
   constructor(readonly manager: DocumentManager, readonly gateway: FileGateway, private readonly notify: (message: string) => void, private saved?: (id: string) => void | Promise<void>) {
-    this.stopRelease = manager.onFileRelease(token => { void gateway.release(token).catch(error => notify(fileError(error))) })
+    this.stopRelease = manager.onFileRelease(token => {
+      const task=gateway.release(token).catch(error => notify(fileError(error)))
+      this.releases.add(task);void task.finally(()=>this.releases.delete(task))
+    })
     this.external = new ExternalFileChangeController(manager, this, notify)
   }
   setSavedHandler(handler: (id: string) => void | Promise<void>) { this.saved = handler }

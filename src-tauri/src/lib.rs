@@ -272,7 +272,7 @@ pub fn run() {
                 app.state::<conversion::ConversionStore>().close(window.label());
                 if let Ok(mut update)=app.state::<commands::update::UpdateStore>().lock(){update.release(window.label());update.statuses.remove(window.label());}
                 app.state::<WorkspaceStore>().remove(window.label());
-                if let Ok(mut registry)=app.state::<session::LaunchStore>().lock(){registry.windows.remove(window.label());}
+                if let Ok(mut registry)=app.state::<session::LaunchStore>().lock(){registry.remove(window.label());}
                 // A detached window that closed before adopting must not leak
                 // the document body or keep the source tab blocked.
                 commands::detach::forget_window(
@@ -290,7 +290,7 @@ pub fn run() {
             commands::update::clear_update_pending, commands::update::confirm_update_startup,
             commands::app::get_app_version,
             commands::app::ensure_update_window,
-            commands::workspace::open_example_workspace, commands::workspace::acknowledge_example_workspace, commands::session::initialize_launch,commands::session::persist_session,
+            commands::workspace::open_example_workspace, commands::workspace::acknowledge_example_workspace, commands::session::initialize_launch,commands::session::persist_session, commands::session::publish_session_snapshot, commands::session::prepare_empty_window_close,
             commands::detach::detach_tab_to_window, commands::detach::take_detached_document,
             commands::tab_drag::begin_tab_drag,commands::tab_drag::cancel_tab_drag,
             commands::detach::detach_status,

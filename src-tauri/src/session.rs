@@ -28,6 +28,10 @@ pub struct LaunchRegistry {
     /// Insertion order so "the most recent single-file window" is well defined.
     pub order: Vec<String>,
     pub next: u64,
+    pub session_owner: Option<String>,
+    pub recovery_claims: HashMap<String, String>,
+    pub snapshots: HashMap<String, LastSession>,
+    pub retained_roots: Vec<String>,
 }
 impl LaunchRegistry {
     pub fn insert(&mut self, label: String, paths: Vec<PathBuf>) {
@@ -44,6 +48,7 @@ impl LaunchRegistry {
         self.insert_kind(label, LaunchKind::Detached, Vec::new())
     }
     fn insert_kind(&mut self, label: String, kind: LaunchKind, paths: Vec<PathBuf>) {
+        if kind == LaunchKind::App && self.session_owner.is_none() { self.session_owner = Some(label.clone()); }
         if !self.windows.contains_key(&label) {
             self.order.push(label.clone());
         }
@@ -57,10 +62,43 @@ impl LaunchRegistry {
         );
     }
     pub fn owner(&self) -> Option<String> {
-        self.windows
-            .iter()
-            .find(|(_, w)| w.kind == LaunchKind::App)
-            .map(|(label, _)| label.clone())
+        self.session_owner.clone().filter(|label| self.windows.contains_key(label))
+    }
+    pub fn combined_session(&self, owner: &str) -> Result<LastSession, String> {
+        let mut result = self.snapshots.get(owner).cloned().ok_or("目标窗口会话尚未就绪")?;
+        for snapshot in self.snapshots.values() {
+            for tab in &snapshot.tabs {
+                if !result.tabs.iter().any(|t| PathKey::of(Path::new(&t.path)) == PathKey::of(Path::new(&tab.path))) { result.tabs.push(tab.clone()); }
+            }
+            for root in &snapshot.roots { if !result.roots.contains(root) { result.roots.push(root.clone()); } }
+        }
+        for root in &self.retained_roots { if !result.roots.contains(root) { result.roots.push(root.clone()); } }
+        if !result.roots.is_empty() { result.kind = "workspace".into(); }
+        // Other windows' tabs must be reachable after restoring the owner's
+        // layout. Keep its splits and append missing paths to its first pane.
+        if let Some(layout) = result.editor_layout.as_mut() {
+            fn collect(node: &serde_json::Value, paths: &mut HashSet<String>) {
+                if node["type"] == "split" { collect(&node["first"], paths); collect(&node["second"], paths); }
+                else if let Some(tabs) = node["tabs"].as_array() {
+                    for tab in tabs { if let Some(path) = tab["documentId"].as_str() { paths.insert(path.into()); } }
+                }
+            }
+            fn first(node: &mut serde_json::Value) -> &mut serde_json::Value {
+                if node["type"] == "split" { first(&mut node["first"]) } else { node }
+            }
+            let mut visible = HashSet::new();
+            collect(&layout["root"], &mut visible);
+            let pane = first(&mut layout["root"]);
+            for tab in &result.tabs {
+                let path = crate::display::display_text(&tab.path);
+                if visible.insert(path.clone()) {
+                    pane["tabs"].as_array_mut().ok_or("分栏标签无效")?.push(serde_json::json!({"documentId":path,"pinned":true}));
+                    if pane["activeId"].is_null() { pane["activeId"] = path.into(); }
+                }
+            }
+        }
+        result.validate()?;
+        Ok(result)
     }
     pub fn window_for(&self, key: &PathKey) -> Option<String> {
         self.windows
@@ -97,6 +135,9 @@ impl LaunchRegistry {
     }
     pub fn remove(&mut self, label: &str) {
         self.windows.remove(label);
+        self.snapshots.remove(label);
+        self.recovery_claims.retain(|_, owner| owner != label);
+        if self.session_owner.as_deref() == Some(label) { self.session_owner = None; }
         self.order.retain(|entry| entry != label);
     }
     pub fn next_label(&mut self, kind: LaunchKind) -> String {
@@ -656,4 +697,36 @@ pub fn capture(
     };
     session.validate()?;
     Ok(session)
+}
+
+#[cfg(test)]
+mod owner_migration_tests {
+    use super::*;
+    #[test]
+    fn explicit_owner_is_independent_of_launch_kind_and_cleanup() {
+        let mut registry=LaunchRegistry::default();
+        registry.insert("main".into(), vec![]);
+        registry.insert_detached("target".into());
+        assert_eq!(registry.owner().as_deref(), Some("main"));
+        registry.session_owner=Some("target".into());
+        registry.remove("main");
+        assert_eq!(registry.owner().as_deref(), Some("target"));
+        registry.remove("target");
+        assert_eq!(registry.owner(), None);
+        assert!(registry.order.is_empty());
+    }
+    #[test]
+    fn merged_session_keeps_remaining_files_and_workspace_roots() {
+        let mut registry=LaunchRegistry::default();
+        let root=std::env::temp_dir().to_string_lossy().into_owned();
+        let file=std::env::temp_dir().join("remaining.md").to_string_lossy().into_owned();
+        let snapshot=LastSession{schema_version:1,kind:"single".into(),roots:vec![],tabs:vec![SessionTab{path:file.clone(),encoding:"UTF-8".into()}],active_path:Some(file),layout:Layout::default(),editor_layout:None};
+        registry.snapshots.insert("target".into(),snapshot.clone());
+        registry.snapshots.insert("other".into(),snapshot);
+        registry.retained_roots.push(root.clone());
+        let merged=registry.combined_session("target").unwrap();
+        assert_eq!(merged.tabs.len(),1);
+        assert_eq!(merged.roots,vec![root]);
+        assert_eq!(merged.kind,"workspace");
+    }
 }

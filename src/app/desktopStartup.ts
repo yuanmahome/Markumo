@@ -139,7 +139,9 @@ export class DesktopStartup<Launch> {
       throw Error('会话保存能力尚未确认，不能安全关闭。')
     }
     await settings()
-    if (this.state.session === 'owner') await session!()
+    // Temporary windows publish metadata too; native code grants persistence
+    // only to the current owner, including windows promoted after startup.
+    if (session) await session()
   }
   dispose() {
     if (this.state.phase === 'disposed') return

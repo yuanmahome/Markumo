@@ -55,6 +55,7 @@ export interface RecoveryList {
   warnings: string[]
 }
 export interface RecoverySaveInput {
+  token?: string | null
   id?: string | null
   name: string
   path: string | null

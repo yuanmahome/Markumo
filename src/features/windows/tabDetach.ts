@@ -7,6 +7,7 @@ import type {MediaViewState} from '../files/media'
 
 /** A document body travelling between windows. Mirrors the Rust payload. */
 export interface DetachPayload {
+  retainSource?: boolean
   kind?:EditorDocument['kind']
   media?:MediaMetadata
   classInfo?:ClassInfo
@@ -82,6 +83,7 @@ export function buildDetachPayload(
   const snapshot = manager.paneSnapshot(documentId, paneId)
   return {
     kind:doc.kind,media:doc.media,classInfo:doc.classInfo,mediaView:doc.kind==='image'||doc.kind==='pdf'?{...manager.mediaViewState(documentId,paneId)}:undefined,
+    retainSource:manager.layout.getAllPanes().filter(p=>p.group.tabs.some(t=>t.documentId===documentId)).length>1,
     documentId,
     name: doc.name,
     path: doc.path || null,
@@ -186,7 +188,7 @@ export async function detachDocumentToWindow(
   }
   const release=manager.holdForHandoff(documentId)
   if(!release)return false
-  const pending:Outgoing={release,manager,notify};outgoing.set(documentId,pending);busyChanged?.(true)
+  const pending:Outgoing={release,manager,notify,paneId};outgoing.set(documentId,pending);pending.unsubscribe=manager.subscribe(()=>{if(pending.committed&&!manager.isComposing)finishOutgoing(documentId,true)});busyChanged?.(true)
   try {
     const started=await beginDetach(payload, drop)
     if(outgoing.get(documentId)!==pending)return true
@@ -200,19 +202,30 @@ export async function detachDocumentToWindow(
   }
 }
 
-interface Outgoing {id?:string;release:()=>void;manager:DocumentManager;notify:(message:string)=>void;timer?:ReturnType<typeof setTimeout>}
+interface Outgoing {paneId:string;committed?:boolean;unsubscribe?:()=>void;id?:string;release:()=>void;manager:DocumentManager;notify:(message:string)=>void;timer?:ReturnType<typeof setTimeout>}
 const outgoing=new Map<string,Outgoing>()
+let committedHandler:((handoffId:string)=>void)|undefined
+export function setHandoffCommittedHandler(handler?: (handoffId:string)=>void){committedHandler=handler}
+export function hasPendingHandoffs(){return outgoing.size>0}
 let busyChanged:((busy:boolean)=>void)|undefined
 export function setHandoffBusyHandler(handler?: (busy:boolean)=>void){busyChanged=handler}
 function finishOutgoing(documentId:string,committed:boolean){
   const pending=outgoing.get(documentId);if(!pending)return false
-  outgoing.delete(documentId);clearTimeout(pending.timer);pending.release()
-  if(committed)for(const pane of pending.manager.layout.getAllLeafIds())pending.manager.close(documentId,true,pane)
-  busyChanged?.(outgoing.size>0);return true
+  if(committed&&pending.manager.isComposing){pending.committed=true;return false}
+  outgoing.delete(documentId);pending.unsubscribe?.();clearTimeout(pending.timer);pending.release()
+  if(committed)pending.manager.close(documentId,true,pending.paneId)
+  busyChanged?.(outgoing.size>0);if(committed&&pending.id)committedHandler?.(pending.id);return true
 }
-export function receiveDetachCommitted(event:{handoffId:string;documentId:string}){
+export async function receiveDetachCommitted(event:{handoffId:string;documentId:string}){
   const pending=outgoing.get(event.documentId)
-  return !!pending&&(!pending.id||pending.id===event.handoffId)&&finishOutgoing(event.documentId,true)
+  if(!pending||(pending.id&&pending.id!==event.handoffId))return false
+  // Events are hints. Validate the native receipt before releasing any buffer.
+  try{
+    const status=await invoke<string>('detach_status',{handoffId:event.handoffId})
+    if(outgoing.get(event.documentId)!==pending||status!=='committed')return false
+    pending.id=event.handoffId
+    return finishOutgoing(event.documentId,true)
+  }catch{return false} // The existing status timer retries a lost response.
 }
 export function receiveDetachCanceled(event:{handoffId:string;documentId:string}){
   const pending=outgoing.get(event.documentId)
@@ -222,8 +235,9 @@ async function settleTimedOut(documentId:string,pending:Outgoing){
   if(outgoing.get(documentId)!==pending||!pending.id)return
   try{
     const status=await invoke<string>('detach_status',{handoffId:pending.id})
+    if(outgoing.get(documentId)!==pending)return
     if(status==='committed'){finishOutgoing(documentId,true);return}
-    const committed=await cancelDetach(pending.id);finishOutgoing(documentId,committed);if(!committed)pending.notify('移交未完成，原文档已保留。')
-  }catch(error){pending.notify('移交状态确认失败，文档保持锁定：'+String(error));pending.timer=setTimeout(()=>void settleTimedOut(documentId,pending),15000)}
+    const committed=await cancelDetach(pending.id);if(outgoing.get(documentId)!==pending)return;finishOutgoing(documentId,committed);if(!committed)pending.notify('移交未完成，原文档已保留。')
+  }catch(error){if(outgoing.get(documentId)!==pending)return;pending.notify('移交状态确认失败，文档保持锁定：'+String(error));pending.timer=setTimeout(()=>void settleTimedOut(documentId,pending),15000)}
 }
-export function disposeHandoffs(){for(const [id,pending]of outgoing){clearTimeout(pending.timer);pending.release();if(pending.id)void cancelDetach(pending.id).catch(()=>{});outgoing.delete(id)}busyChanged=undefined}
+export function disposeHandoffs(){for(const [id,pending]of outgoing){clearTimeout(pending.timer);pending.unsubscribe?.();pending.release();if(pending.id)void cancelDetach(pending.id).catch(()=>{});outgoing.delete(id)}busyChanged=undefined;committedHandler=undefined}

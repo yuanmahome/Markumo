@@ -1,4 +1,4 @@
-export type CloseSource = 'titlebar' | 'command' | 'native'
+export type CloseSource = 'titlebar' | 'command' | 'native' | 'handoff'
 export interface CloseStatus {
   fileBusy: boolean
   savingCount: number
@@ -11,6 +11,7 @@ export interface CloseStatus {
 interface CloseServices {
   status(): CloseStatus
   flush(): Promise<unknown>
+  authorizeAutomatic?(): Promise<boolean>
   confirmDirty(): void
   destroy(): Promise<void>
   blocked(reason: 'busy' | 'composing'): void
@@ -49,6 +50,9 @@ export class WindowCloseGuard {
       await this.services.flush()
       // Input/save may have started while settings were being persisted.
       if (this.blocked(source)) return
+      if (source === 'handoff') {
+        if (!this.services.authorizeAutomatic || !await this.services.authorizeAutomatic() || this.blocked(source) || this.services.status().documentCount) return
+      }
       if (this.services.status().dirtyCount) {
         this.log(source, 'confirm-dirty'); this.services.confirmDirty(); return
       }

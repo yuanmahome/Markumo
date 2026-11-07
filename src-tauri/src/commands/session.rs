@@ -5,7 +5,7 @@ use crate::{
     workspace::WorkspaceInfo,
 };
 use serde::Serialize;
-use tauri::{Manager, State, Window};
+use tauri::{Emitter, Manager, State, Window};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -169,14 +169,11 @@ pub async fn persist_session(
             .lock()
             .map_err(|e| e.to_string())?
             .require_owner(label)?;
-    } else if launches
-        .lock()
-        .map_err(|e| e.to_string())?
-        .owner()
-        .as_deref()
-        != Some(label)
-    {
-        return Err("文件关联临时窗口不能写入主会话".into());
+    }
+    // Serialize ownership checks and writes with promotion.
+    let mut registry = launches.lock().map_err(|e| e.to_string())?;
+    if !for_update.unwrap_or(false) && registry.owner().as_deref() != Some(label) {
+        return Err("此窗口不是主会话所有者".into());
     }
     let roots = workspaces
         .for_window(label)?
@@ -187,8 +184,46 @@ pub async fn persist_session(
     file_service.set_owner(label);
     let session = crate::session::capture(input, &file_service, roots)?;
     drop(file_service);
-    // Bounded atomic JSON write, serialized independently of editor input.
+    registry.snapshots.insert(label.into(), session);
+    let session = registry.combined_session(label)?;
     sessions.lock().map_err(|e| e.to_string())?.save(&session)
+}
+
+/// Non-owners publish validated metadata; only the owner can persist it.
+#[tauri::command]
+pub fn publish_session_snapshot(window: Window, input: SessionInput, launches: State<'_, LaunchStore>, files: State<'_, FileStore>, workspaces: State<'_, WorkspaceStore>) -> Result<bool, String> {
+    let label = window.label();
+    let mut registry = launches.lock().map_err(|e| e.to_string())?;
+    if !registry.windows.contains_key(label) { return Err("窗口未注册".into()); }
+    let roots = workspaces.for_window(label)?.lock().map_err(|e| e.to_string())?.roots();
+    let mut service = files.lock().map_err(|e| e.to_string())?;
+    service.set_owner(label);
+    let snapshot = crate::session::capture(input, &service, roots)?;
+    registry.snapshots.insert(label.into(), snapshot);
+    let owner = registry.owner();
+    if let Some(target) = owner.as_deref().filter(|owner| *owner != label) { let _ = window.app_handle().emit_to(target, "markumo:session-owner", ()); }
+    Ok(owner.as_deref() == Some(label))
+}
+
+/// Persistence must succeed before ownership changes or the source may close.
+#[tauri::command]
+pub fn prepare_empty_window_close(window: Window, handoff_id: String, launches: State<'_, LaunchStore>, sessions: State<'_, SessionStore>, detaches: State<'_, super::detach::DetachStore>) -> Result<bool, String> {
+    let handoffs = detaches.lock().map_err(|e| e.to_string())?;
+    let source = window.label();
+    if handoffs.handoffs.iter().any(|h| h.source == source || h.label == source) { return Ok(false); }
+    let target = handoffs.committed_target(&handoff_id, source).ok_or("移交尚未提交")?;
+    if target == source || window.app_handle().get_webview_window(&target).is_none() { return Ok(false); }
+    let mut registry = launches.lock().map_err(|e| e.to_string())?;
+    if !registry.windows.contains_key(&target) || registry.snapshots.get(source).is_none_or(|s| !s.tabs.is_empty()) || !registry.snapshots.contains_key(&target) { return Ok(false); }
+    if registry.owner().as_deref() == Some(source) {
+        let session = registry.combined_session(&target)?;
+        sessions.lock().map_err(|e| e.to_string())?.save(&session)?;
+        registry.retained_roots = session.roots;
+        registry.session_owner = Some(target.clone());
+        // Advisory only: the next publish also returns the authoritative role.
+        let _ = window.app_handle().emit_to(&target, "markumo:session-owner", ());
+    }
+    Ok(true)
 }
 
 // Only an empty session or our own interrupted example workspace may be replaced.
