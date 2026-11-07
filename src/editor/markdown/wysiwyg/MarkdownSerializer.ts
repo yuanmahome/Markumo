@@ -66,11 +66,11 @@ const markumoLink = {
 
 export const markdownSerializer = new MarkdownSerializer({ ...defaultMarkdownSerializer.nodes,
   soft_break(state){state.write('\n')},
-  math_inline(state,node){state.write('$'+node.attrs.latex+'$')},
+  math_inline(state,node){state.write(node.attrs.opening+node.attrs.latex+node.attrs.closing)},
   footnote_reference(state,node){state.write('[^'+node.attrs.label+']')},
   html_block(state,node){state.write(node.attrs.source);state.closeBlock(node)},
   html_inline(state,node){state.write(node.attrs.source)},
-  protected_source(state,node){state.write(node.attrs.source);state.closeBlock(node)},
+  protected_source(state,node){state.text(node.attrs.source,false);state.closeBlock(node)},
   toc(state, node) {
     state.write(node.attrs.raw || '[TOC]')
     state.closeBlock(node)

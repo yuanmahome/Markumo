@@ -55,7 +55,7 @@ export async function renderMarkdownForExport(
   for (const type of ['math_inline', 'math_block']) renderer.renderer.rules[type] = (tokens, index) => {
     const id = math.length
     try { math.push(exportMathHtml(tokens[index].content, type === 'math_block')) }
-    catch { math.push(renderer.utils.escapeHtml(tokens[index].content)); warnings.push({kind:'math',message:'公式渲染失败，已保留源码。'}) }
+    catch (error) { math.push(renderer.utils.escapeHtml(tokens[index].content)); warnings.push({kind:'math',message:`公式渲染失败，已保留源码：${String(error)}`}) }
     return '<span data-export-math="' + id + '"></span>'
   }
   // Export is a single static snapshot. Await parsers instead of relying on

@@ -101,13 +101,13 @@ export function detectLanguage(name: string): LanguageName {
   return languageRegistry.find(language => language.extensions.some(e => e === ext))?.name || 'Plain Text'
 }
 async function loadMarkdown(): Promise<Extension> {
-  const [{ markdown }, { markdownSmartEditing }, { markdownSyntaxExtensions }] = await Promise.all([import('@codemirror/lang-markdown'), import('../markdown/smartEditing'), import('../markdown/semantics')])
+  const [{ markdown }, { markdownSmartEditing }, { markdownSyntaxExtensions }, { mathHighlight }] = await Promise.all([import('@codemirror/lang-markdown'), import('../markdown/smartEditing'), import('../markdown/semantics'), import('../markdown/mathHighlight')])
   const codeLanguages = languageRegistry.filter(language => language.highlights && language.name !== 'Markdown').map(language => LanguageDescription.of({
     name: language.name, alias: [...language.aliases, language.id], extensions: [...language.extensions],
     load: async () => await loadLanguage(language.name,'fence') as LanguageSupport,
   }))
   const support = markdown({ extensions: markdownSyntaxExtensions, codeLanguages, addKeymap: false })
-  return new LanguageSupport(support.language, [support.support, markdownSmartEditing])
+  return new LanguageSupport(support.language, [support.support, markdownSmartEditing, mathHighlight])
 }
 export function createLanguageLoader() {
   const pending = new Map<string, Promise<Extension>>()

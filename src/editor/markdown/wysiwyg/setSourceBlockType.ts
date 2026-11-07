@@ -5,9 +5,9 @@ import type {Command} from 'prosemirror-state'
 export function setSourceBlockType(type:NodeType,attrs:Attrs={}):Command {
   return(state,dispatch)=>{
     const tr=state.tr
-    for(const {$from,$to}of state.selection.ranges)tr.setBlockType($from.pos,$to.pos,type,node=>({...node.attrs,...attrs}))
+    for(const {$from,$to}of state.selection.ranges)tr.setBlockType($from.pos,$to.pos,type,node=>({sourceId:node.attrs.sourceId,...attrs}))
     if(!tr.docChanged)return false
-    dispatch?.(tr.scrollIntoView())
+    dispatch?.(tr.setMeta('isolated',true).scrollIntoView())
     return true
   }
 }

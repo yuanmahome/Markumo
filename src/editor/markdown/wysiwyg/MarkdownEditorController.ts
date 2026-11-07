@@ -234,6 +234,23 @@ export class MarkdownEditorController implements LiveEditor {
           if (parsed?.childCount !== 1 || parsed.firstChild?.type !== s.nodes.image) return null
           return state.tr.replaceWith(start, end, parsed.firstChild).setMeta('isolated', true)
         }),
+        new InputRule(/\\(?:\([^\r\n]+\\\)|\[[^\r\n]+\\\])$/, (state, match, start, end) => {
+          const $start = state.doc.resolve(start)
+          if ($start.parent.type.spec.code || $start.marks().some(mark => mark.type.spec.code)) return null
+          if ((/\\+$/.exec($start.parent.textBetween(0, $start.parentOffset))?.[0].length ?? 0) % 2) return null
+          const parsed = parseMarkdown(match[0]).doc.firstChild
+          const from = this.bridge.sourcePosition(start), to = this.bridge.sourcePosition(end)
+          if (parsed?.type === s.nodes.protected_source && mathBlockParts(match[0]) &&
+            $start.parentOffset === 0 && end === $start.end()) {
+            const pos = $start.before()
+            const tr = state.tr.replaceWith(pos, $start.after(), parsed)
+              .setMeta('isolated', true)
+            return tr.setSelection(NodeSelection.create(tr.doc, pos)).setMeta('mathEditing', pos)
+          }
+          const inline = parseMarkdown('x ' + match[0]).doc.firstChild?.lastChild
+          if (inline?.type !== s.nodes.math_inline) return null
+          return state.tr.replaceWith(start, end, inline).setMeta('inlineSourcePatch', { from, to, insert: match[0] }).setMeta('mathEditing', start)
+        }),
         textblockTypeInputRule(/^(#{1,6})\s$/, s.nodes.heading, match => ({ level: match[1].length })),
         textblockTypeInputRule(/^```([^`\s]*)\s$/, s.nodes.code_block, match => ({ params: match[1] })),
         wrappingInputRule(/^\s*>\s$/, s.nodes.blockquote),
@@ -345,6 +362,7 @@ export class MarkdownEditorController implements LiveEditor {
             'Mod-Shift-x': toggleMark(s.marks.strike),
             'Mod-`': toggleMark(s.marks.code),
             'Backspace': (state, dispatch, view) => {
+              if (this.deleteAdjacentMath(state, dispatch, -1)) return true
               const selection=state.selection
               if(selection.empty && selection.$from.depth===1 && selection.$from.parent.type===s.nodes.paragraph &&
                 !selection.$from.parent.content.size && !selection.$from.parent.attrs.editorTrailing && state.doc.childCount>1){
@@ -374,6 +392,7 @@ export class MarkdownEditorController implements LiveEditor {
               return true
             },
             'Delete': (state, dispatch, view) => {
+              if (this.deleteAdjacentMath(state, dispatch, 1)) return true
               const {empty,$from}=state.selection
               if(empty && $from.depth===1 && $from.parent.type===s.nodes.paragraph &&
                 !$from.parent.content.size && !$from.parent.attrs.editorTrailing && state.doc.childCount>1){
@@ -393,7 +412,7 @@ export class MarkdownEditorController implements LiveEditor {
               }
               return false
             },
-            'Enter': chainCommands(this.enterHtml,this.enterFence,this.enterHorizontalRule,splitListItem(s.nodes.list_item, { checked: null }), liftEmptyBlock, baseKeymap.Enter),
+            'Enter': chainCommands(this.enterMathBlock,this.enterHtml,this.enterFence,this.enterHorizontalRule,splitListItem(s.nodes.list_item, { checked: null }), liftEmptyBlock, baseKeymap.Enter),
             'F2': this.enterHtml,
             'Tab': chainCommands(this.nextCell(1), sinkListItem(s.nodes.list_item)),
             'Shift-Tab': chainCommands(this.nextCell(-1), liftListItem(s.nodes.list_item)),
@@ -610,7 +629,7 @@ export class MarkdownEditorController implements LiveEditor {
         html_inline: (node, view, getPos) => this.htmlView(node,view,getPos,true),
         protected_source: (node, view, getPos) => {
           const source = String(node.attrs.source || '').trim()
-          if (/^\$\$[\s\S]*\$\$$/.test(source)) {
+          if (mathBlockParts(source)) {
             return this.mathView(node, view, getPos, true)
           }
           if (isHtmlSourceNode(node)) {
@@ -868,6 +887,24 @@ export class MarkdownEditorController implements LiveEditor {
     }
   }
 
+  private enterMathBlock: Command = (state, dispatch, view) => {
+    const { empty, $from } = state.selection
+    if (this.composing || view?.composing || !empty || $from.parent.type !== s.nodes.paragraph ||
+      !['$$', '\\['].includes($from.parent.textContent) || $from.parentOffset !== 2) return false
+    const opening = $from.parent.textContent, closing = opening === '$$' ? '$$' : '\\]'
+    const pos = $from.before(), formula = s.nodes.protected_source.create({
+      sourceId: $from.parent.attrs.sourceId, source: `${opening}\n\n${closing}`,
+    })
+    // Markumo list items accept block+, including a formula as their first block.
+    const tr = state.tr.replaceWith(pos, $from.after(), formula)
+    const at = pos
+    dispatch?.(tr.setSelection(NodeSelection.create(tr.doc, at)).setMeta('isolated', true).scrollIntoView())
+    if (dispatch) queueMicrotask(() => {
+      if (!this.disposed) (this.view.nodeDOM(at) as HTMLElement | null)?.click()
+    })
+    return true
+  }
+
   private enterFence: Command = (state, dispatch) => {
     const { empty, $from } = state.selection
     if (!empty || $from.parent.type !== s.nodes.paragraph || $from.parentOffset !== $from.parent.content.size) return false
@@ -1072,6 +1109,10 @@ export class MarkdownEditorController implements LiveEditor {
       for (const transaction of applied.transactions) this.inlineSource?.map(transaction)
       this.inlineSource?.mapSource(prepared.patch, tr.getMeta('inlineSourceEditor') === this.inlineSource)
       this.view.updateState(nextState)
+      const mathEditing = tr.getMeta('mathEditing') as number | undefined
+      if (mathEditing !== undefined) queueMicrotask(() => {
+        if (!this.disposed) (this.view.nodeDOM(mathEditing) as HTMLElement | null)?.click()
+      })
       const draftEdit = tr.getMeta('inlineLinkDraftEdit') as { pos:number; offset:number } | undefined
       if (draftEdit) this.queueInlineEdit(draftEdit.pos, 'link', draftEdit.offset)
       const formattingEdit = tr.getMeta('inlineFormattingEdit') as { pos:number; kind:string; offset:number } | undefined
@@ -2350,13 +2391,32 @@ export class MarkdownEditorController implements LiveEditor {
     dom.contentEditable = 'false'
     dom.title = '点击编辑公式'
     const preview = document.createElement(display ? 'div' : 'span')
+    preview.className = 'md-math-preview'
+    const sourcePanel = document.createElement(display ? 'div' : 'span')
+    sourcePanel.className = 'md-math-editor'
+    sourcePanel.hidden = true
+    const opening = document.createElement('span'), closing = document.createElement('span')
+    opening.className = closing.className = 'md-math-delimiter'
+    const done = document.createElement('button')
+    done.type = 'button'
+    done.className = 'md-math-done'
+    done.textContent = '公式 ✓'
+    done.setAttribute('aria-label', '完成公式编辑')
     const input = document.createElement('textarea')
     input.className = 'md-math-source'
     input.setAttribute('aria-label', '公式源码')
     input.spellcheck = false
-    input.rows = display ? 3 : 1
+    input.rows = 1
     input.hidden = true
-    dom.append(input, preview)
+    const codeWrap = document.createElement(display ? 'div' : 'span')
+    codeWrap.className = 'md-math-code-wrap'
+    const code = document.createElement('pre')
+    code.className = 'md-math-code'
+    code.setAttribute('aria-hidden', 'true')
+    codeWrap.append(code, input)
+    sourcePanel.append(opening, codeWrap, closing)
+    if (display) sourcePanel.prepend(done)
+    dom.append(sourcePanel, preview)
     let generation = 0
     let dead = false
     let isEditing = false
@@ -2376,8 +2436,41 @@ export class MarkdownEditorController implements LiveEditor {
       return mathBlockParts(src)?.value ?? src
     }
 
+    const updateSource = () => {
+      const parts = display ? mathBlockParts(String(node.attrs.source)) : null
+      opening.textContent = display ? parts?.opening.trim() ?? '$$' : node.attrs.opening
+      closing.textContent = display ? parts?.closing.trim() ?? '$$' : node.attrs.closing
+      // The input remains a stable native textarea; highlighted text is inert.
+      code.replaceChildren()
+      let at = 0
+      for (const match of input.value.matchAll(/\\[a-zA-Z]+|\\[^a-zA-Z]|\d+(?:\.\d+)?|[{}_^]/g)) {
+        code.append(document.createTextNode(input.value.slice(at, match.index)))
+        const token = document.createElement('span')
+        token.className = match[0].startsWith('\\') ? 'md-math-command' : 'md-math-number'
+        token.textContent = match[0]; code.append(token)
+        at = match.index! + match[0].length
+      }
+      code.append(document.createTextNode(input.value.slice(at) + '\n'))
+      input.rows = Math.max(1, input.value.split('\n').length)
+      if (!display) input.style.width = `${Math.max(2, input.value.length + 1)}ch`
+      code.scrollTop = input.scrollTop; code.scrollLeft = input.scrollLeft
+    }
+
+    let renderTimer: ReturnType<typeof setTimeout> | undefined
     const render = () => {
+      clearTimeout(renderTimer)
+      mathAbort?.abort()
+      renderTimer = setTimeout(renderNow, 80)
+    }
+    const renderNow = () => {
       const src = latex()
+      if (!src.trim()) {
+        preview.replaceChildren()
+        preview.classList.add('md-math-empty')
+        preview.textContent = '< Empty Math Block >'
+        return
+      }
+      preview.classList.remove('md-math-empty')
       if (!mathVisible && !isEditing) {
         mathDirty = true
         if (!preview.childNodes.length) preview.textContent = src
@@ -2436,6 +2529,7 @@ export class MarkdownEditorController implements LiveEditor {
       if (dead) return
       isEditing = false
       input.hidden = true
+      sourcePanel.hidden = true
       dom.classList.remove('md-math-editing')
       dom.title = '点击编辑公式'
     }
@@ -2449,23 +2543,39 @@ export class MarkdownEditorController implements LiveEditor {
       isEditing = true
       input.value = latex()
       input.hidden = false
+      sourcePanel.hidden = false
+      updateSource()
       dom.classList.add('md-math-editing')
       dom.removeAttribute('title')
       input.focus()
       const len = input.value.length
       input.setSelectionRange(len, len)
+      render()
     }
+
+    const leave = () => {
+      if (composing || endingComposition || this.compositionActive) return
+      finish()
+      const pos = getPos()
+      if (pos !== undefined) { view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(pos + node.nodeSize)))); view.focus() }
+    }
+    done.onmousedown = event => event.preventDefault()
+    done.onclick = event => { event.stopPropagation(); leave() }
 
     const selection = (): MathSelection => ({ start: input.selectionStart, end: input.selectionEnd, direction: input.selectionDirection })
     const restore = (value: string, range: MathSelection) => {
       if (input.value !== value) input.value = value
       input.setSelectionRange(Math.min(range.start, value.length), Math.min(range.end, value.length), range.direction)
+      updateSource()
     }
     const commit = () => {
       const pos = getPos()
       if (dead || !isEditing || this.options.readOnly?.() || pos === undefined || view.state.doc.nodeAt(pos) !== node || composing || endingComposition || this.compositionActive) return
       const val = input.value
       if (val === latex()) return
+      // Empty dollar-inline math has no unambiguous Markdown spelling (`$$`
+      // is a block opener). Clearing an inline formula removes its atom.
+      if (!display && !val) { this.deleteMathAt(pos); return }
       const parts = display ? mathBlockParts(String(node.attrs.source)) : null
       const attrs = display ? { ...node.attrs, source: `${parts!.opening}${val}${parts!.closing}` } : { ...node.attrs, latex: val }
       selfDispatch = true
@@ -2475,7 +2585,19 @@ export class MarkdownEditorController implements LiveEditor {
         selfDispatch = false
       }
     }
-    input.oninput = event => { if (!(event as InputEvent).isComposing) commit() }
+    input.oninput = event => {
+      updateSource()
+      if ((event as InputEvent).isComposing || composing || endingComposition) return
+      const parts = display ? mathBlockParts(String(node.attrs.source)) : null
+      const close = parts?.closing.trim()
+      // Also accept users explicitly typing the closing line after the body.
+      if (close && input.value.includes('\n') && input.value.split('\n').at(-1)?.trim() === close) {
+        input.value = input.value.slice(0, input.value.lastIndexOf('\n'))
+        updateSource(); commit(); leave(); return
+      }
+      commit()
+    }
+    input.onscroll = () => { code.scrollTop = input.scrollTop; code.scrollLeft = input.scrollLeft }
     const onCompositionStart = () => { composing = true; compositionBase = latex() }
     const onCompositionEnd = () => {
       composing = false
@@ -2512,6 +2634,12 @@ export class MarkdownEditorController implements LiveEditor {
 
     input.onkeydown = event => {
       if (event.isComposing || event.keyCode === 229 || composing || endingComposition || this.compositionActive) return
+      if (event.key === 'Backspace' && !input.value && !this.options.readOnly?.()) {
+        event.preventDefault()
+        const pos = getPos()
+        if (pos !== undefined) this.deleteMathAt(pos)
+        return
+      }
       if ((event.ctrlKey || event.metaKey) && ['f','r'].includes(event.key.toLowerCase())) {
         event.preventDefault(); finish(); this.find(event.key.toLowerCase() === 'r'); return
       }
@@ -2519,9 +2647,7 @@ export class MarkdownEditorController implements LiveEditor {
         event.preventDefault(); if (!this.options.readOnly?.()) this.options.history(event.key.toLowerCase() === 'y' || event.shiftKey); return
       }
       if (event.key === 'Escape' || (event.key === 'Enter' && (!display || event.ctrlKey || event.metaKey))) {
-        event.preventDefault(); finish()
-        const pos = getPos()
-        if (pos !== undefined) { view.dispatch(view.state.tr.setSelection(Selection.near(view.state.doc.resolve(pos + node.nodeSize)))); view.focus() }
+        event.preventDefault(); leave()
       }
     }
 
@@ -2555,13 +2681,14 @@ export class MarkdownEditorController implements LiveEditor {
 
     return {
       dom,
-      stopEvent: () => true,
+      stopEvent: event => event.type !== 'contextmenu',
       ignoreMutation: () => true,
       update: next => {
         if (next.type !== node.type) return false
         if (display && !mathBlockParts(String(next.attrs.source))) return false
         const previous = latex()
         node = next
+        if (isEditing) updateSource()
         if (isEditing) {
           if (selfDispatch || composing || endingComposition || settlingComposition) {
             if (latex() !== previous) render()
@@ -2579,6 +2706,7 @@ export class MarkdownEditorController implements LiveEditor {
       },
       destroy: () => {
         if (!this.disposed && isEditing && (composing || settlingComposition) && input.value !== latex()) notice(`正在输入的公式已被删除或替换，未提交的源码：${input.value}`)
+        clearTimeout(renderTimer)
         const interrupted = composing
         dead = true
         stopMathVisibility()
@@ -2587,6 +2715,7 @@ export class MarkdownEditorController implements LiveEditor {
         isEditing = composing = endingComposition = false
         generation++
         dom.onclick = null
+        done.onclick = done.onmousedown = input.onscroll = null
         preview.onmousedown = null
         input.oninput = input.onbeforeinput = input.onkeydown = input.onblur = null
         input.removeEventListener('compositionstart', onCompositionStart)
@@ -2722,6 +2851,35 @@ export class MarkdownEditorController implements LiveEditor {
     }
   }
 
+  private deleteAdjacentMath(state: EditorState, dispatch: ((tr:Transaction)=>void) | undefined, direction: number) {
+    const { $from, empty } = state.selection
+    if (!empty || !$from.parent.isTextblock || this.options.readOnly?.() || this.composing) return false
+    const inline = direction < 0 ? $from.nodeBefore : $from.nodeAfter
+    let pos: number, node: Node | null
+    if (inline?.type === s.nodes.math_inline) {
+      node = inline; pos = direction < 0 ? $from.pos - inline.nodeSize : $from.pos
+    } else {
+      if ($from.depth < 1 || $from.parentOffset !== (direction < 0 ? 0 : $from.parent.content.size)) return false
+      const edge = direction < 0 ? $from.before() : $from.after()
+      const resolved = state.doc.resolve(edge)
+      node = direction < 0 ? resolved.nodeBefore : resolved.nodeAfter
+      if (node?.type !== s.nodes.protected_source || !mathBlockParts(node.attrs.source)) return false
+      pos = direction < 0 ? edge - node.nodeSize : edge
+    }
+    dispatch?.(state.tr.delete(pos, pos + node.nodeSize).setMeta('isolated', true).scrollIntoView())
+    return true
+  }
+
+  private deleteMathAt(pos: number) {
+    if (this.options.readOnly?.() || this.composing) return
+    const node = this.view.state.doc.nodeAt(pos)
+    if (!node || !(node.type === s.nodes.math_inline || node.type === s.nodes.protected_source && mathBlockParts(node.attrs.source))) return
+    const tr = this.view.state.tr.delete(pos, pos + node.nodeSize)
+    tr.setSelection(Selection.near(tr.doc.resolve(Math.min(pos, tr.doc.content.size))))
+    this.view.dispatch(tr.setMeta('isolated', true).scrollIntoView())
+    this.view.focus()
+  }
+
   private contextEntries(target: Element): LiveMenuEntry[] {
     const editable = !this.options.readOnly?.() && !this.composing
     const selected = !this.view.state.selection.empty
@@ -2763,6 +2921,11 @@ export class MarkdownEditorController implements LiveEditor {
         'separator', { label: '段落（上方）', run: () => this.insertParagraph(false) }, { label: '段落（下方）', run: () => this.insertParagraph(true) },
       ] },
     ]
+    const math = target.closest('.md-math-output,.md-inline-math')
+    if (math) {
+      const pos = this.view.posAtDOM(math, 0)
+      entries.unshift({ label: '删除公式', disabled: !editable, run: () => this.deleteMathAt(pos) }, 'separator')
+    }
     const sourceImage = target.closest('.md-source-image') && this.inlineSource?.kind === 'image' ? this.view.nodeDOM(this.inlineSource.from) : null
     const image = target.closest('.md-live-image') ?? (sourceImage instanceof Element ? sourceImage : null), link = target.closest('a')
     if (image) {

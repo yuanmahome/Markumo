@@ -12,6 +12,7 @@ const smokeScripts = [
   'tests/dev/instance-isolation.mjs',
   'tests/dev/windows-integrity.mjs',
   'tests/markdown-links/regression.mjs',
+  'tests/markdown-links/math-lists.mjs',
   'tests/phase042/code-block-browser.mjs',
   'tests/phase042/code-block-layout.mjs',
   'tests/phase042/slash-table-browser.mjs',

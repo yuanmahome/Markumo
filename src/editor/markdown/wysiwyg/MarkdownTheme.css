@@ -822,6 +822,34 @@ body.light .file-icon-gray { color: #6c7c92; }
   cursor: text !important;
 }
 
+.markdown-live .md-math-editor { position: relative; background: var(--md-code-bg); color: var(--muted); text-align: left; }
+.markdown-live .md-math-editor[hidden] { display: none !important; }
+.markdown-live .md-math-delimiter { font: 13px/1.6 var(--font-mono); user-select: none; }
+.markdown-live .md-math-code-wrap { position: relative; display: block; min-width: 0; }
+.markdown-live .md-math-code,
+.markdown-live .md-math-code-wrap .md-math-source {
+  box-sizing: border-box; margin: 0; border: 0; padding: 0; border-radius: 0;
+  font: 13px/1.6 var(--font-mono); white-space: pre; overflow-wrap: normal;
+  tab-size: 4; min-height: 1.6em; width: 100%; background: transparent;
+}
+.markdown-live .md-math-code { position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: var(--ink); }
+.markdown-live .md-math-code-wrap .md-math-source { position: relative; display: block; resize: none; color: transparent; -webkit-text-fill-color: transparent; overflow: auto; }
+.markdown-live .md-math-command { color: #36864b; }
+.markdown-live .md-math-number { color: #486ad1; }
+.markdown-live .md-document .md-prose .md-math-output.md-math-editing { padding: 0; outline: 0; border: 1px solid var(--line); border-radius: 2px; overflow: visible; }
+.markdown-live .md-math-output .md-math-editor { padding: 0 8px; }
+.markdown-live .md-math-output .md-math-delimiter { display: block; }
+.markdown-live .md-math-output .md-math-preview { min-height: 2.8em; padding: 12px; text-align: center; }
+.markdown-live .md-math-output .md-math-preview .katex-display { margin: 0; }
+.markdown-live .md-math-done { position: absolute; right: 0; top: -1.6em; padding: 0 8px; border: 0; border-radius: 0; background: var(--md-code-bg); color: var(--muted); font: 12px/1.6 var(--font-ui); cursor: pointer; }
+.markdown-live .md-math-empty { font: italic 18px/1.6 Georgia, serif; color: var(--muted); }
+.markdown-live .md-inline-math.md-math-editing { position: relative; padding: 0; outline: 0; }
+.markdown-live .md-inline-math .md-math-editor { display: inline-flex; align-items: baseline; max-width: 100%; background: transparent; }
+.markdown-live .md-inline-math .md-math-code-wrap { display: inline-block; max-width: 65vw; }
+.markdown-live .md-inline-math .md-math-source { max-width: 65vw; height: 1.6em; vertical-align: baseline; }
+.markdown-live .md-inline-math.md-math-editing .md-math-preview { position: absolute; z-index: 20; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); padding: 6px 10px; border-radius: 3px; background: #111; color: #fff; white-space: nowrap; box-shadow: 0 2px 8px #0002; pointer-events: none; }
+.markdown-live .md-inline-math.md-math-editing .md-math-preview::before { content: ''; position: absolute; bottom: 100%; left: calc(50% - 5px); border: 5px solid transparent; border-bottom-color: #111; }
+
 /* Anchored Popovers (for Link, Image, Inline Math) */
 .markdown-live .md-anchored-popover {
   position: absolute;

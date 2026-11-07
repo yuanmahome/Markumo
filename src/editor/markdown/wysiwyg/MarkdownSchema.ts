@@ -11,7 +11,7 @@ nodes.heading.content='inline*'
 nodes.bullet_list.attrs = { ...nodes.bullet_list.attrs, bullet: { default: '-' } }
 nodes.list_item.attrs = { ...nodes.list_item.attrs, checked: { default: null } }
 nodes.soft_break = { inline: true, group: 'inline', selectable: false, toDOM: () => ['br', { 'data-soft': 'true' }], parseDOM: [{tag:'br[data-soft]'}] }
-nodes.math_inline={inline:true,group:'inline',atom:true,attrs:{latex:{default:''}},toDOM:node=>['span',{'data-math':'true'},node.attrs.latex]}
+nodes.math_inline={inline:true,group:'inline',atom:true,attrs:{latex:{default:''},opening:{default:'$'},closing:{default:'$'}},toDOM:node=>['span',{'data-math':'true'},node.attrs.latex]}
 nodes.footnote_reference={inline:true,group:'inline',atom:true,attrs:{label:{default:''}},toDOM:node=>['sup',{'data-footnote':'true'},node.attrs.label]}
 nodes.html_block = {
   group: 'block', atom: true, selectable: true, isolating: true,

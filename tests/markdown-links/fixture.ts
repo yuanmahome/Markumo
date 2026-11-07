@@ -68,6 +68,13 @@ function snapshot(pane = 'main') {
     view.state.doc.descendants((node, pos) => { if (node.type.name === 'table') at = pos })
     view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, at)))
   },
+  selectMath() {
+    const view = live()!.view
+    let at = 0
+    view.state.doc.descendants((node, pos) => { if (node.type.name === 'protected_source') at = pos })
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, at)))
+    view.focus()
+  },
   signals() { return signals.map(signal => signal.aborted) },
   reset(source: string, readOnly = false) {
     preview?.unmount(); preview = undefined

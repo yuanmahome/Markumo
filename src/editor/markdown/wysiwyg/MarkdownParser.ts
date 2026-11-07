@@ -5,7 +5,7 @@ import { MarkdownParser, defaultMarkdownParser } from 'prosemirror-markdown'
 import { Mark, type Node } from 'prosemirror-model'
 import { markdownSchema as s } from './MarkdownSchema'
 import { parseControlledImageHtml } from './imageHtml'
-import { installMarkdownMath } from '../mathSemantics'
+import { installMarkdownMath, mathBlockParts, mathClosingDelimiter } from '../mathSemantics'
 import { blankLineRanges, markdownBlockEnd } from '../blankLines'
 
 export const tokenizer = new MarkdownIt('commonmark', {html:true,linkify:true}).enable(['table','strikethrough','linkify'])
@@ -92,8 +92,8 @@ const tokens = { ...defaultMarkdownParser.tokens,
   image:{...defaultMarkdownParser.tokens.image,getAttrs:(tok: ReturnType<typeof tokenizer.parse>[number],tokens:ReturnType<typeof tokenizer.parse>,index:number)=>({
     ...nativeImageAttrs(tok,tokens,index), referenceLabel:tok.meta?.label || null,
   })},
-  math_inline:{node:'math_inline',getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>({latex:tok.content})},
-  math_block:{block:'protected_source',noCloseToken:true,getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>({source:tok.content})},
+  math_inline:{node:'math_inline',getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>({latex:tok.content,opening:tok.markup || '$',closing:mathClosingDelimiter(tok.markup || '$')})},
+  math_block:{node:'protected_source',getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>({source:tok.content})},
   footnote_reference:{node:'footnote_reference',getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>({label:tok.content})},
   html_inline:{node:'html_inline',getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>({source:tok.content})},
   controlled_image:{node:'image',getAttrs:(tok:ReturnType<typeof tokenizer.parse>[number])=>tok.meta},
@@ -353,11 +353,12 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
         const content = parsed.childCount ? parsed.content : [s.nodes.paragraph.create()]
         node = s.nodes.footnote_definition.create({ label }, content)
       } else {
-        const complex=raw || /(^|\n)(?: {0,3}\$\$|:::+)/i.test(original)
+        const complex=raw || /(^|\n):::+/i.test(original)
         if(complex) node=s.nodes.protected_source.create({source:original,label,kind})
         else {
           node=markdownParser.parse(original,env).firstChild!
           if(!node)node=s.nodes.protected_source.create({source:original,label,kind})
+          else if (node.type === s.nodes.protected_source && mathBlockParts(original)) node = node.type.create({...node.attrs,source:original})
         }
       }
     }catch{node=s.nodes.protected_source.create({source:original,label,kind})}

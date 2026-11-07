@@ -484,6 +484,16 @@ export function patchSourceBlock(
   if (!difference) return null
   const { before: a, after: b } = difference
 
+  if (a.type.name === 'math_inline' && b.type === a.type &&
+    a.attrs.opening === b.attrs.opening && a.attrs.closing === b.attrs.closing) {
+    const needle = a.attrs.opening + a.attrs.latex + a.attrs.closing
+    for (let at = raw.indexOf(needle); at >= 0; at = raw.indexOf(needle, at + needle.length)) {
+      const from = at + a.attrs.opening.length
+      const candidate = raw.slice(0, from) + b.attrs.latex + raw.slice(from + a.attrs.latex.length)
+      if (accepts(candidate)) return candidate
+    }
+  }
+
   if (a.isText && b.isText && Mark.sameSet(a.marks, b.marks)) {
     const change = textPatch(a.text!, b.text!)
     if (!change) return raw

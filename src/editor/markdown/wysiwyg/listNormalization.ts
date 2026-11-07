@@ -16,6 +16,19 @@ export function listNormalizationPlugin() {
         if (previous.type === node.type && previous.attrs.bullet === node.attrs.bullet) boundaries.push(pos)
       })
       const tr = state.tr
+      // An empty sublist cannot interrupt a paragraph: '-' becomes a Setext
+      // underline, other markers become plain text. A loose parent supplies
+      // the required blank boundary, preserving the real nested structure.
+      state.doc.descendants((node, pos) => {
+        if (!['bullet_list', 'ordered_list'].includes(node.type.name) || !node.attrs.tight) return
+        let needsBoundary = false
+        node.forEach(item => item.forEach((child, _offset, index) => {
+          if (index && ['bullet_list', 'ordered_list'].includes(child.type.name) &&
+            child.childCount === 1 && child.firstChild?.childCount === 1 &&
+            child.firstChild.firstChild?.type.name === 'paragraph' && !child.firstChild.firstChild.content.size) needsBoundary = true
+        }))
+        if (needsBoundary) tr.setNodeMarkup(pos, undefined, { ...node.attrs, tight: false })
+      })
       for (const pos of boundaries.reverse()) {
         if (!canJoin(tr.doc, pos)) continue
         const { nodeBefore: left, nodeAfter: right } = tr.doc.resolve(pos)

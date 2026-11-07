@@ -41,6 +41,7 @@ jobs:
           node tests/frontmatter-regression.mjs
           node tests/reference-definitions.mjs
           pnpm test
+          node tests/markdown-links/math-lists.mjs
           node tests/lossless/browser.mjs
           node tests/lifecycle/ownership.mjs
           node tests/workspace/delete-open-files.mjs

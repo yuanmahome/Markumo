@@ -273,7 +273,7 @@ function completeGeneralInlineSyntax(
   if (!$after.parent.isTextblock || $after.parent.type.spec.code || $after.parent.content.size > 8192) return tr
   const afterText = $after.parent.textContent
   // Zero-overhead fast exit for ordinary prose without inline Markdown delimiters
-  if (!/[`*_~\[\]$<>]/.test(afterText)) return tr
+  if (!/[`*_~\[\]$<>\\()]/.test(afterText)) return tr
 
   const oldPosition = tr.mapping.invert().map($after.pos, -1)
   if (oldPosition < 0 || oldPosition > state.doc.content.size) return tr
@@ -297,7 +297,7 @@ function completeGeneralInlineSyntax(
   if (!edit || !edit.insert || edit.insert.includes('\n') || edit.insert.endsWith('\\')) return tr
   // Cheap prefilter: only edits that type or sit next to an inline delimiter can
   // complete a construct, so ordinary prose never pays for a block re-parse.
-  const inlineDelimiter = /[`*_~\[\]$<>]/
+  const inlineDelimiter = /[`*_~\[\]$<>\\()]/
   if (
     !inlineDelimiter.test(edit.insert) &&
     !inlineDelimiter.test(afterText.charAt($after.parentOffset - 1)) &&

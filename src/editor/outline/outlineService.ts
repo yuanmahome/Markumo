@@ -3,6 +3,7 @@ import type { EditorState, Text } from '@codemirror/state'
 import type { EditorDocument } from '../../types'
 import { htmlLanguage } from '@codemirror/lang-html'
 import MarkdownIt from 'markdown-it'
+import { installMarkdownMath } from '../markdown/mathSemantics'
 import DOMPurify from 'dompurify'
 import { sanitizeMarkup } from '../markdown/html/sanitize'
 import { codeAdapters, extractCodeSymbols } from './codeAdapters'
@@ -51,7 +52,11 @@ const cache = new WeakMap<Text, Map<string,{tree:ReturnType<typeof syntaxTree>;r
 export const MAX_CODE_OUTLINE_SIZE = 256 * 1024
 export const isMarkdownOutline=(doc:EditorDocument|null)=>getOutlineCapability(doc)==='markdown'
 function markdownOutline(text: Text): OutlineItem[] {
-  const tokens = (outlineMarkdown??=new MarkdownIt({html:true,linkify:false})).parse(text.toString(), {}), items: OutlineItem[] = []
+  if (!outlineMarkdown) {
+    outlineMarkdown = new MarkdownIt({html:true,linkify:false})
+    installMarkdownMath(outlineMarkdown)
+  }
+  const tokens = outlineMarkdown.parse(text.toString(), {}), items: OutlineItem[] = []
   for (let index = 0; index < tokens.length && items.length < 1000; index++) {
     const token = tokens[index]
     if (!token.map) continue

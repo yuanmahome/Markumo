@@ -7,6 +7,11 @@ import { patchSourceBlock, sourceTextPosition } from './patchSourceBlock'
 import { textPatch, type SourcePatch } from './sourcePatch'
 import { parseFormattingSource } from './inlineFormatting'
 export { textPatch, type SourcePatch } from './sourcePatch'
+function containsTable(node:Node) {
+  let found = false
+  node.descendants(child => { if (child.type.name === 'table') found = true })
+  return found
+}
 export class MarkdownSourceBridge {
   source:string; doc:Node; blocks:SourceBlock[]; tail:string; environment:Record<string,unknown>
   constructor(source:string,previous?:{blocks:readonly SourceBlock[];environment:Record<string,unknown>}){this.source=source;const parsed=parseMarkdown(source,{},previous);this.doc=parsed.doc;this.blocks=parsed.blocks;this.tail=parsed.tail;this.environment=parsed.environment}
@@ -111,6 +116,14 @@ export class MarkdownSourceBridge {
       const patchBase=promotingBlank?old!.raw.replace(/(?:\r?\n)+$/,''):old?.raw
       let raw=inlineRaw??(old?.node.eq(node)?old.raw:old?(patchSourceBlock(old.node,node,patchBase!,this.environment)??patchContainedTables(old.node,node,old.raw)??(node.type.name==='table'&&old.node.type===node.type?patchTable(old.node,node,old.raw):null)??serializeBlock(node)):serializeBlock(node))
       if(!old?.node.eq(node)){
+        if (['bullet_list', 'ordered_list'].includes(node.type.name) && !containsTable(node)) {
+          const matches = (value:string) => {
+            const parsed = parseMarkdown(value, this.environment).doc
+            return parsed.childCount === 1 && sameBlockSemantics(parsed.firstChild!, node)
+          }
+          if (!matches(raw)) raw = serializeBlock(node)
+          if (!matches(raw)) throw new Error('列表结构无法保存为一致的 Markdown，已取消本次修改。')
+        }
         let hasTable=false
         node.descendants(child=>{if(child.type.name==='table')hasTable=true})
         if(node.type.name==='table')hasTable=true
