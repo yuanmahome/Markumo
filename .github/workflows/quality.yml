@@ -40,6 +40,7 @@ jobs:
           node tests/table-roundtrip.mjs
           node tests/frontmatter-regression.mjs
           node tests/reference-definitions.mjs
+          node tests/settings/regression.mjs
           pnpm test
           node tests/markdown-links/math-lists.mjs
           node tests/lossless/browser.mjs

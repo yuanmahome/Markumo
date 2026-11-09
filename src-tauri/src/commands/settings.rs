@@ -6,6 +6,7 @@ static WRITE_LOCK: Mutex<()> = Mutex::new(());
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct EditorSettings {
+    primary_statistic: String,
     theme: String,
     ui_font_size: u8,
     font_size: u8,
@@ -116,6 +117,7 @@ fn valid_image_rules(rules: &ImageRules) -> bool {
 impl Default for EditorSettings {
     fn default() -> Self {
         Self {
+            primary_statistic: "words".into(),
             theme: "system".into(),
             ui_font_size: 14,
             font_size: 14,
@@ -174,6 +176,11 @@ fn deserialize_keymap_preset<'de, D: serde::Deserializer<'de>>(
     })
 }
 fn validate(settings: &EditorSettings) -> Result<(), String> {
+    if !["words", "characters", "lines", "english", "reading"]
+        .contains(&settings.primary_statistic.as_str())
+    {
+        return Err("不支持的文档统计类型".into());
+    }
     if !["off", "matching", "rainbow"].contains(&settings.bracket_mode.as_str()) {
         return Err("不支持的括号高亮模式".into());
     }
@@ -296,6 +303,54 @@ pub async fn save_editor_settings(
     tauri::async_runtime::spawn_blocking(move || save(&path, &settings))
         .await
         .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod statistic_tests {
+    use super::*;
+
+    // Generated from persistedSettings(defaultSettings()) by the browser
+    // contract test. A frontend-only field must fail here, not at installation.
+    const FRONTEND_SETTINGS: &[u8] =
+        include_bytes!("../../../tests/settings/default-settings.json");
+
+    #[test]
+    fn complete_frontend_payload_saves_and_reloads_every_statistic() {
+        let mut payload: serde_json::Value = serde_json::from_slice(FRONTEND_SETTINGS).unwrap();
+        payload["theme"] = serde_json::json!("dark");
+        payload["fontSize"] = serde_json::json!(18);
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let folder = std::env::temp_dir()
+            .join(format!("markumo-statistic-settings-{}-{stamp}", std::process::id()));
+        let path = folder.join("editor-settings.json");
+        for kind in ["words", "characters", "lines", "english", "reading"] {
+            payload["primaryStatistic"] = serde_json::json!(kind);
+            let settings: EditorSettings = serde_json::from_value(payload.clone()).unwrap();
+            save(&path, &settings).unwrap();
+            let restored = load(&path).unwrap();
+            assert_eq!(serde_json::to_value(restored).unwrap(), payload);
+        }
+        let original = std::fs::read(&path).unwrap();
+        payload["primaryStatistic"] = serde_json::json!("invalid");
+        let invalid: EditorSettings = serde_json::from_value(payload).unwrap();
+        assert!(save(&path, &invalid).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), original, "Rejected settings must not overwrite preferences");
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir(folder).unwrap();
+    }
+
+    #[test]
+    fn legacy_settings_default_to_words_and_schema_remains_strict() {
+        let legacy: EditorSettings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert_eq!(legacy.primary_statistic, "words");
+        assert_eq!(legacy.theme, "dark");
+        assert!(validate(&legacy).is_ok());
+        for wrong in [serde_json::json!(null), serde_json::json!(3), serde_json::json!([])] {
+            assert!(serde_json::from_value::<EditorSettings>(serde_json::json!({"primaryStatistic": wrong})).is_err());
+        }
+        assert!(serde_json::from_value::<EditorSettings>(serde_json::json!({"unknownSetting": true})).is_err());
+    }
 }
 
 #[cfg(test)]

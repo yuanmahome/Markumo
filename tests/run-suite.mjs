@@ -25,6 +25,7 @@ const smokeScripts = [
   'tests/markdown-source-fidelity/regression.mjs',
   'tests/markdown-large/structure-regression.mjs',
   'tests/markdown-large/stats-regression.mjs',
+  'tests/settings/regression.mjs',
   'tests/live-large/regression.mjs',
   'tests/markdown-large/regression.mjs',
   'tests/phase042/link-input.mjs',

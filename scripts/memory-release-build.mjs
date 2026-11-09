@@ -280,6 +280,11 @@ await build({
         if (cleanId.endsWith('/src/main.ts')) {
           return PROBE_BOOTSTRAP + '\n' + code
         }
+        if (label.startsWith('settings-') && cleanId.endsWith('/app/useAppShell.ts')) {
+          const at = code.lastIndexOf('  return {')
+          assert(at > 0, 'Settings persistence probe anchor missing')
+          return code.slice(0, at) + '\n  ;(window as any).__nativeSettingsProbe = { preferences, prepareUpdate, updateInstalling, startupLoading, ready: () => launchReady };\n' + code.slice(at)
+        }
         if(label.startsWith('dnd-')&&cleanId.endsWith('/features/windows/tabDetach.ts'))return code.replace('pending.id=started.handoffId','pending.id=started.handoffId; (window as any).__dndLastDetach=started; if((window as any).__holdBusyAfterBegin)(window as any).__dndShell.fileBusy.value=true').replace('if (!isTauri()) return null', 'if((window as any).__holdIncoming)return new Promise(()=>{}); if (!isTauri()) return null')
         if(label.startsWith('dnd-')&&cleanId.endsWith('/editor/layout/TabDragService.ts'))return code.replace('export const tabDragService = TabDragService.getInstance()','export const tabDragService = TabDragService.getInstance(); (window as any).__dndDragService=tabDragService').replace('if(id!==this.dragId)return','if(id!==this.dragId)return; (window as any).__dndNativeReleases=((window as any).__dndNativeReleases||0)+1')
         if ((label==='global-search'||label.startsWith('dnd-')) && cleanId.endsWith('/app/useAppShell.ts')) {

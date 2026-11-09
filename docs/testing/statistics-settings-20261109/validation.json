@@ -1,0 +1,59 @@
+{
+  "baseline": "e557c6f1cc5af86985ecbe58eea6139f34093f1e",
+  "nativeChecks": 8,
+  "nativePassed": true,
+  "rustTests": 74,
+  "versionBumpAfterNative": "1.2.7",
+  "artifacts": [
+    {
+      "file": "settings-live2-final.json.gz",
+      "bytes": 9258,
+      "sha256": "d27c81c09755f8d35c13cd9a4dbdd4df34b39d2c713e07a79f8a0826f6fda08a"
+    },
+    {
+      "file": "settings-settings-fix-20261109.json.gz",
+      "bytes": 8097,
+      "sha256": "e34dc143050c2b018ac6c1613dc74500b9cb0320024cdc1ca3563e3b98184d0b"
+    },
+    {
+      "file": "settings-settings-fix2-20261109.json.gz",
+      "bytes": 8853,
+      "sha256": "541150e6313e2e164008d4263c5b8a151950bf19d35e3cc217d71e37c34ed42f"
+    },
+    {
+      "file": "settings-native.log.gz",
+      "bytes": 895,
+      "sha256": "c840185c8aacf20b16b94b425e101e2ad4e215c15cd07a4ea425f11fba227dc3"
+    },
+    {
+      "file": "settings-native2.log.gz",
+      "bytes": 890,
+      "sha256": "589fffb12622e222d12a1626285f48c6fbbaa604ab1e08bd37a9ee1f4b7e3e9f"
+    },
+    {
+      "file": "settings-rust.log.gz",
+      "bytes": 2498,
+      "sha256": "75465b10cc6edae370700b6d9f8ee66efa8a4ff0082e02d7f9a1e2bb34ebbbcc"
+    },
+    {
+      "file": "settings-final-rust.log.gz",
+      "bytes": 10537,
+      "sha256": "29fee5d5238aee27192cbc66a93a42f6f9e9a77e2d5f6d23cc0e846920ecafb9"
+    },
+    {
+      "file": "settings-final-check.log.gz",
+      "bytes": 36867,
+      "sha256": "884731f2a0eb2069e6afd57f946dfea5efdb05f44821c9663df7c8b7f6fbc365"
+    },
+    {
+      "file": "settings-browser.log.gz",
+      "bytes": 118,
+      "sha256": "fb9cefeee9b73e787730b7996e9d08dff19065781877615db6df510ae19e621a"
+    },
+    {
+      "file": "build-settings-fix2-20261109.json.gz",
+      "bytes": 7378,
+      "sha256": "7a65165c0187fdf977a183eb9d8f1d161376c8e6ef0df2f98cedcf16f857ad25"
+    }
+  ]
+}
