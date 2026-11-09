@@ -77,6 +77,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf xdg-utils
       - run: pnpm install --frozen-lockfile
+      # Dispatch from main can rebuild an immutable application tag with newer
+      # release tooling, without moving the tag or changing application sources.
+      - name: Checkout release workflow tooling
+        if: runner.os == 'Windows' || runner.os == 'Linux'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-workflow
+          sparse-checkout: scripts/prepare-bundler-tools.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Prepare verified native bundler tools
+        if: runner.os == 'Windows' || runner.os == 'Linux'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .release-workflow/scripts/prepare-bundler-tools.mjs
       - run: pnpm typecheck
       - name: Rust check
         run: |

@@ -30,6 +30,8 @@
 
 `scripts/release.mjs` 拒绝覆盖已经公开的版本；修改安装包应发布新版本。草稿发布失败可重试同一个标签。不要移动已公开的标签。
 
+打包工具从官方 GitHub Release 资产 API 预取，固定 Tauri CLI 2.12.2 对应的 NSIS/AppImage 工具资产 ID 和 SHA-256，NSIS 另与 Tauri 固定的 SHA-1 一致；保留 Tauri 自身校验。用于避免 `github.com/releases/download` 返回 504 后重编译应用仍无法打包。升级 CLI 时需同步检查工具版本和摘要。可从 main 手动 dispatch 发布工作流，输入已有应用标签：应用仍 checkout 不可变标签，辅助脚本则 checkout 工作流自身 SHA，不移动标签、不修改应用代码。四个平台仍必须全部构建和签名成功才会公开版本。
+
 本地打包需要设置相同的 `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 环境变量。只校验编译、不生成签名安装包时可使用 `pnpm build` 或 `cargo check`。
 
 Windows 所有 `pnpm tauri build` / `build.bat` / CI 入口都会把生成的安装包、NSIS 输出目录及主程序设为 Medium 完整性，防止从受限工作目录继承 Low 标签，导致安装器无法写入普通安装目录。仅修改生成产物的安全元数据，不改变签名字节或用户安装目录的权限。
