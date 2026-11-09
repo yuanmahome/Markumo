@@ -34,6 +34,7 @@ export interface ShellPreferencesHost {
 }
 
 export function useShellPreferences(host: ShellPreferencesHost) {
+  const primaryStatistic = ref<EditorSettings['primaryStatistic']>('words')
   const theme = ref<ThemePreference>('system')
   const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
   const systemDark = ref(systemTheme.matches)
@@ -205,6 +206,7 @@ export function useShellPreferences(host: ShellPreferencesHost) {
       outlineWidth: outlineWidth.value,
       markdownClipboard: { ...markdownClipboard.value },
       markdownTypography: { ...markdownTypography.value },
+      primaryStatistic: primaryStatistic.value,
       theme: theme.value,
       uiFontSize: uiFontSize.value,
       fontSize: fontSize.value,
@@ -259,6 +261,7 @@ export function useShellPreferences(host: ShellPreferencesHost) {
 
   watch(
     [
+      primaryStatistic,
       autoCheckUpdates,
       autoDownloadUpdates,
       caretAnimation,
@@ -358,6 +361,7 @@ export function useShellPreferences(host: ShellPreferencesHost) {
       autoReloadExternal.value = settings.autoReloadExternal
       autoSave.value = settings.autoSave
       autoSaveDelay.value = settings.autoSaveDelay
+      primaryStatistic.value = settings.primaryStatistic
       autoCheckUpdates.value = settings.autoCheckUpdates
       autoDownloadUpdates.value = settings.autoDownloadUpdates
       caretAnimation.value = settings.caretAnimation
@@ -420,6 +424,7 @@ export function useShellPreferences(host: ShellPreferencesHost) {
   }
 
   return {
+    primaryStatistic,
     theme,
     resolvedTheme,
     uiFontSize,

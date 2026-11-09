@@ -1595,6 +1595,7 @@ export function useAppShell() {
     wordWrap: preferences.wordWrap,
     showOutline: preferences.showOutline,
     typewriterMode: preferences.typewriterMode,
+    primaryStatistic: preferences.primaryStatistic,
     defaultMdMode: preferences.defaultMdMode,
     liveToolbar: preferences.liveToolbar,
     externalFileMonitoring: preferences.externalFileMonitoring,

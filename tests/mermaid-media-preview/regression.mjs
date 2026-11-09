@@ -748,10 +748,10 @@ flowchart TD
 
   // Hover Mermaid in Split Preview -> verify button doesn't overlap copy button & opens shared modal
   await page.locator('.split-preview-pane .md-diagram').first().hover()
-  const splitZoomBtn = page.locator('.split-preview-pane > .md-media-zoom-btn')
+  const splitZoomBtn = page.locator('.preview-partition-pane > .md-media-zoom-btn')
   await splitZoomBtn.waitFor({ state: 'visible' })
   const splitButtonsNonOverlapping = await page.evaluate(() => {
-    const zoom = document.querySelector('.split-preview-pane > .md-media-zoom-btn').getBoundingClientRect()
+    const zoom = document.querySelector('.preview-partition-pane > .md-media-zoom-btn').getBoundingClientRect()
     const copy = document.querySelector('.split-preview-pane .md-preview-fence .md-code-copy').getBoundingClientRect()
     return zoom.right <= copy.left + 1
   })
@@ -976,7 +976,7 @@ flowchart TD
 
   // Switch to Split Preview -> verify diagrams #17..#35 are NOT rejected and render on demand when scrolled!
   await page.evaluate(() => window.f.mode('split'))
-  await page.waitForFunction(() => document.querySelectorAll('.split-preview-pane .md-diagram').length === 35)
+  await page.waitForFunction(() => document.querySelectorAll('.split-preview-pane .md-diagram').length > 0 && !document.querySelector('.preview-progress'))
   await new Promise(r => setTimeout(r, 250))
 
   const split35Initial = await page.evaluate(() => {
@@ -994,7 +994,7 @@ flowchart TD
 
   // Scroll through SplitPreview to bottom -> diagram #35 renders, and cache stays bounded <= 30 entries / 4 MiB!
   await page.evaluate(async () => {
-    const scroller = document.querySelector('.split-preview-content')
+    const scroller = document.querySelector('.split-preview-pane')
     for (let step = 1; step <= 6; step++) {
       scroller.scrollTop = (scroller.scrollHeight * step) / 6
       await new Promise(r => setTimeout(r, 120))

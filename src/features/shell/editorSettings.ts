@@ -1,3 +1,4 @@
+import { statisticKinds, type StatisticKind } from '../document-stats/counts'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { MarkdownMode, ThemePreference } from '../../types'
 import type { CaretAnimation } from '../../editor/core/caretMotion'
@@ -26,6 +27,7 @@ export const currentShortcutVersion = 4
  * Version 7 replaces always-Markdown copying with opt-out automatic cross-block copying. */
 export const currentSettingsVersion = 7
 export interface EditorSettings extends UpdatePreferences {
+  primaryStatistic: StatisticKind
   syntaxStyle: SyntaxStyle
   bracketMode: BracketMode
   caretAnimation: CaretAnimation
@@ -54,7 +56,7 @@ export interface EditorSettings extends UpdatePreferences {
 export const fontFamilies = { system: '"SFMono-Regular", Consolas, "Liberation Mono", monospace', consolas: 'Consolas, monospace', cascadia: '"Cascadia Code", Consolas, monospace' }
 export function defaultSettings(): EditorSettings {
   const markdownClipboard = defaultMarkdownClipboard(), outlineWidth = 240
-  return { bracketMode: 'matching', syntaxStyle: 'vivid', ...defaultUpdatePreferences(), caretAnimation: 'smooth', outlineWidth, markdownClipboard, markdownTypography:defaultMarkdownTypography(), theme: 'system', uiFontSize: 14, fontSize: 14, fontFamily: 'system', wordWrap: true, showOutline: false, typewriterMode: false, indentSize: 2, useTabs: false, defaultMdMode: 'live', liveToolbar: true, externalFileMonitoring: true, autoReloadExternal: true, autoSave: false, autoSaveDelay: 1500, treeClickMode: 'single', autoFollowActiveFile: false, smartExpand: true, compactFolders: false, keymapPreset: 'markumo', imageRules: defaultImageRules(), documentImageRules: {}, settingsVersion: currentSettingsVersion, legacyAutoSaveNotice: false, shortcutVersion: currentShortcutVersion, customShortcuts:[], shortcuts: { ...defaultShortcuts }, fileModes: {} }
+  return { primaryStatistic: 'words', bracketMode: 'matching', syntaxStyle: 'vivid', ...defaultUpdatePreferences(), caretAnimation: 'smooth', outlineWidth, markdownClipboard, markdownTypography:defaultMarkdownTypography(), theme: 'system', uiFontSize: 14, fontSize: 14, fontFamily: 'system', wordWrap: true, showOutline: false, typewriterMode: false, indentSize: 2, useTabs: false, defaultMdMode: 'live', liveToolbar: true, externalFileMonitoring: true, autoReloadExternal: true, autoSave: false, autoSaveDelay: 1500, treeClickMode: 'single', autoFollowActiveFile: false, smartExpand: true, compactFolders: false, keymapPreset: 'markumo', imageRules: defaultImageRules(), documentImageRules: {}, settingsVersion: currentSettingsVersion, legacyAutoSaveNotice: false, shortcutVersion: currentShortcutVersion, customShortcuts:[], shortcuts: { ...defaultShortcuts }, fileModes: {} }
 }
 /** Drop the transient migration notice before writing preferences to disk. */
 export function persistedSettings(settings: EditorSettings) {
@@ -80,6 +82,7 @@ export function settingsFrom(raw: unknown): EditorSettings {
   const defaults = defaultSettings()
   if (!raw || typeof raw !== 'object') return defaults
   const s = raw as Partial<EditorSettings>
+  if (statisticKinds.includes(s.primaryStatistic!)) defaults.primaryStatistic = s.primaryStatistic!
   if (bracketModes.includes(s.bracketMode as BracketMode)) defaults.bracketMode = s.bracketMode!
   defaults.syntaxStyle = normalizeSyntaxStyle(s.syntaxStyle)
   if (s.caretAnimation === 'off' || s.caretAnimation === 'quick' || s.caretAnimation === 'smooth') defaults.caretAnimation = s.caretAnimation

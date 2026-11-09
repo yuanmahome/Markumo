@@ -1,5 +1,5 @@
 /* Shared reading surfaces; editor-only affordances stay in MarkdownTheme.css. */
-:is(.markdown-live, .split-preview-pane) {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) {
   --text: var(--ink);
   --md-code-bg: var(--sidebar);
   --md-code-font-size: 13px;
@@ -12,13 +12,13 @@
   --md-link-color: var(--accent);
   --md-paragraph-spacing: .8em;
 }
-body.light :is(.markdown-live, .split-preview-pane) {
+body.light :is(.markdown-live, .split-preview-pane, .preview-partition-pane) {
   --text: #333; --bright: #333; --muted: #777; --line: #dfe2e5;
   --md-heading-color: #333; --md-link-color: #4183c4;
   --md-code-bg: #f8f8f8; --md-table-border: #dfe2e5;
 }
 
-:is(.markdown-live, .split-preview-pane) { container: markdown-pane / inline-size; }
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) { container: markdown-pane / inline-size; }
 .markdown-live .md-document {
   width: 100%; max-width: var(--md-content-width); box-sizing: border-box;
   margin: 0 auto; padding: 30px 48px 100px;
@@ -87,7 +87,7 @@ body.light :is(.markdown-live, .split-preview-pane) {
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) table:has(> thead) tbody tr:nth-child(even) { background: transparent; }
 :is(.markdown-live .md-document .md-prose, .split-preview-pane .split-preview-content) :is(td,th) p { margin: 0; }
 /* --- Unified Image Presentation (Live & Split) --- */
-:is(.markdown-live, .split-preview-pane) :is(.md-image-preview, .md-image-slot) {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) :is(.md-image-preview, .md-image-slot) {
   box-sizing: border-box;
   position: relative;
   border: none;
@@ -109,24 +109,24 @@ body.light :is(.markdown-live, .split-preview-pane) {
 }
 
 /* Standalone Image Container */
-:is(.markdown-live, .split-preview-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone) {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone) {
   display: block;
   width: 100%;
   text-align: center;
 }
-:is(.markdown-live, .split-preview-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone)[data-image-align="left"] {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone)[data-image-align="left"] {
   text-align: left;
 }
-:is(.markdown-live, .split-preview-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone)[data-image-align="right"] {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone)[data-image-align="right"] {
   text-align: right;
 }
 
-:is(.markdown-live, .split-preview-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone) > :is(.md-image-media, .md-image-preview) {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone) > :is(.md-image-media, .md-image-preview) {
   display: inline-block;
   max-width: 100%;
 }
 
-:is(.markdown-live, .split-preview-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone) img {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone) img {
   display: block;
   margin: 0 auto;
   max-width: 100%;
@@ -135,29 +135,29 @@ body.light :is(.markdown-live, .split-preview-pane) {
   object-fit: contain;
   cursor: pointer;
 }
-:is(.markdown-live, .split-preview-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone)[data-image-align="left"] img {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone)[data-image-align="left"] img {
   margin-left: 0;
   margin-right: auto;
 }
-:is(.markdown-live, .split-preview-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone)[data-image-align="right"] img {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) :is(.md-image-standalone, .md-image-slot.md-image-standalone)[data-image-align="right"] img {
   margin-left: auto;
   margin-right: 0;
 }
 
 /* Inline Images: regular text flow, vertical-align middle, natural margin */
-:is(.markdown-live, .split-preview-pane) :is(.md-image-preview, .md-image-slot):not(.md-image-standalone) {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) :is(.md-image-preview, .md-image-slot):not(.md-image-standalone) {
   display: inline-block;
   vertical-align: middle;
   margin: 0 4px;
   max-width: 100%;
   line-height: normal;
 }
-:is(.markdown-live, .split-preview-pane) :is(.md-image-preview, .md-image-slot):not(.md-image-standalone) .md-image-media {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) :is(.md-image-preview, .md-image-slot):not(.md-image-standalone) .md-image-media {
   display: inline-block;
   vertical-align: middle;
   line-height: normal;
 }
-:is(.markdown-live, .split-preview-pane) :is(.md-image-preview, .md-image-slot):not(.md-image-standalone) img {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) :is(.md-image-preview, .md-image-slot):not(.md-image-standalone) img {
   display: inline-block;
   vertical-align: middle;
   margin: 0;
@@ -182,20 +182,20 @@ body.light :is(.markdown-live, .split-preview-pane) {
 }
 
 /* Image Border */
-:is(.markdown-live, .split-preview-pane) {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) {
   --md-image-border-color: color-mix(in srgb, var(--ink) 35%, var(--editor));
 }
-:is(.markdown-live, .split-preview-pane)[data-image-border="true"] :is(.md-document, .split-preview-content) img {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane)[data-image-border="true"] :is(.md-document, .split-preview-content) img {
   box-sizing: border-box;
   border: 1px solid var(--md-image-border-color, var(--line));
   border-radius: 4px;
 }
-:is(.markdown-live, .split-preview-pane)[data-image-border="false"] :is(.md-document, .split-preview-content) img {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane)[data-image-border="false"] :is(.md-document, .split-preview-content) img {
   border: 0;
 }
 
 /* Compact Broken Image Badge */
-:is(.markdown-live, .split-preview-pane) :is(.md-image-preview, .md-image-slot).is-broken-image {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) :is(.md-image-preview, .md-image-slot).is-broken-image {
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -601,7 +601,7 @@ body.light :is(.markdown-live, .split-preview-pane) {
 }
 
 /* Mermaid 错误状态（所见即所得与双栏预览一致） */
-:is(.markdown-live, .split-preview-pane) .md-diagram.md-render-error {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) .md-diagram.md-render-error {
   display: block;
   color: var(--pink, #ef4444);
   font: 12.5px/1.6 var(--font-mono);
@@ -613,7 +613,7 @@ body.light :is(.markdown-live, .split-preview-pane) {
 }
 
 /* 媒体右上角悬浮放大按钮（绝对定位，不参与文档流，零布局偏移） */
-:is(.markdown-live, .split-preview-pane) > .md-media-zoom-btn {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) > .md-media-zoom-btn {
   position: absolute;
   z-index: 24;
   width: 26px;
@@ -636,19 +636,19 @@ body.light :is(.markdown-live, .split-preview-pane) {
   user-select: none;
 }
 
-:is(.markdown-live, .split-preview-pane) > .md-media-zoom-btn[hidden] {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) > .md-media-zoom-btn[hidden] {
   display: none !important;
 }
 
-:is(.markdown-live, .split-preview-pane) > .md-media-zoom-btn:hover,
-:is(.markdown-live, .split-preview-pane) > .md-media-zoom-btn:focus-visible {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) > .md-media-zoom-btn:hover,
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) > .md-media-zoom-btn:focus-visible {
   background: var(--hover);
   color: var(--bright);
   border-color: var(--accent);
   outline: none;
 }
 
-:is(.markdown-live, .split-preview-pane) > .md-media-zoom-btn:focus-visible {
+:is(.markdown-live, .split-preview-pane, .preview-partition-pane) > .md-media-zoom-btn:focus-visible {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 

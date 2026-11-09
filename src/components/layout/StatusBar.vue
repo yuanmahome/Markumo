@@ -72,7 +72,8 @@
         <option v-for="language in languageNames" :key="language" :value="language">{{ language }}</option>
       </select>
       <span v-if="doc?.languageStatus === 'loading'" class="optional">加载中…</span>
-      <span v-if="!isMedia(doc)" class="stat-item">{{ doc?.kind === 'javaClass' ? `${doc.classInfo?.byteLength.toLocaleString()} 字节` : `${charCount} 字符` }}</span>
+      <span v-if="doc?.kind === 'javaClass'" class="stat-item">{{ doc.classInfo?.byteLength.toLocaleString() }} 字节</span>
+      <DocumentStats v-else-if="doc && manager && !isMedia(doc) && doc.encoding !== 'Hex'" :manager="manager" :id="doc.id" :kind="primaryStatistic" @change="emit('set-statistic', $event)" />
     </div>
     <ContextMenu ref="encodingMenuRef" />
     <NavigationPopup
@@ -95,6 +96,8 @@
 
 <script setup lang="ts">
 import { ref, computed, inject, shallowRef, watch, onUnmounted } from 'vue'
+import DocumentStats from '../../features/document-stats/DocumentStats.vue'
+import type { StatisticKind } from '../../features/document-stats/counts'
 import { isMedia, mediaSize } from '../../features/files/media'
 import type { EditorDocument } from '../../types'
 import type { DocumentManager } from '../../editor/core/DocumentManager'
@@ -117,6 +120,7 @@ import { CommandRegistry, menuCommand as cmd, separator, type MenuNode } from '.
 import type { Encoding, FileOpenEncoding } from '../../features/files/contracts'
 
 const emit = defineEmits<{
+  (e: 'set-statistic', kind: StatisticKind): void
   (e: 'set-language', language: LanguageName): void
   (e: 'reopen-encoding', encoding: FileOpenEncoding): void
   (e: 'convert-encoding', payload: { encoding: Encoding; bom: boolean }): void
@@ -125,6 +129,7 @@ const emit = defineEmits<{
 }>()
 
 const props = defineProps<{
+  primaryStatistic: StatisticKind
   doc: EditorDocument | null
   indentSize: number
   useTabs: boolean
@@ -239,9 +244,6 @@ const isDirty = computed(() => {
   return props.doc?.dirty ?? false
 })
 
-const charCount = computed(() => {
-  return props.doc?.charCount.toLocaleString() || '0'
-})
 
 const encodingDisplay = computed(() => {
   if (!props.doc) return 'UTF-8'

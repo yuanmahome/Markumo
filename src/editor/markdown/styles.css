@@ -242,5 +242,5 @@
 
 :is(.markdown-live .md-prose, .split-preview-content) .md-blank-line { min-height:1lh; margin:var(--md-paragraph-spacing, .8em) 0; white-space:pre-wrap; }
 .split-preview-pane { --md-image-border-color:color-mix(in srgb,var(--ink) 35%,var(--editor)); }
-.split-preview-pane[data-image-border="true"] .split-preview-content img { box-sizing:border-box; border:1px solid var(--md-image-border-color,var(--line)); border-radius:4px; }
-.split-preview-pane[data-image-border="false"] .split-preview-content img { border:0; border-radius:0; }
+:is(.split-preview-pane, .preview-partition-pane)[data-image-border="true"] .split-preview-content img { box-sizing:border-box; border:1px solid var(--md-image-border-color,var(--line)); border-radius:4px; }
+:is(.split-preview-pane, .preview-partition-pane)[data-image-border="false"] .split-preview-content img { border:0; border-radius:0; }

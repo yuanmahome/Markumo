@@ -11,7 +11,8 @@ import { normalizeWindowsArtifacts } from './windows-artifacts.mjs'
 
 const arg = name => process.argv.find(value => value.startsWith(`--${name}=`))?.slice(name.length + 3)
 const ref = arg('ref') || 'WORKTREE'
-const installer=process.argv.includes('--installer')
+const isolatedInstaller=process.argv.includes('--isolated-installer')
+const installer=process.argv.includes('--installer')||isolatedInstaller
 const fullRef = process.argv.includes('--full-ref')
 const label = arg('label') || 'before'
 assert(/^[\w-]+$/.test(label), `Invalid label: ${label}`)
@@ -380,15 +381,17 @@ export async function renderMath(...args: Parameters<typeof __rawRenderMath>) {
 
 const profileDir = path.join(root, `native-profile-${label}`)
 fs.mkdirSync(profileDir, { recursive: true })
+const emptyHooks=path.join(root,'markdown-performance-empty-hooks.nsh')
+if(isolatedInstaller)fs.writeFileSync(emptyHooks,'; Isolated performance installer: no production shell registrations.\n')
 const config = {
-  ...(installer?{productName:'Markumo Window Lifecycle Test'}:{}),
+  ...(installer?{productName:isolatedInstaller?'Markumo Markdown Performance Test':'Markumo Window Lifecycle Test'}:{}),
   identifier: `com.markumo.phase042-${label}`,
   app: { appDirectoriesOverride: profileDir, ...(installer?{security:{capabilities:['default',{identifier:'lifecycle-test-focus',windows:['main','file-*','app-*','detached-*'],permissions:['core:window:allow-set-focus']}]}}:{}) },
   build: {
     beforeBuildCommand: null,
     frontendDist: path.relative(path.resolve('src-tauri'), dist).replaceAll('\\', '/'),
   },
-  bundle: { active: installer, createUpdaterArtifacts: false },
+  bundle: { active: installer, createUpdaterArtifacts: false, ...(isolatedInstaller?{fileAssociations:[],windows:{nsis:{installerHooks:emptyHooks}}}:{}) },
 }
 const configPath = path.join(root, `config-${label}.json`)
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2))

@@ -779,7 +779,7 @@ export class DocumentManager {
     if (!record) { this.destroyView(resolved); return }
     if (!record.panes[resolved]) record.panes[resolved] = { selection: record.state.selection, top: 0, left: 0 }
     const paneMode = this.getMarkdownMode(record.meta.id, resolved)
-    if(paneMode==='live' && record.state.doc.length<=1024*1024){
+    if(paneMode==='live'){
       const existing=this.liveViews.get(resolved)
       if(existing?.id===record.meta.id){existing.editor.sync(record.state.doc.toString());return}
       this.destroyView(resolved)
@@ -1475,7 +1475,6 @@ export class DocumentManager {
   setMarkdownMode(id: string, mode: MarkdownMode, pane?: Pane): boolean {
     const record = this.records.get(id)
     if (!record || record.meta.kind === 'javaClass' || record.meta.encoding === 'Hex' || !/\.(md|markdown)$/i.test(record.meta.name) || !['live', 'source', 'split'].includes(mode) || this.disposed || this.isComposing) return false
-    if(mode==='live'&&record.state.doc.length>1024*1024){window.dispatchEvent(new CustomEvent('editor-notice',{detail:'Markdown 超过 1 Mi 字符安全预算，请使用源码或双栏模式。'}));return false}
 
     const resolved = this.resolvePaneId(pane || this.activePane)
     if (!record.panes[resolved]) {

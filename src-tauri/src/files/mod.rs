@@ -666,7 +666,7 @@ impl FileService {
             }
             Err(error) => return Err(error),
         };
-        guard_text(&text)?;
+        guard_text(&text, encoding != "Hex" && markdown_path(&path))?;
         let token = existing_token
             .map(str::to_owned)
             .unwrap_or_else(|| self.grant(selected, path.clone(), true));
@@ -887,7 +887,7 @@ impl FileService {
         if encoding != "Hex" {
             guard_text_target(&path)?;
         }
-        guard_text(text)?;
+        guard_text(text, encoding != "Hex" && markdown_path(&path))?;
         let bytes = codec::encode(text, encoding, bom)?;
         if encoding == "Hex" && bytes.len() > MAX_BYTES as usize / 3 {
             return fail(
@@ -1116,13 +1116,20 @@ impl FileService {
     }
 }
 
-fn guard_text(text: &str) -> Result<()> {
+fn markdown_path(path: &Path) -> bool {
+    path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext|
+        ["md", "markdown", "mdown"].iter().any(|known| ext.eq_ignore_ascii_case(known)))
+}
+fn guard_text(text: &str, markdown: bool) -> Result<()> {
     if text.len() as u64 > MAX_BYTES {
         return fail(
             "size",
             "解码后的文本超过 16 MiB，本阶段拒绝操作；文件和编辑内容保留。",
         );
     }
+    // Markdown preview uses bounded structural windows; line count is not a
+    // rendering capability limit. Keep the existing non-Markdown guard.
+    if markdown { return Ok(()); }
     let mut breaks = 0;
     let mut chars = text.chars().peekable();
     while let Some(ch) = chars.next() {
@@ -1168,6 +1175,14 @@ fn byte_fallback_allowed(bytes: &[u8], error: &FileError) -> bool {
 
 #[cfg(test)]
 mod retained_view_grant_tests {
+    #[test]
+    fn markdown_line_count_does_not_disable_open_or_save() {
+        let source = "正文\r\n".repeat(210_000);
+        for name in ["file.md", "file.MD", "file.markdown", "file.mdown"] {
+            assert!(super::guard_text(&source, super::markdown_path(Path::new(name))).is_ok());
+        }
+        assert!(super::guard_text(&source, super::markdown_path(Path::new("file.txt"))).is_err());
+    }
     use super::*;
     #[test]
     fn retained_view_has_independent_scoped_capability() {

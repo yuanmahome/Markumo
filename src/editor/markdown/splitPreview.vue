@@ -1,663 +1,118 @@
 <template>
-  <div ref="paneRef" class="split-preview-pane" :style="markdownTypographyStyle(settings, true)" :data-code-numbers="settings.codeLineNumbers" :data-code-wrap="settings.codeWrap" :data-image-border="(imageBorder ?? settings.imageBorder) !== false">
-    <div
-      ref="contentRef"
-      class="split-preview-content markdown-body"
-      role="region"
-      aria-label="Markdown 只读预览"
-      aria-readonly="true"
-      v-html="renderedHtml"
-      @click="onContentClick"
-      @scroll="onScroll"
-    ></div>
+  <div ref="root" class="split-preview-pane" role="region" aria-label="Markdown 只读预览" @scroll="onScroll">
+    <div :style="{ height: `${top}px` }" aria-hidden="true"></div>
+    <section v-for="item in visible" :key="item.index" :ref="el => observe(el as Element | null, item.index)" :data-group="item.index">
+      <PreviewPartition v-if="item.group.to - item.group.from <= 131072" :content="content.slice(item.group.from, item.group.to)" :references="references" :scroll-root="root" :resources="resources" :resource-key="resourceKey" :typography="typography" :image-border="imageBorder" @edit-image="(from, snapshot) => snapshot === content.slice(item.group.from, item.group.to) && emit('edit-image', from + item.group.from, content)" />
+      <div v-else class="preview-local-budget" role="status">此结构超出单次排版预算，源码完整保留。<button @click="emit('scroll-line', item.group.line)">定位源码</button></div>
+    </section>
+    <div :style="{ height: `${bottom}px` }" aria-hidden="true"></div>
+    <div v-if="!complete" class="preview-progress" role="status">{{ failure || '正在准备后续内容…' }}</div>
   </div>
 </template>
-
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
-import { LanguageSupport } from '@codemirror/language'
-import { openMarkdownLink } from './links'
-import { createMarkdownRenderer, type PreviewEnvironment, type PreviewSlot } from './rendering'
-import { renderMath, renderDiagram } from './wysiwyg/renderers'
-import { attachMediaHoverTrigger, MediaPreview, type MediaHoverTriggerHandle } from './wysiwyg/ImagePreview'
-import { DISPLAY_HIGHLIGHT_MAX_CHARS } from './wysiwyg/CodeBlockView'
-import { defaultMarkdownTypography, type MarkdownTypography } from './wysiwyg/contracts'
-import { markdownTypographyStyle } from './typography'
-import { createMarkdownResources, mountMarkdownImage, type MarkdownResources } from './images'
-import { textClipboard } from '../../features/shell/clipboard'
-import { htmlForPreview, mountHtmlImages, type MountedImageHandle } from './html/SafeHtmlRenderer'
-import { parseFenceInfo, loadLanguage } from '../languages'
-import { syntaxSpans } from '../core/syntaxSpans'
-import { staticCodeLines } from './staticCode'
-import { createRenderTaskQueue } from './renderTaskQueue'
-import { observeRenderVisibility } from './renderVisibility'
-
-const escapePreviewCode = (value: string) =>
-  value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!))
-
-const splitHighlightQueue = createRenderTaskQueue(2, 128)
-
-const props = defineProps<{
-  content: string
-  tooLarge?: boolean
-  resources?: MarkdownResources
-  resourceKey?: string
-  imageBorder?: boolean
-  typography?: MarkdownTypography
-}>()
-const defaults = defaultMarkdownTypography()
-const settings = computed(() => props.typography || defaults)
-const emit = defineEmits<{
-  (e: 'scroll-line', line: number): void
-  (e: 'edit-image', from: number, snapshot: string): void
-}>()
-
-const paneRef = ref<HTMLElement | null>(null)
-const contentRef = ref<HTMLElement | null>(null)
-const mediaPreview = new MediaPreview()
-let mediaHoverTrigger: MediaHoverTriggerHandle | undefined
-
-onMounted(() => {
-  if (!disposed && paneRef.value) {
-    mediaHoverTrigger = attachMediaHoverTrigger(paneRef.value, {
-      preview: mediaPreview,
-      getResources: () => props.resources || fallbackResources,
-      isAlive: () => !disposed,
-    })
-  }
-})
-
-const revision = ref(0)
-let disposed = false
-const md = createMarkdownRenderer(() => {
-  if (!disposed) revision.value++
-}, true)
-const previewText = ref(props.content)
-let timer: ReturnType<typeof setTimeout> | undefined
-let deferredHiddenContent: string | null = null
-
-const onDocumentVisibility = () => {
-  if (disposed || typeof document === 'undefined' || document.hidden) return
-  if (deferredHiddenContent !== null) {
-    const next = deferredHiddenContent
-    deferredHiddenContent = null
-    previewText.value = next
-  }
+import { ref, shallowRef, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import PreviewPartition from './preview/PreviewPartition.vue'
+import { HeightIndex } from './preview/HeightIndex'
+import type { PreviewGroup, StructureBatch } from './preview/structure'
+import type { MarkdownResources } from './images'
+import type { MarkdownTypography } from './wysiwyg/contracts'
+const props = defineProps<{ content: string; resources?: MarkdownResources; resourceKey?: string; imageBorder?: boolean; typography?: MarkdownTypography }>()
+const emit = defineEmits<{ (e:'scroll-line',line:number):void; (e:'edit-image',from:number,snapshot:string):void }>()
+const root = ref<HTMLElement | null>(null), groups = shallowRef<PreviewGroup[]>([]), references = shallowRef<Record<string, unknown>>({})
+const totalLines = ref(1)
+const complete = ref(false), failure = ref(''), revision = ref(0), start = ref(0), end = ref(0)
+let heights = new HeightIndex(), worker: Worker | undefined, resize: ResizeObserver | undefined, disposed = false
+let pendingLine: number | undefined, expected = false, frame = 0
+const visible = computed(() => groups.value.slice(start.value, end.value).map((group, offset) => ({ group, index: start.value + offset })))
+const tail = computed(() => complete.value ? 0 : Math.max(0, totalLines.value - (groups.value[groups.value.length - 1]?.endLine || 1)) * 24)
+const scale = computed(() => { void revision.value; return Math.min(1, 8000000 / Math.max(1, heights.prefix(groups.value.length) + tail.value)) })
+const top = computed(() => { void revision.value; return heights.prefix(start.value) * scale.value })
+const bottom = computed(() => { void revision.value; return Math.max(0, heights.prefix(groups.value.length) + tail.value - heights.prefix(end.value)) * scale.value })
+function updateWindow() {
+  const el = root.value
+  if (!el) return
+  start.value = heights.at(Math.max(0, el.scrollTop / scale.value - el.clientHeight))
+  end.value = Math.min(groups.value.length, heights.at(el.scrollTop / scale.value + el.clientHeight * 2) + 1, start.value + 12)
 }
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', onDocumentVisibility)
+const observed = new Map<number, Element>()
+function observe(el: Element | null, index: number) {
+  const previous = observed.get(index)
+  if (previous && previous !== el) { resize?.unobserve(previous); observed.delete(index) }
+  if (el) { (el as HTMLElement).dataset.group = String(index); observed.set(index, el); resize?.observe(el) }
 }
-
-watch(
-  () => props.content,
-  content => {
-    if (timer) clearTimeout(timer)
-    if (typeof document !== 'undefined' && document.hidden) {
-      deferredHiddenContent = content
-      return
-    }
-    deferredHiddenContent = null
-    timer = setTimeout(() => {
-      if (disposed) return
-      if (typeof document !== 'undefined' && document.hidden) {
-        deferredHiddenContent = content
-        return
-      }
-      previewText.value = content
-    }, 100)
-  }
-)
-
-let mountedImages: ReturnType<typeof mountMarkdownImage>[] = []
-let mountedHtmlImages: MountedImageHandle | undefined
-let hydrateGeneration = 0
-let hydrateAbort: AbortController | null = null
-let visibilityCleanups: (() => void)[] = []
-let themeObserver: MutationObserver | undefined
-let refreshDiagrams = () => {}
-
-if (typeof document !== 'undefined') {
-  let isLight = document.body.classList.contains('light')
-  themeObserver = new MutationObserver(() => {
-    const nextLight = document.body.classList.contains('light')
-    if (nextLight === isLight) return
-    isLight = nextLight
-    refreshDiagrams()
-  })
-  themeObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+function lineAt(top: number) {
+  if (!complete.value && top > heights.prefix(groups.value.length)) return (groups.value.at(-1)?.endLine || 1) + (top - heights.prefix(groups.value.length)) / 24
+  const i = heights.at(top), group = groups.value[i]
+  if (!group) return 1
+  return group.line + (group.endLine - group.line) * Math.max(0, Math.min(1, (top - heights.prefix(i)) / heights.heights[i]))
 }
-
-function teardownHydration() {
-  hydrateAbort?.abort()
-  hydrateAbort = null
-  for (const stop of visibilityCleanups) stop()
-  visibilityCleanups = []
-  refreshDiagrams = () => {}
-  for (const image of mountedImages) image.destroy()
-  mountedImages = []
-  mountedHtmlImages?.destroy()
-  mountedHtmlImages = undefined
-}
-
-let lastParsedText = ''
-let lastParsedRevision = -1
-let lastRenderedResult: { html: string; slots: PreviewSlot[] } = { html: '', slots: [] }
-
-onUnmounted(() => {
-  disposed = true
-  if (typeof document !== 'undefined') {
-    document.removeEventListener('visibilitychange', onDocumentVisibility)
-  }
-  themeObserver?.disconnect()
-  themeObserver = undefined
-  if (timer) clearTimeout(timer)
-  teardownHydration()
-  mediaHoverTrigger?.destroy()
-  mediaHoverTrigger = undefined
-  mediaPreview.destroy()
-  contentRef.value?.replaceChildren()
-  lastParsedText = ''
-  lastRenderedResult = { html: '', slots: [] }
-})
-
-const rendered = computed(() => {
-  const rev = revision.value
-  if (props.tooLarge || previewText.value.length > 1024 * 1024) {
-    return { html: '<p>文档较大，已暂停只读预览；源码仍可编辑。</p>', slots: [] as PreviewSlot[] }
-  }
-  const currentText = previewText.value || ''
-  if (currentText === lastParsedText && rev === lastParsedRevision && lastRenderedResult.html) {
-    return lastRenderedResult
-  }
-  const environment: PreviewEnvironment = { slots: [] }
-  const tokens = md.parse(currentText, environment)
-  for (const token of tokens) {
-    if (token.map && token.nesting === 1 && token.level === 0) {
-      token.attrSet('data-source-line', String(token.map[0] + 1))
-    }
-  }
-  const rawRendered = md.renderer.render(tokens, md.options, environment)
-  lastParsedText = currentText
-  lastParsedRevision = rev
-  lastRenderedResult = { html: htmlForPreview(rawRendered), slots: environment.slots || [] }
-  return lastRenderedResult
-})
-const renderedHtml = computed(() => rendered.value.html)
-
-const fallbackResources = createMarkdownResources(() => undefined)
-
-watch(
-  [renderedHtml, () => props.resources, () => props.resourceKey],
-  async () => {
-    const generation = ++hydrateGeneration
-    const expectedResourceKey = props.resourceKey
-    const snapshot = previewText.value
-    teardownHydration()
-
-    await nextTick()
-    if (disposed || generation !== hydrateGeneration || props.resourceKey !== expectedResourceKey) return
-    const scrollRoot = contentRef.value
-    if (!scrollRoot) return
-
-    const roundController = new AbortController()
-    hydrateAbort = roundController
-
-    const slots = new Map(rendered.value.slots.map(slot => [slot.id, slot]))
-    for (const table of scrollRoot.querySelectorAll('table')) {
-      if (table.parentElement?.classList.contains('md-table-scroll')) continue
-      const wrapper = document.createElement('div')
-      wrapper.className = 'md-table-scroll'
-      table.replaceWith(wrapper)
-      wrapper.append(table)
-    }
-
-    const isCurrentRound = () =>
-      !disposed &&
-      !roundController.signal.aborted &&
-      generation === hydrateGeneration &&
-      props.resourceKey === expectedResourceKey &&
-      snapshot === previewText.value
-
-    const diagramEntries: { triggerThemeRefresh: () => void }[] = []
-    let diagramCount = 0
-
-    for (const host of scrollRoot.querySelectorAll<HTMLElement>('[data-md-render]')) {
-      const slot = slots.get(host.dataset.mdRender || '')
-      if (!slot || slot.kind === 'image') continue
-
-      if (slot.kind === 'task') {
-        const input = document.createElement('input')
-        input.type = 'checkbox'
-        input.disabled = true
-        input.checked = slot.source === 'x'
-        input.setAttribute('aria-label', input.checked ? '已完成任务' : '待办任务')
-        host.replaceChildren(input)
-        continue
-      }
-
-      if (slot.kind === 'code') {
-        const codeEl = host.querySelector<HTMLElement>('pre > code')
-        const { language } = parseFenceInfo(slot.info || '')
-        const visibleCode = slot.source.slice(0, 128 * 1024).split('\n').slice(0, 5000).join('\n')
-        if (!codeEl || !language || visibleCode.length > DISPLAY_HIGHLIGHT_MAX_CHARS) continue
-
-        let highlighted = false
-        let itemAbort: AbortController | null = null
-        const stop = observeRenderVisibility(
-          host,
-          { root: scrollRoot, rootMargin: '400px 0px 400px 0px' },
-          state => {
-            if (!isCurrentRound()) return
-            if (state.visible) {
-              if (highlighted || itemAbort) return
-              const ctrl = new AbortController()
-              itemAbort = ctrl
-              const abortFromRound = () => ctrl.abort()
-              roundController.signal.addEventListener('abort', abortFromRound, { once: true })
-              void splitHighlightQueue(
-                async () => {
-                  const support = await loadLanguage(language.name, 'fence')
-                  if (!isCurrentRound() || ctrl.signal.aborted || !(support instanceof LanguageSupport)) return null
-                  return syntaxSpans(visibleCode, support)
-                },
-                { signal: ctrl.signal, priority: 'normal' }
-              )
-                .then(spans => {
-                  if (!spans || !isCurrentRound() || ctrl.signal.aborted || !codeEl.isConnected) return
-                  codeEl.innerHTML = staticCodeLines(visibleCode, spans, escapePreviewCode, false)
-                  highlighted = true
-                })
-                .catch(() => {})
-                .finally(() => {
-                  roundController.signal.removeEventListener('abort', abortFromRound)
-                  if (itemAbort === ctrl) itemAbort = null
-                })
-            } else {
-              itemAbort?.abort()
-              itemAbort = null
-            }
-          }
-        )
-        visibilityCleanups.push(() => {
-          itemAbort?.abort()
-          itemAbort = null
-          stop()
-        })
-        continue
-      }
-
-      if (slot.kind === 'diagram') {
-        const diagram = host.querySelector<HTMLElement>('.md-diagram')
-        if (!diagram) continue
-        diagramCount++
-        if (diagramCount > 512) {
-          diagram.classList.add('md-render-error')
-          diagram.textContent = '单文档图表数量超过 512 个安全上限，已暂停后续图表预览；Markdown 源码仍完整保留。'
-          continue
-        }
-        let diagramVisible = false
-        let diagramDirty = true
-        let itemAbort: AbortController | null = null
-        const runDiagram = () => {
-          if (!isCurrentRound() || !diagramVisible || !diagramDirty) return
-          itemAbort?.abort()
-          const ctrl = new AbortController()
-          itemAbort = ctrl
-          const abortFromRound = () => ctrl.abort()
-          roundController.signal.addEventListener('abort', abortFromRound, { once: true })
-          if (!diagram.querySelector('svg')) {
-            diagram.classList.remove('md-render-error')
-            diagram.textContent = '正在渲染图表…'
-          }
-          void renderDiagram(
-            diagram,
-            slot.source,
-            () => isCurrentRound() && diagramVisible && !ctrl.signal.aborted,
-            ctrl.signal
-          )
-            .then(() => {
-              if (isCurrentRound() && !ctrl.signal.aborted && !!diagram.querySelector('svg')) {
-                diagram.classList.remove('md-render-error')
-                diagramDirty = false
-                mediaHoverTrigger?.reposition()
-              }
-            })
-            .catch(error => {
-              if (diagram.isConnected && isCurrentRound() && !ctrl.signal.aborted) {
-                diagram.classList.add('md-render-error')
-                const message = error instanceof Error ? error.message : String(error)
-                diagram.textContent = message
-                diagramDirty = false
-                mediaHoverTrigger?.reposition()
-              }
-            })
-            .finally(() => {
-              roundController.signal.removeEventListener('abort', abortFromRound)
-              if (itemAbort === ctrl) itemAbort = null
-            })
-        }
-        const stop = observeRenderVisibility(
-          host,
-          { root: scrollRoot, rootMargin: '400px 0px 400px 0px' },
-          state => {
-            if (!isCurrentRound()) return
-            diagramVisible = state.visible
-            if (state.visible) {
-              runDiagram()
-            } else {
-              itemAbort?.abort()
-              itemAbort = null
-            }
-          }
-        )
-        diagramEntries.push({
-          triggerThemeRefresh: () => {
-            diagramDirty = true
-            if (diagramVisible) runDiagram()
-          },
-        })
-        visibilityCleanups.push(() => {
-          itemAbort?.abort()
-          itemAbort = null
-          stop()
-        })
-        continue
-      }
-
-      // Math inline / math block
-      const displayMode = slot.kind === 'math-block'
-      let mathRendered = false
-      let itemAbort: AbortController | null = null
-      host.textContent = slot.source
-      const stop = observeRenderVisibility(
-        host,
-        { root: scrollRoot, rootMargin: '400px 0px 400px 0px' },
-        state => {
-          if (!isCurrentRound()) return
-          if (state.visible) {
-            if (mathRendered || itemAbort) return
-            const ctrl = new AbortController()
-            itemAbort = ctrl
-            const abortFromRound = () => ctrl.abort()
-            roundController.signal.addEventListener('abort', abortFromRound, { once: true })
-            void renderMath(
-              host,
-              slot.source,
-              displayMode,
-              () => isCurrentRound() && !ctrl.signal.aborted,
-              ctrl.signal
-            )
-              .then(() => {
-                if (isCurrentRound() && !ctrl.signal.aborted && !!host.querySelector('.katex')) {
-                  mathRendered = true
-                }
-              })
-              .catch(error => {
-                if (host.isConnected && isCurrentRound() && !ctrl.signal.aborted) {
-                  host.classList.add('md-render-error')
-                  host.textContent = String(error instanceof Error ? error.message : error)
-                  mathRendered = true
-                }
-              })
-              .finally(() => {
-                roundController.signal.removeEventListener('abort', abortFromRound)
-                if (itemAbort === ctrl) itemAbort = null
-              })
-          } else {
-            itemAbort?.abort()
-            itemAbort = null
-          }
-        }
-      )
-      visibilityCleanups.push(() => {
-        itemAbort?.abort()
-        itemAbort = null
-        stop()
-      })
-    }
-
-    refreshDiagrams = () => {
-      for (const entry of diagramEntries) entry.triggerThemeRefresh()
-    }
-
-    // 绑定代码块复制按钮
-    for (const button of Array.from(scrollRoot.querySelectorAll<HTMLButtonElement>('[data-md-copy]'))) {
-      button.onmousedown = event => event.preventDefault()
-      button.onclick = async () => {
-        const fenceEl = button.closest('.md-preview-fence')
-        const code =
-          slots.get((fenceEl as HTMLElement | null)?.dataset.mdRender || '')?.source ??
-          fenceEl?.querySelector('code')?.textContent ??
-          ''
-        try {
-          await textClipboard.writeText(code)
-          const originalHtml = button.innerHTML
-          const checkIcon = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m5 12 4 4L19 6"/></svg>`
-          button.innerHTML = checkIcon
-          button.title = '已复制'
-          setTimeout(() => {
-            if (button.isConnected) {
-              button.innerHTML = originalHtml
-              button.title = '复制代码'
-            }
-          }, 1500)
-        } catch {
-          window.dispatchEvent(new CustomEvent('editor-notice', { detail: '复制失败，请选中后复制' }))
-        }
-      }
-    }
-
-    // 挂载图片（使用真实预览容器作为视口观察 root）
-    for (const host of Array.from(scrollRoot.querySelectorAll<HTMLElement>('.md-image-slot')).slice(0, 64)) {
-      const slot = slots.get(host.dataset.mdRender || '')
-      if (slot?.kind !== 'image') continue
-      const source = slot.source
-      const from = slot.from || 0
-      const parentP = host.parentElement?.tagName === 'P' ? host.parentElement : null
-      const isStandalone =
-        !!parentP &&
-        parentP.querySelectorAll('.md-image-slot').length === 1 &&
-        [...parentP.childNodes].every(node => node === host || !node.textContent?.trim())
-      host.classList.toggle('md-image-standalone', isStandalone)
-      mountedImages.push(
-        mountMarkdownImage(
-          host,
-          source,
-          slot.alt || '',
-          props.resources || fallbackResources,
-          () => emit('edit-image', from, snapshot),
-          () => {
-            if (!disposed && generation === hydrateGeneration) {
-              host.classList.toggle('md-image-ready', !!host.querySelector('img')?.naturalWidth)
-              mediaHoverTrigger?.reposition()
-            }
-          }
-        )
-      )
-    }
-
-    // 挂载 HTML 内嵌图片 (如 <img src="...">)
-    if (contentRef.value) {
-      mountedHtmlImages = mountHtmlImages(contentRef.value, props.resources || fallbackResources)
-    }
-    mediaPreview.refresh()
-    mediaHoverTrigger?.reposition()
-  },
-  { immediate: true, flush: 'post' }
-)
-
-function onContentClick(event: MouseEvent) {
-  const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>('a')
-  if (anchor) {
-    event.preventDefault()
-    if (event.ctrlKey || event.metaKey) {
-      void openMarkdownLink(anchor.getAttribute('href') || '')
-    }
-  }
-}
-
-let expectedTop: number | null = null
-let isScrolling = false
-
 function onScroll() {
-  if (isScrolling) return
-  const element = contentRef.value
-  if (!element) return
-  if (expectedTop !== null && Math.abs(element.scrollTop - expectedTop) <= 2) {
-    expectedTop = null
-    return
-  }
-  expectedTop = null
-
-  const items = anchors()
-  const y = element.scrollTop
-  let index = 0
-  while (index + 1 < items.length && items[index + 1].top <= y) index++
-  const start = items[index]
-  const end = items[index + 1]
-  if (start) {
-    const line =
-      end && end.top > start.top
-        ? start.line + (end.line - start.line) * Math.max(0, (y - start.top) / (end.top - start.top))
-        : start.line
+  if (frame) return
+  frame = requestAnimationFrame(() => {
+    frame = 0; updateWindow()
+    if (expected) { expected = false; return }
+    const line = lineAt((root.value?.scrollTop || 0) / scale.value)
+    pendingLine = !complete.value && line > (groups.value.at(-1)?.endLine || 1) ? line : undefined
     emit('scroll-line', line)
-  }
+  })
 }
-
-function anchors() {
-  const element = contentRef.value
-  if (!element) return []
-  const top = element.getBoundingClientRect().top
-  const items = Array.from(element.querySelectorAll<HTMLElement>('[data-source-line]')).map(node => ({
-    line: Number(node.dataset.sourceLine),
-    top: node.getBoundingClientRect().top - top + element.scrollTop,
-  }))
-  items.push({ line: previewText.value.split('\n').length + 1, top: element.scrollHeight })
-  return items
-}
-
 function syncScroll(line: number) {
-  const element = contentRef.value
-  const items = anchors()
-  if (!element || !items.length) return
-  let index = 0
-  while (index + 1 < items.length && items[index + 1].line <= line) index++
-  const start = items[index]
-  const end = items[index + 1]
-  const next =
-    start.top +
-    (end && end.line > start.line ? (end.top - start.top) * Math.max(0, (line - start.line) / (end.line - start.line)) : 0)
-  if (Math.abs(element.scrollTop - next) > 2) {
-    isScrolling = true
-    element.scrollTop = next
-    expectedTop = next
-    setTimeout(() => {
-      isScrolling = false
-    }, 50)
-  }
+  pendingLine = line
+  const list = groups.value
+  if (!root.value || !list.length) return
+  let a = 0, b = list.length - 1
+  while (a < b) { const mid = (a + b + 1) >>> 1; if (list[mid].line <= line) a = mid; else b = mid - 1 }
+  if (line >= list[a].endLine && !complete.value) return
+  const group = list[a]
+  expected = true
+  root.value.scrollTop = (heights.prefix(a) + heights.heights[a] * Math.max(0, Math.min(1, (line - group.line) / Math.max(1, group.endLine - group.line)))) * scale.value
+  updateWindow()
 }
-
+watch(() => props.content, async source => {
+  worker?.terminate(); resize?.disconnect()
+  groups.value = []; heights = new HeightIndex(); references.value = {}; start.value = end.value = 0; complete.value = false; failure.value = ''
+  if (!source) { complete.value = true; return }
+  const task = new Worker(new URL('./preview/structure.worker.ts', import.meta.url), { type: 'module' })
+  worker = task
+  task.onmessage = async (event: MessageEvent<StructureBatch & { error?: string }>) => {
+    if (disposed || task !== worker) return
+    if (event.data.error) { failure.value = event.data.error; task.terminate(); return }
+    const batch = event.data
+    totalLines.value = batch.lines
+    for (const group of batch.groups) heights.append(Math.max(28, (group.endLine - group.line) * 24))
+    groups.value = groups.value.concat(batch.groups)
+    complete.value = batch.complete
+    if (batch.complete) { references.value = batch.references; task.terminate(); worker = undefined }
+    revision.value++; updateWindow()
+    await nextTick()
+    if (pendingLine !== undefined) syncScroll(pendingLine)
+  }
+  task.onerror = () => { failure.value = '结构索引失败，请在源码侧继续编辑。'; task.terminate() }
+  task.postMessage(source)
+  await nextTick(); updateWindow()
+}, { immediate: true })
+onMounted(() => {
+  resize = new ResizeObserver(entries => {
+    const el = root.value
+    if (!el) return
+    const anchor = heights.at(el.scrollTop / scale.value), inset = el.scrollTop / scale.value - heights.prefix(anchor)
+    for (const entry of entries) {
+      const index = Number((entry.target as HTMLElement).dataset.group)
+      if (index < heights.heights.length) heights.update(index, Math.max(1, entry.target.getBoundingClientRect().height))
+    }
+    revision.value++
+    expected = true; el.scrollTop = (heights.prefix(anchor) + inset) * scale.value
+    updateWindow()
+    for (const element of el.querySelectorAll('section[data-group]')) resize?.observe(element)
+  })
+  updateWindow()
+  for (const element of root.value?.querySelectorAll('section[data-group]') || []) resize.observe(element)
+})
+onUnmounted(() => { disposed = true; worker?.terminate(); worker = undefined; resize?.disconnect(); cancelAnimationFrame(frame); groups.value = []; references.value = {}; observed.clear(); heights = new HeightIndex() })
 defineExpose({ syncScroll })
 </script>
-
 <style scoped>
-.split-preview-pane {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  background: var(--editor);
-  overflow: hidden;
-  height: 100%;
-  position: relative;
-}
-
-.split-preview-content {
-  flex: 1;
-  overflow-y: auto;
-  box-sizing: border-box;
-}
-:deep(.md-math-output) { margin: 1em 0; max-width: 100%; overflow-x: auto; text-align: center; }
-:deep(.md-math-output .katex-display) { margin: 0; }
-:deep(.md-math-output .katex-display > .katex) { white-space: nowrap; }
-:deep(.md-inline-math) { display: inline; }
-:deep(.md-render-error) { color: var(--pink); white-space: pre-wrap; overflow-wrap: anywhere; }
-
-/* 代码块：无两层边框，无大语言条，单层细边框与淡灰底色 */
-:deep(.md-preview-fence) {
-  position: relative;
-  width: 100%;
-  box-sizing: border-box;
-  background: var(--md-code-bg);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  overflow: hidden;
-  margin: var(--md-code-block-spacing, 15px) 0;
-}
-
-:deep(.md-preview-fence pre) {
-  margin: 0;
-  padding: 10px 30px 6px 0;
-  background: transparent;
-  border: none;
-  overflow-x: auto;
-  font-family: var(--font-mono);
-  font-size: var(--md-code-font-size);
-  line-height: var(--md-code-line-height);
-  color: var(--text);
-}
-
-:deep(.md-preview-fence pre code) {
-  padding: 0;
-  background: transparent;
-  color: inherit;
-  font-family: inherit;
-  font-size: inherit;
-  display: block;
-  width: max-content;
-  min-width: 100%;
-}
-:deep(.md-code-line) { display: grid; grid-template-columns: max-content minmax(0, 1fr); line-height: inherit; }
-:deep(.md-code-number) { position: sticky; left: 0; padding: 0 5px 0 4px; color: var(--muted); background: var(--md-code-bg); font-size: 12px; line-height: inherit; white-space: pre; user-select: none; }
-:deep(.md-code-text) { padding: 0 14px; white-space: pre; min-width: 0; }
-:deep(.md-code-text:empty)::before { content: '\200b'; }
-.split-preview-pane[data-code-numbers="false"] :deep(.md-code-number) { display: none; }
-.split-preview-pane[data-code-numbers="false"] :deep(.md-code-line) { grid-template-columns: minmax(0, 1fr); }
-.split-preview-pane[data-code-wrap="true"] :deep(.md-preview-fence pre code) { width: 100%; min-width: 0; }
-.split-preview-pane[data-code-wrap="true"] :deep(.md-code-text) { white-space: pre-wrap; overflow-wrap: anywhere; }
-:deep(.md-diagram) { padding: 16px; overflow: auto; max-height: 600px; text-align: center; }
-:deep(.md-diagram svg) { max-width: 100%; height: auto; }
-
-/* 复制按钮：右上角 14px 图标，hover 时显现 */
-:deep(.md-preview-fence .md-code-copy) {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  z-index: 5;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease, background 0.15s ease;
-  background: var(--bar);
-  border: 1px solid var(--line);
-  color: var(--muted);
-  width: 24px;
-  height: 24px;
-  padding: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-:deep(.md-preview-fence:hover .md-code-copy) {
-  opacity: 0.95;
-  pointer-events: auto;
-}
-:deep(.md-preview-fence:focus-within .md-code-copy) { opacity: 1; pointer-events: auto; }
-
-:deep(.md-preview-fence .md-code-copy:hover) {
-  opacity: 1;
-  color: var(--bright);
-  background: var(--hover);
-}
+.split-preview-pane { flex: 1; min-width: 0; height: 100%; overflow: auto; overflow-anchor: none; background: var(--editor); }
+.preview-progress, .preview-local-budget { padding: 16px; color: var(--muted); }
+.preview-local-budget button { color: var(--accent); background: transparent; border: 0; cursor: pointer; }
 </style>

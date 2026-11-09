@@ -1,11 +1,10 @@
 <template>
   <div class="pane-body" :class="{ 'class-pane': doc?.kind === 'javaClass' }">
-    <div v-if="currentMode === 'live' && tooLarge" class="markdown-budget" role="status">文档超过 Live 安全预算，当前使用源码编辑。</div>
     <ImageViewer v-if="doc?.kind === 'image'" :key="`${doc.id}:${doc.fileToken}:${doc.lastDiskVersion}:${pane}`" :doc="doc" :state="manager.mediaViewState(doc.id, pane)" @metadata="(media, version) => doc && manager.updateMediaMetadata(doc.id, media, version)" />
     <PdfViewer v-if="doc?.kind === 'pdf'" :key="`${doc.id}:${doc.fileToken}:${doc.lastDiskVersion}:${pane}`" :doc="doc" :pane="pane" :state="manager.mediaViewState(doc.id, pane)" @metadata="(media, version) => doc && manager.updateMediaMetadata(doc.id, media, version)" />
     <div v-show="doc && !isMedia(doc)" ref="host" class="editor-host" :style="hostStyle" @scroll.capture="onEditorScroll"></div>
-    <div v-if="currentMode === 'split' && !tooLarge" class="split-resizer" role="separator" aria-label="调整 Markdown 双栏比例" aria-orientation="vertical" :aria-valuenow="Math.round(splitRatio * 100)" :aria-valuemin="20" :aria-valuemax="80" tabindex="0" title="拖动调整双栏比例" @keydown.left.prevent="splitRatio = Math.max(.2, splitRatio - .05)" @keydown.right.prevent="splitRatio = Math.min(.8, splitRatio + .05)" @mousedown.prevent="startSplitResize"></div>
-    <SplitPreview v-if="currentMode === 'split'" ref="preview" :style="previewStyle" :typography="manager.getMarkdownTypography()" :image-border="manager.getMarkdownTypography().imageBorder" :content="text" :too-large="tooLarge" :resources="resources" :resource-key="`${doc?.fileToken||''}|${doc?.path||''}`" @scroll-line="onPreviewScroll" @edit-image="editImage" />
+    <div v-if="currentMode === 'split'" class="split-resizer" role="separator" aria-label="调整 Markdown 双栏比例" aria-orientation="vertical" :aria-valuenow="Math.round(splitRatio * 100)" :aria-valuemin="20" :aria-valuemax="80" tabindex="0" title="拖动调整双栏比例" @keydown.left.prevent="splitRatio = Math.max(.2, splitRatio - .05)" @keydown.right.prevent="splitRatio = Math.min(.8, splitRatio + .05)" @mousedown.prevent="startSplitResize"></div>
+    <SplitPreview v-if="currentMode === 'split'" ref="preview" :style="previewStyle" :typography="manager.getMarkdownTypography()" :image-border="manager.getMarkdownTypography().imageBorder" :content="text" :resources="resources" :resource-key="`${doc?.fileToken||''}|${doc?.path||''}`" @scroll-line="onPreviewScroll" @edit-image="editImage" />
     <ClassHexPanel v-if="doc?.kind === 'javaClass'" :key="doc.id" :doc="doc" :files="files" />
     <EmptyEditorPane v-if="!doc" @new-doc="newDocument" @quick-open="quickOpen" />
   </div>
@@ -72,7 +71,6 @@ function startSplitResize(_e: MouseEvent) {
   stopSplitResize = onMouseUp
 }
 
-const tooLarge = computed(() => !!props.doc && (props.manager.getState(props.doc.id)?.doc.length || 0) > 1024 * 1024)
 const resources = computed(() => props.doc ? props.manager.getState(props.doc.id)?.facet(markdownResources) : undefined)
 
 function editImage(from: number, snapshot: string) {
@@ -85,7 +83,7 @@ function editImage(from: number, snapshot: string) {
 
 const text = computed(() => {
   const doc = (currentMode.value === 'split' && props.doc) ? props.manager.getState(props.doc.id)?.doc : undefined
-  if (!doc || tooLarge.value) { previousText = undefined; serialized = ''; return '' }
+  if (!doc) { previousText = undefined; serialized = ''; return '' }
   if (doc !== previousText) { previousText = doc; serialized = doc.toString() }
   return serialized
 })
