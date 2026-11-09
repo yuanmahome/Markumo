@@ -1,5 +1,4 @@
-import { StateField } from '@codemirror/state'
-import { Decoration, EditorView, type DecorationSet } from '@codemirror/view'
+import { Decoration, EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view'
 import MarkdownIt from 'markdown-it'
 import { installMarkdownMath, mathClosingDelimiter } from './mathSemantics'
 
@@ -8,13 +7,16 @@ installMarkdownMath(parser)
 const mark = Decoration.mark({ class: 'tok-math', attributes: { 'data-math-source': 'true' } })
 
 /** Use the renderer's token boundaries, including code/container exclusions. */
-export const mathHighlight = StateField.define<DecorationSet>({
-  create: state => decorations(state.doc.toString()),
-  update: (value, tr) => tr.docChanged ? decorations(tr.newDoc.toString()) : value,
-  provide: field => [EditorView.decorations.from(field), EditorView.baseTheme({ '.tok-math': { color: 'var(--bright)', fontFamily: 'var(--font-mono)' } })],
-})
+export const mathHighlight = [ViewPlugin.fromClass(class {
+  decorations
+  constructor(view: EditorView) { this.decorations = decorations(view.state.doc.toString()) }
+  update(update: ViewUpdate) {
+    if (update.docChanged) this.decorations = decorations(update.state.doc.toString())
+  }
+}, { decorations: plugin => plugin.decorations }), EditorView.baseTheme({ '.tok-math': { color: 'var(--bright)', fontFamily: 'var(--font-mono)' } })]
 
 function decorations(source: string) {
+  if (!source.includes('$') && !source.includes(String.fromCharCode(92))) return Decoration.none
   const starts = [0]
   for (let at = 0; at < source.length; at++) if (source[at] === '\n') starts.push(at + 1)
   const ranges: { from: number; to: number }[] = []

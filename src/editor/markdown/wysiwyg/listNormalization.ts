@@ -1,3 +1,4 @@
+import { visitChangedBlocks } from './changedBlocks'
 import { Plugin } from 'prosemirror-state'
 import { canJoin } from 'prosemirror-transform'
 
@@ -10,7 +11,7 @@ export function listNormalizationPlugin() {
       if (!transactions.some(tr => tr.docChanged) ||
         transactions.some(tr => tr.getMeta('trailingParagraphSync'))) return null
       const boundaries: number[] = []
-      state.doc.descendants((node, pos, parent, index) => {
+      visitChangedBlocks(_before.doc, state.doc, (node, pos, parent, index) => {
         if (!parent || !index || !['bullet_list', 'ordered_list'].includes(node.type.name)) return
         const previous = parent.child(index - 1)
         if (previous.type === node.type && previous.attrs.bullet === node.attrs.bullet) boundaries.push(pos)
@@ -19,7 +20,7 @@ export function listNormalizationPlugin() {
       // An empty sublist cannot interrupt a paragraph: '-' becomes a Setext
       // underline, other markers become plain text. A loose parent supplies
       // the required blank boundary, preserving the real nested structure.
-      state.doc.descendants((node, pos) => {
+      visitChangedBlocks(_before.doc, state.doc, (node, pos) => {
         if (!['bullet_list', 'ordered_list'].includes(node.type.name) || !node.attrs.tight) return
         let needsBoundary = false
         node.forEach(item => item.forEach((child, _offset, index) => {

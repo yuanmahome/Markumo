@@ -15,69 +15,59 @@ interface Toolbar {
  * belong to the controller; this module has no editor state or source content. */
 export class LiveTableToolbar {
   private readonly primary: Toolbar
-  private readonly toolbars = new Map<number, Toolbar>()
+  private position: number | undefined
+  private surface: HTMLElement | null = null
+  private readonly observer = new ResizeObserver(() => this.reposition())
   private disposed = false
   private readonly outside = (event: MouseEvent) => {
     const target = event.target as Node
     if (!this.primary.element.contains(target)) this.primary.closeMenu()
-    for (const toolbar of this.toolbars.values()) {
-      if (toolbar !== this.primary && !toolbar.element.contains(target)) toolbar.closeMenu()
-    }
   }
 
   constructor(private readonly host: HTMLElement, private readonly actions: ToolbarActions) {
     this.primary = this.create()
+    this.primary.element.hidden = true
+    host.append(this.primary.element)
+    this.observer.observe(host)
     // One listener per Live view, rather than one closure for every decoration
     // position ever visited while text is inserted before a table.
     host.addEventListener('mousedown', this.outside)
   }
 
-  forTable(position: number): HTMLElement {
-    if (this.disposed) return this.primary.element
-    let toolbar = this.toolbars.get(position)
-    if (!toolbar) {
-      toolbar = this.toolbars.size === 0 ? this.primary : this.create(position)
-      this.toolbars.set(position, toolbar)
-    }
-    toolbar.element.hidden = false
-    return toolbar.element
-  }
-
-  retain(positions: ReadonlySet<number>) {
-    for (const [position, toolbar] of this.toolbars) {
-      if (!positions.has(position)) {
-        if (toolbar !== this.primary) this.remove(toolbar)
-        this.toolbars.delete(position)
-      }
-    }
-  }
-
-  update(activePosition: number | null, alignment: string | null) {
+  /** One toolbar for the active table, independent of document/table count. */
+  update(activePosition: number | null, alignment: string | null, surface?: HTMLElement | null) {
     if (this.disposed) return
-    for (const [position, { element }] of this.toolbars) {
-      const active = activePosition !== null && activePosition === position
-      element.classList.toggle('is-active', active)
-      if (active) {
-        const surface = element.nextElementSibling as HTMLElement | null
-        if (surface?.tagName === 'TABLE' || surface?.classList.contains('tableWrapper')) {
-          // TableView owns a local scrolling wrapper. Position against its visible
-          // bounds, in the toolbar's containing block, rather than the wide table.
-          const parent = element.offsetParent as HTMLElement | null
-          if (!parent) continue
-          const bounds = surface.getBoundingClientRect()
-          const origin = parent.getBoundingClientRect()
-          element.style.top = `${bounds.top - origin.top + parent.scrollTop - 28}px`
-          element.style.left = `${bounds.left - origin.left + parent.scrollLeft}px`
-          element.style.width = `${surface.clientWidth}px`
-        }
+    const element = this.primary.element
+    if (this.position !== (activePosition ?? undefined)) this.primary.closeMenu()
+    this.position = activePosition ?? undefined
+    element.hidden = activePosition === null
+    element.classList.toggle('is-active', activePosition !== null)
+    const nextSurface = activePosition === null ? null : surface ?? null
+    if (this.surface !== nextSurface) {
+      if (this.surface) this.observer.unobserve(this.surface)
+      this.surface = nextSurface
+      if (nextSurface) {
+        this.observer.observe(nextSurface)
+        const document = nextSurface.closest('.md-document')
+        if (document) this.observer.observe(document)
       }
     }
-    this.host.querySelectorAll<HTMLButtonElement>('.md-table-tools [data-align]').forEach(button => {
+    this.reposition()
+    element.querySelectorAll<HTMLButtonElement>('[data-align]').forEach(button => {
       button.setAttribute('aria-pressed', String(activePosition !== null && button.dataset.align === alignment))
     })
   }
 
-  private create(position?: number): Toolbar {
+  private reposition() {
+    if (this.disposed || !this.surface?.isConnected || this.position === undefined) return
+    const bounds = this.surface.getBoundingClientRect(), origin = this.host.getBoundingClientRect()
+    const element = this.primary.element
+    element.style.top = `${bounds.top - origin.top + this.host.scrollTop - 28}px`
+    element.style.left = `${bounds.left - origin.left + this.host.scrollLeft}px`
+    element.style.width = `${this.surface.clientWidth}px`
+  }
+
+  private create(): Toolbar {
     const element = document.createElement('div')
     element.className = 'md-table-tools md-table-floating-bar'
     element.setAttribute('role', 'toolbar')
@@ -106,7 +96,7 @@ export class LiveTableToolbar {
       menu.hidden = !menu.hidden
       element.querySelectorAll('[aria-expanded]').forEach(button => button.setAttribute('aria-expanded', String(!menu.hidden)))
     }
-    const selectTable = () => this.actions.selectTable(position, element)
+    const selectTable = () => this.actions.selectTable(this.position, element)
     const grid = iconButton('表格行列操作', 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z', () => {
       selectTable(); toggleMenu()
     })
@@ -161,8 +151,9 @@ export class LiveTableToolbar {
   destroy() {
     if (this.disposed) return
     this.disposed = true
+    this.observer.disconnect()
+    this.surface = null
     this.host.removeEventListener('mousedown', this.outside)
-    for (const toolbar of new Set([this.primary, ...this.toolbars.values()])) this.remove(toolbar)
-    this.toolbars.clear()
+    this.remove(this.primary)
   }
 }

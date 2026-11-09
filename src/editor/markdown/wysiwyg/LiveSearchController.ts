@@ -18,6 +18,7 @@ export class LiveSearchController {
   private wordCheckbox: HTMLInputElement
   private regexCheckbox: HTMLInputElement
   private bar: ReturnType<typeof createSearchBar>
+  private codeQueryWasActive = false
   private composing = false
   private syncTimer: ReturnType<typeof setTimeout> | undefined
   private codeViewsGetter: () => Set<CodeBlockView>
@@ -150,9 +151,12 @@ export class LiveSearchController {
 
   private syncQueryToCodeBlocks() {
     const state = this.pluginState
+    const active = this.isOpen && !!state?.valid && !!state.options.search
+    if (!active && !this.codeQueryWasActive) return
+    this.codeQueryWasActive = active
     for (const codeView of this.codeViewsGetter()) {
-      const pos = codeView.getPos()
-      const ranges = !this.isOpen || !state?.valid || pos === undefined ? [] : state.matches.flatMap((match, index) =>
+      const pos = active ? codeView.getPos() : undefined
+      const ranges = !active || !state || pos === undefined ? [] : state.matches.flatMap((match, index) =>
         match.codeBlockPos === pos ? [{ from: match.from - pos - 1, to: match.to - pos - 1, current: index === state.currentIndex }] : [])
       codeView.setSearchHighlights(ranges)
     }

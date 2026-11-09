@@ -264,6 +264,9 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
   const env: Record<string, unknown> = { ...referenceEnvironment, references: { ...referenceEnvironment.references as object } }
   const parsed=tokenizer.parse(scan,env)
   const definitions = referenceDefinitions.get(env) || []
+  const tokenBlocks = new Map<string, typeof parsed>()
+  let queuedTokens: typeof parsed = []
+  const projectionParser = new MarkdownParser(s, { parse: () => queuedTokens } as unknown as ConstructorParameters<typeof MarkdownParser>[1], markdownParser.tokens)
   // Reuse immutable blocks from the current revision only. Tokenization still
   // establishes the new reference environment first; changed references force
   // normal parsing, even when the referring block's raw text is unchanged.
@@ -279,9 +282,13 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
   if(yaml)ranges.push({from:0,to:yaml[0].replace(/\n$/,'').length,raw:true,label:'YAML Front Matter'})
   let level=0
   let topList:{range:typeof ranges[number];itemEnd?:number}|undefined
-  for(const token of [...parsed, ...definitions]){
+  const allTokens = [...parsed, ...definitions]
+  let opening = 0, tokenFrom = 0, tokenTo = 0
+  for(let tokenIndex = 0; tokenIndex < allTokens.length; tokenIndex++){
+    const token = allTokens[tokenIndex]
     if(level===0 && token.map){
       const to=markdownBlockEnd(source,starts[token.map[0]],starts[token.map[1]] ?? source.length,token.type==='fence'?token.markup:undefined)
+      opening = tokenIndex; tokenFrom = starts[token.map[0]]; tokenTo = to
       const reference = token.type === 'reference_definition'
       const footnote = reference && String(token.meta?.label || '').startsWith('^')
       const range={from:starts[token.map[0]],to,raw:token.type==='html_block'||(reference && !footnote),
@@ -304,7 +311,10 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
       topList.itemEnd=markdownBlockEnd(source,from,starts[token.map[1]]??source.length)
     }
     level+=token.nesting
-    if(level===0)topList=undefined
+    if(level===0){
+      if (tokenTo > tokenFrom) tokenBlocks.set(`${tokenFrom}:${tokenTo}`, allTokens.slice(opening, tokenIndex + 1))
+      topList=undefined
+    }
   }
   ranges.sort((a,b)=>a.from-b.from)
   const blocks:SourceBlock[]=[]; let cursor=0,hasContent=false
@@ -356,7 +366,9 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
         const complex=raw || /(^|\n):::+/i.test(original)
         if(complex) node=s.nodes.protected_source.create({source:original,label,kind})
         else {
-          node=markdownParser.parse(original,env).firstChild!
+          const existingTokens = tokenBlocks.get(`${from}:${to}`)
+          if (existingTokens) { queuedTokens = existingTokens; node = projectionParser.parse('', env).firstChild! }
+          else node=markdownParser.parse(original,env).firstChild!
           if(!node)node=s.nodes.protected_source.create({source:original,label,kind})
           else if (node.type === s.nodes.protected_source && mathBlockParts(original)) node = node.type.create({...node.attrs,source:original})
         }

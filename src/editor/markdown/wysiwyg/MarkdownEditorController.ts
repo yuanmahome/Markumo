@@ -1,3 +1,4 @@
+import { visitChangedBlocks } from './changedBlocks'
 import { referenceNavigation, isReferenceDefinition } from './referenceNavigation'
 import { referenceDefinitionPanel } from './ReferenceDefinitionPanel'
 import { EditorState, Plugin, TextSelection, Selection, NodeSelection, AllSelection, type Transaction, type Command } from 'prosemirror-state'
@@ -273,6 +274,7 @@ export class MarkdownEditorController implements LiveEditor {
       ],
     })
 
+    const blankDecorations = new WeakMap<Node, DecorationSet>()
     // Create ProseMirror EditorView
     this.view = new EditorView(mount, {
       state: EditorState.create({
@@ -284,7 +286,9 @@ export class MarkdownEditorController implements LiveEditor {
           listNormalizationPlugin(),
           new Plugin({
             appendTransaction: (_transactions, _before, state) => {
+              if (!_transactions.some(transaction => transaction.docChanged) && this.bridge.blocks.length) return null
               const seen = new Set<string>()
+              const unchanged = new Set(_before.doc.content.content)
               const tr = state.tr
               state.doc.forEach((node, pos) => {
                 const id = node.attrs.sourceId as string
@@ -293,6 +297,7 @@ export class MarkdownEditorController implements LiveEditor {
                 } else {
                   seen.add(id)
                 }
+                if (unchanged.has(node)) return
                 node.descendants((child, relPos) => {
                   if (child.attrs.sourceId) {
                     tr.setNodeMarkup(pos + 1 + relPos, undefined, { ...child.attrs, sourceId: null })
@@ -309,30 +314,20 @@ export class MarkdownEditorController implements LiveEditor {
           new Plugin({ props: { decorations: state => {
             const decorations = this.inlineSource?.decorations(state.doc).find() || []
             const { $from } = state.selection
-            const tablePositions = new Set<number>()
-            state.doc.descendants((node, pos) => {
-              if (node.type === s.nodes.table) {
-                tablePositions.add(pos)
-                decorations.push(Decoration.widget(pos, this.tableToolbar.forTable(pos), {
-                  key: `table-tools-${pos}`,
-                  side: -1,
-                  stopEvent: () => true,
-                  ignoreSelection: true
-                }))
-                return false
-              }
-            })
-            this.tableToolbar.retain(tablePositions)
             if ($from.parent.type === s.nodes.heading) {
               const pos = $from.before()
               decorations.push(Decoration.node(pos, pos + $from.parent.nodeSize, { class: 'md-heading-focused', 'data-heading-level': `h${$from.parent.attrs.level}` }))
             }
-            state.doc.forEach((node, pos) => {
-              if (isBlankParagraphNode(node)) {
-                decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: 'md-blank-line' }))
-              }
-            })
-            return DecorationSet.create(state.doc, decorations)
+            let blanks = blankDecorations.get(state.doc)
+            if (!blanks) {
+              const entries: Decoration[] = []
+              state.doc.forEach((node, pos) => {
+                if (isBlankParagraphNode(node)) entries.push(Decoration.node(pos, pos + node.nodeSize, { class: 'md-blank-line' }))
+              })
+              blanks = DecorationSet.create(state.doc, entries)
+              blankDecorations.set(state.doc, blanks)
+            }
+            return blanks.add(state.doc, decorations)
           } } }),
           new Plugin({
             props: {
@@ -572,7 +567,7 @@ export class MarkdownEditorController implements LiveEditor {
             appendTransaction: (transactions, _old, state) => {
               if (!transactions.some(tr => tr.docChanged)) return null
               const tr = state.tr
-              state.doc.descendants((table, pos) => {
+              visitChangedBlocks(_old.doc, state.doc, (table, pos) => {
                 if (table.type.name !== 'table') return
                 const header = table.firstChild
                 if (!header) return false
@@ -1057,7 +1052,7 @@ export class MarkdownEditorController implements LiveEditor {
         this.inlineLinkDraft = nextInlineDraft
         this.view.updateState(applied.state)
         this.releaseIdleCodeEditors()
-        this.updateTools()
+        this.updateTools(false)
         const sel = this.selection
         if (!tr.getMeta('historySelection')) this.options.selected(sel.anchor, sel.head)
         this.scheduleInlineEntry()
@@ -1625,7 +1620,7 @@ export class MarkdownEditorController implements LiveEditor {
     }
   }
 
-  private updateTools() {
+  private updateTools(documentChanged = true) {
     this.imagePreview?.refresh()
     for(const image of this.liveImages)image.refreshLayout()
     if (this.mediaHoverTrigger) {
@@ -1637,7 +1632,7 @@ export class MarkdownEditorController implements LiveEditor {
         this.mediaHoverTrigger.syncFocusTarget(selectedDom instanceof Element ? selectedDom : null)
       } else if (
         document.activeElement !== this.mediaHoverTrigger.button &&
-        !this.dom.querySelector('.md-code-block:focus-within, .md-html-block-view:focus-within, .md-html-inline-view:focus-within')
+        !(document.activeElement instanceof Element && this.dom.contains(document.activeElement) && document.activeElement.closest('.md-code-block, .md-html-block-view, .md-html-inline-view'))
       ) {
         this.mediaHoverTrigger.syncFocusTarget(null)
       } else {
@@ -1667,8 +1662,8 @@ export class MarkdownEditorController implements LiveEditor {
         }
       }
     }
-    this.tableToolbar.update(inTable ? activeTablePos : null, alignment)
-    for (const refresh of this.extensionViews) refresh()
+    this.tableToolbar.update(inTable ? activeTablePos : null, alignment, activeTablePos === null ? null : this.view.nodeDOM(activeTablePos) as HTMLElement | null)
+    if (documentChanged) for (const refresh of this.extensionViews) refresh()
   }
 
   private closeInline(focus = false, position?: number) {

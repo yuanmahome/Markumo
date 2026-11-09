@@ -276,20 +276,42 @@ try {
       el.querySelector('.md-code-text span[class]')
     ).length
 
+    // Partitions from the existing large-file preview are recycled. Verify that
+    // every fence is reachable, rather than requiring all 40 in the DOM at once.
+    const root = document.querySelector('.split-preview-pane')
+    const visited = new Set()
+    let maximumResident = totalFences
+    const collect = () => {
+      const fences = [...root.querySelectorAll('.md-preview-fence')]
+      maximumResident = Math.max(maximumResident, fences.length)
+      for (const fence of fences) {
+        const match = fence.textContent.match(/function\s+f(\d+)/)
+        if (match) visited.add(Number(match[1]))
+      }
+    }
+    collect()
+    for (let step = 0; step < 150 && visited.size < 40; step++) {
+      root.scrollTop += Math.max(100, root.clientHeight * .75)
+      await new Promise(resolve => setTimeout(resolve, 40))
+      collect()
+    }
+
     // Switch back to Live -> SplitPreview must be unmounted (not v-show hidden)
     window.f.mode('live')
     while (!window.f.ready()) await new Promise(r => setTimeout(r, 10))
     const remainingSplitDom = document.querySelectorAll('.split-preview-pane').length
-    return { totalFences, highlightedFences, remainingSplitDom }
+    return { totalFences, highlightedFences, maximumResident, visited: [...visited].sort((a,b) => a-b), remainingSplitDom }
   })
 
-  assert.equal(splitCheck.totalFences, 40)
+  assert(splitCheck.totalFences > 0 && splitCheck.totalFences < 40, 'Initial split DOM is partitioned')
+  assert(splitCheck.maximumResident < 40, 'Scrolling must keep fence DOM bounded')
+  assert.deepEqual(splitCheck.visited, Array.from({length: 40}, (_,i) => i), 'All source fences remain reachable')
   assert(
     splitCheck.highlightedFences > 0 && splitCheck.highlightedFences < 20,
     `Split preview should highlight only near-viewport fences (got ${splitCheck.highlightedFences}/40)`
   )
   assert.equal(splitCheck.remainingSplitDom, 0, 'Switching back to Live must destroy SplitPreview DOM')
-  console.log(`PASS Split preview viewport-bounded highlighting (${splitCheck.highlightedFences}/40) & clean unmount`)
+  console.log(`PASS Split preview viewport-bounded highlighting (${splitCheck.highlightedFences}/${splitCheck.totalFences}), 40 reachable fences & clean unmount`)
 
   assert.deepEqual(errors, [])
   console.log('ALL PHASE 2 VERIFICATION CHECKS PASSED!')

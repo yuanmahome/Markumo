@@ -12,6 +12,23 @@ function containsTable(node:Node) {
   node.descendants(child => { if (child.type.name === 'table') found = true })
   return found
 }
+const positionIndexes = new WeakMap<readonly SourceBlock[], Float64Array>()
+function positions(blocks: readonly SourceBlock[]) {
+  let index = positionIndexes.get(blocks)
+  if (!index) {
+    index = new Float64Array(blocks.length + 1)
+    for (let i = 0; i < blocks.length; i++) index[i + 1] = index[i] + blocks[i].node.nodeSize
+    positionIndexes.set(blocks, index)
+  }
+  return index
+}
+function blockAt(blocks: readonly SourceBlock[], pos: number) {
+  const index = positions(blocks)
+  let a = 0, b = blocks.length
+  while (a < b) { const mid = (a + b) >>> 1; if (index[mid + 1] <= pos) a = mid + 1; else b = mid }
+  return a
+}
+interface PreparedSource { source: string; patch: SourcePatch | null; definitionsChanged: boolean; bridge: MarkdownSourceBridge; commit(): void }
 export class MarkdownSourceBridge {
   source:string; doc:Node; blocks:SourceBlock[]; tail:string; environment:Record<string,unknown>
   constructor(source:string,previous?:{blocks:readonly SourceBlock[];environment:Record<string,unknown>}){this.source=source;const parsed=parseMarkdown(source,{},previous);this.doc=parsed.doc;this.blocks=parsed.blocks;this.tail=parsed.tail;this.environment=parsed.environment}
@@ -37,7 +54,41 @@ export class MarkdownSourceBridge {
   }
   /** Prepare without mutating; commit only after the canonical document accepts
    * the patch against the exact expected source revision. */
-  prepare(doc:Node, inlinePatch?:SourcePatch){
+  prepare(doc:Node, inlinePatch?:SourcePatch): PreparedSource {
+    const canonical = withoutTrailingParagraph(doc)
+    const start = this.doc.content.findDiffStart(canonical.content)
+    const end = this.doc.content.findDiffEnd(canonical.content)
+    if (start !== null && end && canonical.childCount === this.blocks.length) {
+      const index = blockAt(this.blocks, start), old = this.blocks[index]
+      const node = index < canonical.childCount ? canonical.child(index) : undefined
+      const offset = positions(this.blocks)[index]
+      if (old && node && !old.blank && node.type === old.node.type && node.attrs.sourceId === old.id &&
+          end.a <= offset + old.node.nodeSize && end.b <= offset + node.nodeSize) {
+        // Validate only the changed structure using the established lossless
+        // serializer. Every source span outside it stays byte-for-byte intact.
+        const local = Object.assign(Object.create(MarkdownSourceBridge.prototype) as MarkdownSourceBridge, {
+          source: old.raw, doc: this.doc.type.create(null, old.node),
+          blocks: [{ ...old, from: 0, to: old.raw.length, prefix: '' }], tail: '', environment: this.environment,
+        })
+        const patch = inlinePatch ? { ...inlinePatch, from: inlinePatch.from - old.from, to: inlinePatch.to - old.from } : undefined
+        const prepared = local.prepareFull(this.doc.type.create(null, node), patch)
+        if (!prepared.definitionsChanged && prepared.bridge.blocks.length === 1 && !prepared.bridge.blocks[0].blank) {
+          const delta = prepared.source.length - old.raw.length
+          const source = this.source.slice(0, old.from) + prepared.source + this.source.slice(old.to)
+          const blocks = this.blocks.map((block, at) => at < index ? block : at === index
+            ? { ...old, raw: prepared.source, to: old.to + delta, node }
+            : { ...block, from: block.from + delta, to: block.to + delta })
+          const bridge = Object.assign(Object.create(MarkdownSourceBridge.prototype) as MarkdownSourceBridge, {
+            source, doc: canonical, blocks, tail: this.tail, environment: this.environment,
+          })
+          const globalPatch = prepared.patch ? { ...prepared.patch, from: prepared.patch.from + old.from, to: prepared.patch.to + old.from } : null
+          return { source, patch: globalPatch, definitionsChanged: false, bridge, commit: () => { Object.assign(this, bridge) } }
+        }
+      }
+    }
+    return this.prepareFull(doc, inlinePatch)
+  }
+  private prepareFull(doc:Node, inlinePatch?:SourcePatch): PreparedSource {
     const byId=new Map(this.blocks.map(b=>[b.id,b])),used=new Set<string>(),blocks:SourceBlock[]=[]
     // Remove only the source lines represented by editable gap paragraphs.
     // The remaining prefix is the original Markdown block separator, including
@@ -229,21 +280,26 @@ export class MarkdownSourceBridge {
     return {source,patch,definitionsChanged,bridge,commit:()=>{Object.assign(this,bridge)}}
   }
   sourcePosition(pos:number){
-    let offset=0
-    for(const b of this.blocks){if(pos<offset+b.node.nodeSize){
+    const index = blockAt(this.blocks, pos), b = this.blocks[index]
+    if (b) {
+      const offset = positions(this.blocks)[index]
       const local=Math.max(0,pos-offset-1)
       const mapped=sourceTextPosition(b.node,b.raw,local)
       return Math.min(b.to,b.from+mapped)
-    }offset+=b.node.nodeSize}
+    }
     return this.source.length
   }
   documentPosition(sourcePos:number){
-    let offset=0
-    for(const b of this.blocks){if(sourcePos<b.to || sourcePos===b.to&&!b.blank){
+    let a = 0, end = this.blocks.length
+    while (a < end) { const mid = (a + end) >>> 1; if (this.blocks[mid].to < sourcePos) a = mid + 1; else end = mid }
+    while (a < this.blocks.length && this.blocks[a].to === sourcePos && this.blocks[a].blank) a++
+    const b = this.blocks[a]
+    if (b) {
+      const offset = positions(this.blocks)[a]
       let local=Math.max(0,sourcePos-b.from)
       local=sourceTextPosition(b.node,b.raw,local,true)
       return Math.min(offset+b.node.nodeSize-1,offset+1+local)
-    }offset+=b.node.nodeSize}
+    }
     return Math.max(0,this.doc.content.size-1)
   }
 }

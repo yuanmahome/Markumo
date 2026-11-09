@@ -1,0 +1,580 @@
+{
+  "generatedAt": "2026-11-09T06:29:43.675Z",
+  "branch": "main",
+  "head": "9c88461b3e4bf8026f281235fb5391f867ef7348",
+  "sourceMatchesFinalBuild": true,
+  "sourceInputsSha256": "1321424c0a0c8458b36adae2da9a6e6b8997ad21a7da42a779f2f410c0b4234c",
+  "inputs": {
+    "baselineFile": "test-results/live-large/native-live2-before-1794201195257.json",
+    "matrixFile": "test-results/live-large/native-live2-after-1794202084278.json",
+    "finalFile": "test-results/live-large/native-live2-final-1794204329485.json"
+  },
+  "hardware": {
+    "cpu": "12th Gen Intel(R) Core(TM) i5-12600KF",
+    "memory": 68520194048,
+    "os": "Windows 11 Home China"
+  },
+  "runtime": "157.0.4341.42",
+  "baseline": {
+    "950k": {
+      "samples": 3,
+      "passed": 0,
+      "firstReadableMs": 6711.163200000003,
+      "firstInputMs": null,
+      "firstInputFromOpenMs": null,
+      "inputCount": 0,
+      "inputP50Ms": null,
+      "inputP95Ms": null,
+      "sourceModeMs": null,
+      "splitModeMs": null,
+      "splitIndexMs": null,
+      "liveModeMs": null,
+      "loadedPrivateMiB": 1484.51171875,
+      "loadedJSMiB": 179.66815185546875,
+      "loadedEmbedderMiB": 850.9622955322266,
+      "loadedDOM": 530371,
+      "closedPrivateMiB": null,
+      "closedJSMiB": null,
+      "closeCurve": [
+        {
+          "afterMs": 10000,
+          "privateMiB": null,
+          "jsMiB": null
+        },
+        {
+          "afterMs": 30000,
+          "privateMiB": null,
+          "jsMiB": null
+        }
+      ],
+      "diagnosticGCPrivateMiB": null,
+      "diagnosticGCJSMiB": null,
+      "failures": [
+        {
+          "round": 1,
+          "phase": "firstInput",
+          "failure": "Error: firstInput timeout after 30000ms"
+        },
+        {
+          "round": 2,
+          "phase": "firstInput",
+          "failure": "Error: firstInput timeout after 30000ms"
+        },
+        {
+          "round": 3,
+          "phase": "firstInput",
+          "failure": "Error: firstInput timeout after 30000ms"
+        }
+      ]
+    }
+  },
+  "matrix": {
+    "100kb": {
+      "samples": 3,
+      "passed": 3,
+      "firstReadableMs": 401.23790000000736,
+      "firstInputMs": 99.35690000001341,
+      "firstInputFromOpenMs": 540.5138000000152,
+      "inputCount": 60,
+      "inputP50Ms": 31.35930000001099,
+      "inputP95Ms": 42.36089999997057,
+      "sourceModeMs": 70.11110000000008,
+      "splitModeMs": 49.60750000000007,
+      "splitIndexMs": 0.834900000016205,
+      "liveModeMs": 214.37539999990258,
+      "loadedPrivateMiB": 349.7578125,
+      "loadedJSMiB": 24.96877670288086,
+      "loadedEmbedderMiB": 47.92054748535156,
+      "loadedDOM": 28657,
+      "closedPrivateMiB": 579.8515625,
+      "closedJSMiB": 25.848224639892578,
+      "closeCurve": [
+        {
+          "afterMs": 10000,
+          "privateMiB": null,
+          "jsMiB": null
+        },
+        {
+          "afterMs": 30000,
+          "privateMiB": null,
+          "jsMiB": null
+        }
+      ],
+      "diagnosticGCPrivateMiB": null,
+      "diagnosticGCJSMiB": null,
+      "failures": []
+    },
+    "500kb": {
+      "samples": 3,
+      "passed": 3,
+      "firstReadableMs": 1371.0507000000216,
+      "firstInputMs": 413.6818000000003,
+      "firstInputFromOpenMs": 1866.7942999999996,
+      "inputCount": 60,
+      "inputP50Ms": 95.500800000038,
+      "inputP95Ms": 123.10959999996703,
+      "sourceModeMs": 115.29339999996591,
+      "splitModeMs": 52.38139999995474,
+      "splitIndexMs": 14.754599999985658,
+      "liveModeMs": 976.3086999999941,
+      "loadedPrivateMiB": 692.3359375,
+      "loadedJSMiB": 75.45147323608398,
+      "loadedEmbedderMiB": 258.80651092529297,
+      "loadedDOM": 141807,
+      "closedPrivateMiB": 1289.5546875,
+      "closedJSMiB": 84.08995819091797,
+      "closeCurve": [
+        {
+          "afterMs": 10000,
+          "privateMiB": null,
+          "jsMiB": null
+        },
+        {
+          "afterMs": 30000,
+          "privateMiB": null,
+          "jsMiB": null
+        }
+      ],
+      "diagnosticGCPrivateMiB": null,
+      "diagnosticGCJSMiB": null,
+      "failures": []
+    },
+    "950k": {
+      "samples": 3,
+      "passed": 3,
+      "firstReadableMs": 3043.458500000008,
+      "firstInputMs": 1042.2449999999953,
+      "firstInputFromOpenMs": 4243.627700000012,
+      "inputCount": 60,
+      "inputP50Ms": 238.0351999999839,
+      "inputP95Ms": 344.1362000000081,
+      "sourceModeMs": 204.0930000001099,
+      "splitModeMs": 56.69959999999992,
+      "splitIndexMs": 117.05509999999776,
+      "liveModeMs": 2745.7999999999956,
+      "loadedPrivateMiB": 1360.75,
+      "loadedJSMiB": 165.85315704345703,
+      "loadedEmbedderMiB": 576.640869140625,
+      "loadedDOM": 344557,
+      "closedPrivateMiB": 3287.12890625,
+      "closedJSMiB": 170.38744735717773,
+      "closeCurve": [
+        {
+          "afterMs": 10000,
+          "privateMiB": null,
+          "jsMiB": null
+        },
+        {
+          "afterMs": 30000,
+          "privateMiB": null,
+          "jsMiB": null
+        }
+      ],
+      "diagnosticGCPrivateMiB": null,
+      "diagnosticGCJSMiB": null,
+      "failures": []
+    },
+    "2048kb": {
+      "samples": 3,
+      "passed": 3,
+      "firstReadableMs": 4866.815399999963,
+      "firstInputMs": 1685.0168999999296,
+      "firstInputFromOpenMs": 6833.258900000015,
+      "inputCount": 60,
+      "inputP50Ms": 371.5720000000438,
+      "inputP95Ms": 600.7831000000006,
+      "sourceModeMs": 303.9968999999692,
+      "splitModeMs": 59.85719999996945,
+      "splitIndexMs": 195.98390000000654,
+      "liveModeMs": 4035.2271000000183,
+      "loadedPrivateMiB": 1951.3359375,
+      "loadedJSMiB": 273.95631408691406,
+      "loadedEmbedderMiB": 1067.1505279541016,
+      "loadedDOM": 579707,
+      "closedPrivateMiB": 3890.1015625,
+      "closedJSMiB": 586.4081726074219,
+      "closeCurve": [
+        {
+          "afterMs": 10000,
+          "privateMiB": null,
+          "jsMiB": null
+        },
+        {
+          "afterMs": 30000,
+          "privateMiB": null,
+          "jsMiB": null
+        }
+      ],
+      "diagnosticGCPrivateMiB": null,
+      "diagnosticGCJSMiB": null,
+      "failures": []
+    },
+    "5120kb": {
+      "samples": 3,
+      "passed": 3,
+      "firstReadableMs": 11506.270699999994,
+      "firstInputMs": 4524.130599999975,
+      "firstInputFromOpenMs": 17212.961099999957,
+      "inputCount": 60,
+      "inputP50Ms": 1099.4237999999896,
+      "inputP95Ms": 1480.945400000026,
+      "sourceModeMs": 773.2279999999737,
+      "splitModeMs": 85.22560000000522,
+      "splitIndexMs": 556.5179000000353,
+      "liveModeMs": 10852.403199999942,
+      "loadedPrivateMiB": 4618.5390625,
+      "loadedJSMiB": 569.8811721801758,
+      "loadedEmbedderMiB": 2564.8574142456055,
+      "loadedDOM": 1448706,
+      "closedPrivateMiB": 6414.26953125,
+      "closedJSMiB": 926.2214050292969,
+      "closeCurve": [
+        {
+          "afterMs": 10000,
+          "privateMiB": null,
+          "jsMiB": null
+        },
+        {
+          "afterMs": 30000,
+          "privateMiB": null,
+          "jsMiB": null
+        }
+      ],
+      "diagnosticGCPrivateMiB": null,
+      "diagnosticGCJSMiB": null,
+      "failures": []
+    },
+    "10240kb": {
+      "samples": 3,
+      "passed": 0,
+      "firstReadableMs": 23240.29649999994,
+      "firstInputMs": 8004.51370000001,
+      "firstInputFromOpenMs": 34208.540600000066,
+      "inputCount": 60,
+      "inputP50Ms": 2303.2195000000065,
+      "inputP95Ms": 4218.784100000048,
+      "sourceModeMs": null,
+      "splitModeMs": null,
+      "splitIndexMs": null,
+      "liveModeMs": null,
+      "loadedPrivateMiB": 8736.91796875,
+      "loadedJSMiB": 1166.4856452941895,
+      "loadedEmbedderMiB": 4843.392242431641,
+      "loadedDOM": 2897007,
+      "closedPrivateMiB": null,
+      "closedJSMiB": null,
+      "closeCurve": [
+        {
+          "afterMs": 10000,
+          "privateMiB": null,
+          "jsMiB": null
+        },
+        {
+          "afterMs": 30000,
+          "privateMiB": null,
+          "jsMiB": null
+        }
+      ],
+      "diagnosticGCPrivateMiB": null,
+      "diagnosticGCJSMiB": null,
+      "failures": [
+        {
+          "round": 1,
+          "phase": "saveOriginal",
+          "failure": "Error: Error: {\"code\":\"history_backup\",\"message\":\"保存前历史备份失败，原文件未覆盖：文档超过 8 MiB，未记录历史版本\"}\n    at <anonymous>:1:286\n    at async <anonymous>:1:85"
+        },
+        {
+          "round": 2,
+          "phase": "saveOriginal",
+          "failure": "Error: Error: {\"code\":\"history_backup\",\"message\":\"保存前历史备份失败，原文件未覆盖：文档超过 8 MiB，未记录历史版本\"}\n    at <anonymous>:1:286\n    at async <anonymous>:1:85"
+        },
+        {
+          "round": 3,
+          "phase": "saveOriginal",
+          "failure": "Error: Error: {\"code\":\"history_backup\",\"message\":\"保存前历史备份失败，原文件未覆盖：文档超过 8 MiB，未记录历史版本\"}\n    at <anonymous>:1:286\n    at async <anonymous>:1:85"
+        }
+      ]
+    },
+    "950k-crlf-bom": {
+      "samples": 3,
+      "passed": 0,
+      "firstReadableMs": 3163.1389999999665,
+      "firstInputMs": 1082.0570000000298,
+      "firstInputFromOpenMs": 4417.029500000062,
+      "inputCount": 60,
+      "inputP50Ms": 247.483899999992,
+      "inputP95Ms": 406.1958999999333,
+      "sourceModeMs": null,
+      "splitModeMs": null,
+      "splitIndexMs": null,
+      "liveModeMs": null,
+      "loadedPrivateMiB": 1363.3671875,
+      "loadedJSMiB": 165.93553161621094,
+      "loadedEmbedderMiB": 576.5270233154297,
+      "loadedDOM": 344557,
+      "closedPrivateMiB": null,
+      "closedJSMiB": null,
+      "closeCurve": [
+        {
+          "afterMs": 10000,
+          "privateMiB": null,
+          "jsMiB": null
+        },
+        {
+          "afterMs": 30000,
+          "privateMiB": null,
+          "jsMiB": null
+        }
+      ],
+      "diagnosticGCPrivateMiB": null,
+      "diagnosticGCJSMiB": null,
+      "failures": [
+        {
+          "round": 1,
+          "phase": "reopen",
+          "failure": "Error: Reopen mismatch"
+        },
+        {
+          "round": 2,
+          "phase": "reopen",
+          "failure": "Error: Reopen mismatch"
+        },
+        {
+          "round": 3,
+          "phase": "reopen",
+          "failure": "Error: Reopen mismatch"
+        }
+      ]
+    }
+  },
+  "final": {
+    "950k": {
+      "samples": 3,
+      "passed": 3,
+      "firstReadableMs": 3012.1803999999975,
+      "firstInputMs": 1018.8081000000002,
+      "firstInputFromOpenMs": 4134.4329,
+      "inputCount": 60,
+      "inputP50Ms": 233.70010000000184,
+      "inputP95Ms": 308.51480000000447,
+      "sourceModeMs": 208.74809999999707,
+      "splitModeMs": 54.498099999997066,
+      "splitIndexMs": 125.11030000000028,
+      "liveModeMs": 2727.2836000000098,
+      "loadedPrivateMiB": 1356.14453125,
+      "loadedJSMiB": 165.58946990966797,
+      "loadedEmbedderMiB": 569.6677703857422,
+      "loadedDOM": 344557,
+      "closedPrivateMiB": 3294.140625,
+      "closedJSMiB": 217.98292922973633,
+      "closeCurve": [
+        {
+          "afterMs": 10000,
+          "privateMiB": 325.9921875,
+          "jsMiB": 23.582813262939453
+        },
+        {
+          "afterMs": 30000,
+          "privateMiB": 326.015625,
+          "jsMiB": 23.58572006225586
+        }
+      ],
+      "diagnosticGCPrivateMiB": 313.52734375,
+      "diagnosticGCJSMiB": 13.871734619140625,
+      "failures": []
+    }
+  },
+  "failedSaveChecks": [
+    {
+      "round": 1,
+      "sha256": "27185188f11b642eb97da1facdb8b80f8e518c9bbfc9d3f86145a2fbe72bf29f",
+      "unchanged": true
+    },
+    {
+      "round": 2,
+      "sha256": "27185188f11b642eb97da1facdb8b80f8e518c9bbfc9d3f86145a2fbe72bf29f",
+      "unchanged": true
+    },
+    {
+      "round": 3,
+      "sha256": "27185188f11b642eb97da1facdb8b80f8e518c9bbfc9d3f86145a2fbe72bf29f",
+      "unchanged": true
+    }
+  ],
+  "artifacts": [
+    {
+      "file": "blank-rerun.log.gz",
+      "bytes": 1241,
+      "sha256": "4363ad5502f4dde1c0f6f9a9d0e3391ae5b753ae4e778524697ca1199773bc85"
+    },
+    {
+      "file": "final-last.log.gz",
+      "bytes": 4747,
+      "sha256": "7d778ba7bf26aa265bc093d419ad2c8e877d4dc719256c12fed835b1a827d88d"
+    },
+    {
+      "file": "final-remaining.log.gz",
+      "bytes": 14953,
+      "sha256": "47cb6ec6a6b8275c7139fde42f4d10c2d70d1f4505fd982f1d41fd053d161863"
+    },
+    {
+      "file": "final-smoke.log.gz",
+      "bytes": 18340,
+      "sha256": "338a9023b072295de0575b12a217044c0b78d08066517f72540ddf10942d6c2d"
+    },
+    {
+      "file": "final-typecheck.log.gz",
+      "bytes": 58,
+      "sha256": "61ed2bff1bfdd581eb3c2cfc1c20ae7255077e5fb986145aaa464125cef42da3"
+    },
+    {
+      "file": "input.cpuprofile.gz",
+      "bytes": 52659,
+      "sha256": "94df6f6374d7d889487f7da1547ad76b63af034357a514374f999d7d4bf09811"
+    },
+    {
+      "file": "native-input-1794205455750-1-950k.cpuprofile.gz",
+      "bytes": 104544,
+      "sha256": "91d26ac548e209671d8a8d5fd96eab3ea4b81d22aaab9233308c522079731612"
+    },
+    {
+      "file": "native-input-1794205511646-1-950k.cpuprofile.gz",
+      "bytes": 106212,
+      "sha256": "5994dd44e0aac2a56b1d0c78cdad13b8966c939cf9e33893ebecd0ae3093963f"
+    },
+    {
+      "file": "native-input-1794205589732-1-950k.cpuprofile.gz",
+      "bytes": 118485,
+      "sha256": "80735d9271af05cd95f427e050d77cfb77b751399fb1834d4283aa81e79bd6a3"
+    },
+    {
+      "file": "native-live2-after-1794201752938.json.gz",
+      "bytes": 24892,
+      "sha256": "a5356598c5da7e654fb5e50ae72bbf6a4aa48eda12c8785c0e1efaaf782a6f54"
+    },
+    {
+      "file": "native-live2-after-1794202084278.json.gz",
+      "bytes": 312984,
+      "sha256": "3b7da2db1a0f41cac697ac3bc41fc21762bf10b70aac5ca1b089fb1864a191d9"
+    },
+    {
+      "file": "native-live2-after-1794203375354.json.gz",
+      "bytes": 58289,
+      "sha256": "9768a8cce69a93ba813dc78320f820f1c6c3e45b0ca616b7537513c9e6497bed"
+    },
+    {
+      "file": "native-live2-before-1794201070502.json.gz",
+      "bytes": 12205,
+      "sha256": "dbc21adb3b59fc2ad8c4b4997f0eaa2a8cb8e7b8fa2c086f7560ae07897ccd91"
+    },
+    {
+      "file": "native-live2-before-1794201195257.json.gz",
+      "bytes": 30419,
+      "sha256": "c396c6008959151808bd965e8998e5ea17fb6dd1a352da676c8e097905e58257"
+    },
+    {
+      "file": "native-live2-final-1794204112027.json.gz",
+      "bytes": 107818,
+      "sha256": "8bbe426615855583f613d21a33278d6623ddf11f22bfafb3e1c425bf73614516"
+    },
+    {
+      "file": "native-live2-final-1794204329485.json.gz",
+      "bytes": 90238,
+      "sha256": "9e255e085e956f824c37e64f4de227f595f67d9a1ac96e5016b349bee3e1f478"
+    },
+    {
+      "file": "native-live2-final-1794205455750.json.gz",
+      "bytes": 26134,
+      "sha256": "d68120bd432b47be6132c2e0cc05127c857e06299a95ac9e88533ad111a28b10"
+    },
+    {
+      "file": "native-live2-final-1794205511646.json.gz",
+      "bytes": 32751,
+      "sha256": "3aebc228347699e77a5022891206a3e2d47a1b81975c15bb8b91d2def4d10801"
+    },
+    {
+      "file": "native-live2-final-1794205589732.json.gz",
+      "bytes": 33637,
+      "sha256": "3b87a137d5280d570b37f9b6377d461a4a1ac7d8c62a775454968a62a46635f4"
+    },
+    {
+      "file": "native-trace-1794205589732-1-950k.json.gz",
+      "bytes": 2560343,
+      "sha256": "62b9798f3f1a9ff5762a5039f556d209c185078d0d0713c27ba846ce2f15e291"
+    },
+    {
+      "file": "native-trace-summary.json.gz",
+      "bytes": 6168,
+      "sha256": "c79c76cd574e82b567f74ff1c54d420d2db7bc59c81a01cb9e37488fa60e6b71"
+    },
+    {
+      "file": "profile-before.json.gz",
+      "bytes": 2261,
+      "sha256": "7ab3bfc964f725f343bc6664b22978dfa6556d09432ebc0517f88b09837a674a"
+    },
+    {
+      "file": "profile-browser.json.gz",
+      "bytes": 2301,
+      "sha256": "43fdaff8d0ffdc677a7b2d09fd8ec296ddee8e6dd7b253b7d5d638d9440857d0"
+    },
+    {
+      "file": "runner-1794204329485.mjs.gz",
+      "bytes": 12128,
+      "sha256": "ad95285b63972dbbbc77c33e4ae1b9cecd98bcd6fc5697000f117d25f61ee08b"
+    },
+    {
+      "file": "runner-1794205455750.mjs.gz",
+      "bytes": 13408,
+      "sha256": "ddd9996a8c03e6d3138d64840dd1afd45d8bd1c09f3de6fe680344327b048b77"
+    },
+    {
+      "file": "runner-1794205511646.mjs.gz",
+      "bytes": 13576,
+      "sha256": "b6ecf68d5848353f9cf6e9390adf6392c875caa5c596957476ffcfcf26f149e9"
+    },
+    {
+      "file": "runner-1794205589732.mjs.gz",
+      "bytes": 14373,
+      "sha256": "56771ab45445fe189437645a5074f101a72b20fade4c9c45714cd8199dcf049f"
+    },
+    {
+      "file": "runner-final-primary.mjs.gz",
+      "bytes": 12128,
+      "sha256": "ad95285b63972dbbbc77c33e4ae1b9cecd98bcd6fc5697000f117d25f61ee08b"
+    },
+    {
+      "file": "runner-matrix-v1.mjs.gz",
+      "bytes": 11571,
+      "sha256": "f6901026ab81f2d37d6f3fa551ad784432149b14a34a1a539f3a7f8f74e566a2"
+    },
+    {
+      "file": "build-live2-before.json.gz",
+      "bytes": 7308,
+      "sha256": "9610b90acdffd7f6361a6233e00c349adf4c440667a3bb118f3bb435e90e4537"
+    },
+    {
+      "file": "build-live2-after.json.gz",
+      "bytes": 7776,
+      "sha256": "b8b59205fdc93dcc25770030d8ae745661c630a6ece01a8a39ca46812087feda"
+    },
+    {
+      "file": "build-live2-final.json.gz",
+      "bytes": 7776,
+      "sha256": "e7856cfbf3006b17836ba63385503aa8e7dca85bbd7e8f320b736dae1abcb315"
+    },
+    {
+      "file": "fixtures.json.gz",
+      "bytes": 3121,
+      "sha256": "eb4e5c8a209c310faf23abfb5c3a731115eab78715308b9a1a248a6d7786e1a5"
+    }
+  ],
+  "limitations": [
+    "Full ProseMirror and DOM remain: partitioned Live P0 has NOT passed.",
+    "Baseline loaded memory is before first input; optimized loaded memory is after first input.",
+    "Input uses WebView2 CDP insertText and two frames, not native OS IME candidate UI.",
+    "Matrix build precedes empty-document initialization guard fix; final is independently identified.",
+    "Initial CRLF+BOM matrix reopen oracle compared logical source to raw disk hash; corrected supplements are separate.",
+    "The first final six-case run overlapped browser smoke and is functional-only evidence.",
+    "Optional closedDiagnosticGC occurs after the natural close curve; it is not natural reclamation."
+  ]
+}
