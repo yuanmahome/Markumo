@@ -1874,16 +1874,24 @@ export class MarkdownEditorController implements LiveEditor {
             // character corresponds to the position after that atom, even
             // when the bridge maps interior source characters to its start.
             const imageEnd = editor.kind === 'image' && selection.anchor === selection.head && selection.head === editor.sourceTo - editor.sourceFrom
+            const position = command === 'left' ? editor.from : command === 'right' ? editor.to : imageEnd ? editor.to : null
             this.view.dispatch(this.view.state.tr.setSelection(TextSelection.create(this.view.state.doc,
-              imageEnd ? editor.to : nearest(selection.anchor), imageEnd ? editor.to : nearest(selection.head))))
+              position ?? nearest(selection.anchor), position ?? nearest(selection.head))))
           }
           if(command === 'enter') this.run(chainCommands(splitListItem(s.nodes.list_item,{checked:null}),liftEmptyBlock,baseKeymap.Enter),true)
           else if(command === 'hard-break') { this.view.dispatch(this.view.state.tr.replaceSelectionWith(s.nodes.hard_break.create()).setMeta('isolated',true));this.view.focus() }
-          else if (command === 'up' || command === 'down' || command === 'select-up' || command === 'select-down' || command === 'select-left' || command === 'select-right') {
+          else if (command === 'up' || command === 'down' || command === 'left' || command === 'right' || command === 'select-up' || command === 'select-down' || command === 'select-left' || command === 'select-right') {
             const direction = command.replace('select-', '')
             const horizontal = direction === 'left' || direction === 'right'
             const extend = command.startsWith('select-')
             this.view.focus()
+            if (horizontal && !extend) {
+              // Place the native caret on the outside of the rendered mark.
+              // Chromium otherwise adds a second stop at a link's boundary.
+              const point = this.view.domAtPos(this.view.state.selection.head, direction === 'left' ? -1 : 1)
+              document.getSelection()?.collapse(point.node, point.offset)
+              return
+            }
             // Give tables and other document plugins their ordinary arrow-key
             // behavior before asking the browser to move by a visual line.
             const event = new KeyboardEvent('keydown', { key: `Arrow${direction[0].toUpperCase()}${direction.slice(1)}`, shiftKey: extend })

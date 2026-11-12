@@ -138,7 +138,7 @@ export function inlineSourceRange(bridge: MarkdownSourceBridge, doc: PMNode, fro
 }
 
 let identity = 0
-export type InlineCommand = 'select-all' | 'find' | 'replace' | 'enter' | 'hard-break' | 'bold' | 'italic' | 'strike' | 'inline-code' | 'up' | 'down' | 'select-up' | 'select-down' | 'select-left' | 'select-right'
+export type InlineCommand = 'select-all' | 'find' | 'replace' | 'enter' | 'hard-break' | 'bold' | 'italic' | 'strike' | 'inline-code' | 'up' | 'down' | 'left' | 'right' | 'select-up' | 'select-down' | 'select-left' | 'select-right'
 
 // A native inline editing surface keeps the browser's text caret and paragraph
 // flow. CodeMirror remains the editor for fenced code, not for a word in prose.
@@ -345,7 +345,7 @@ export class InlineSourceView {
       }
       if (!event.shiftKey && sel && sel.anchor === sel.head && !this.pending) {
         if ((event.key === 'ArrowLeft' && sel.head === 0) || (event.key === 'ArrowRight' && sel.head === this.draft.length)) {
-          event.preventDefault(); this.close(true, event.key === 'ArrowLeft' ? this.from : this.to)
+          command(event.key === 'ArrowLeft' ? 'left' : 'right')
         }
       }
     }
