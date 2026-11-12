@@ -138,7 +138,7 @@ export function inlineSourceRange(bridge: MarkdownSourceBridge, doc: PMNode, fro
 }
 
 let identity = 0
-export type InlineCommand = 'select-all' | 'find' | 'replace' | 'enter' | 'hard-break' | 'bold' | 'italic' | 'strike' | 'inline-code'
+export type InlineCommand = 'select-all' | 'find' | 'replace' | 'enter' | 'hard-break' | 'bold' | 'italic' | 'strike' | 'inline-code' | 'up' | 'down' | 'select-up' | 'select-down' | 'select-left' | 'select-right'
 
 // A native inline editing surface keeps the browser's text caret and paragraph
 // flow. CodeMirror remains the editor for fenced code, not for a word in prose.
@@ -320,6 +320,14 @@ export class InlineSourceView {
         if (!this.pending) this.close(true)
         return
       }
+      if (!modifier && !event.altKey && !this.pending && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        const direction = event.key === 'ArrowUp' ? 'up' : 'down'
+        // Wrapped source still owns its internal visual lines. At its edge,
+        // continue through the document instead of the nested editable root.
+        if (this.moveWithinSource(direction, event.shiftKey)) event.preventDefault()
+        else command(event.shiftKey ? `select-${direction}` : direction)
+        return
+      }
       if ((event.key === 'Backspace' || event.key === 'Delete') && !this.draft.trim()) {
         event.preventDefault()
         if (this.kind === 'image') {
@@ -329,6 +337,12 @@ export class InlineSourceView {
         return
       }
       const sel = this.selection()
+      if (event.shiftKey && !modifier && !event.altKey && sel && !this.pending) {
+        if ((event.key === 'ArrowLeft' && sel.head === 0) || (event.key === 'ArrowRight' && sel.head === this.draft.length)) {
+          command(event.key === 'ArrowLeft' ? 'select-left' : 'select-right')
+          return
+        }
+      }
       if (!event.shiftKey && sel && sel.anchor === sel.head && !this.pending) {
         if ((event.key === 'ArrowLeft' && sel.head === 0) || (event.key === 'ArrowRight' && sel.head === this.draft.length)) {
           event.preventDefault(); this.close(true, event.key === 'ArrowLeft' ? this.from : this.to)
@@ -380,6 +394,21 @@ export class InlineSourceView {
       const range = document.createRange(); range.selectNodeContents(this.input); range.setEnd(node, at); return range.toString().length
     }
     return { anchor: offset(selection.anchorNode, selection.anchorOffset), head: offset(selection.focusNode, selection.focusOffset) }
+  }
+  private moveWithinSource(direction: 'up' | 'down', extend: boolean): boolean {
+    const original = this.selection(), native = document.getSelection()
+    if (!original || !native?.focusNode) return false
+    const caretTop = () => {
+      const range = document.createRange()
+      range.setStart(native.focusNode!, native.focusOffset); range.collapse(true)
+      return range.getBoundingClientRect().top
+    }
+    const top = caretTop()
+    native.modify(extend ? 'extend' : 'move', direction === 'down' ? 'forward' : 'backward', 'line')
+    const next = this.selection()
+    if (next && next.head !== original.head && Math.abs(caretTop() - top) > 1) return true
+    this.select(original.anchor, original.head)
+    return false
   }
   private select(anchor: number, head: number) {
     const point = (at: number): [globalThis.Node, number] => {

@@ -1879,6 +1879,24 @@ export class MarkdownEditorController implements LiveEditor {
           }
           if(command === 'enter') this.run(chainCommands(splitListItem(s.nodes.list_item,{checked:null}),liftEmptyBlock,baseKeymap.Enter),true)
           else if(command === 'hard-break') { this.view.dispatch(this.view.state.tr.replaceSelectionWith(s.nodes.hard_break.create()).setMeta('isolated',true));this.view.focus() }
+          else if (command === 'up' || command === 'down' || command === 'select-up' || command === 'select-down' || command === 'select-left' || command === 'select-right') {
+            const direction = command.replace('select-', '')
+            const horizontal = direction === 'left' || direction === 'right'
+            const extend = command.startsWith('select-')
+            this.view.focus()
+            // Give tables and other document plugins their ordinary arrow-key
+            // behavior before asking the browser to move by a visual line.
+            const event = new KeyboardEvent('keydown', { key: `Arrow${direction[0].toUpperCase()}${direction.slice(1)}`, shiftKey: extend })
+            const handled = this.view.someProp('handleKeyDown', handler => handler(this.view, event))
+            if (!handled) {
+              const native = document.getSelection()
+              native?.modify(extend ? 'extend' : 'move', horizontal ? direction : direction === 'down' ? 'forward' : 'backward', horizontal ? 'character' : 'line')
+              if (native?.anchorNode && native.focusNode && this.view.dom.contains(native.anchorNode) && this.view.dom.contains(native.focusNode)) {
+                this.view.dispatch(this.view.state.tr.setSelection(TextSelection.create(this.view.state.doc,
+                  this.view.posAtDOM(native.anchorNode, native.anchorOffset), this.view.posAtDOM(native.focusNode, native.focusOffset))).scrollIntoView())
+              }
+            }
+          }
           else this.format(command)
         }
       }, () => { if (!this.disposed) this.options.compositionChanged?.() })
