@@ -23,6 +23,7 @@ const smokeScripts = [
   'tests/phase042/inline-source-recovery.mjs',
   'tests/phase042/inline-formatting-edit.mjs',
   'tests/phase042/inline-source-navigation.mjs',
+  'tests/phase042/table-vertical-navigation.mjs',
   'tests/markdown-source-fidelity/regression.mjs',
   'tests/markdown-large/structure-regression.mjs',
   'tests/markdown-large/stats-regression.mjs',

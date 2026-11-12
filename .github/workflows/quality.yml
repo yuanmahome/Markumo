@@ -52,6 +52,7 @@ jobs:
           node tests/phase042/inline-source-recovery.mjs
           node tests/phase042/inline-formatting-edit.mjs
           node tests/phase042/inline-source-navigation.mjs
+          node tests/phase042/table-vertical-navigation.mjs
           node tests/dev/instance-isolation.mjs
           pnpm test:export
 
