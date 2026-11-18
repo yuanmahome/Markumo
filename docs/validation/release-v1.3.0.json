@@ -1,0 +1,110 @@
+{
+  "tag": "v1.3.0",
+  "url": "https://github.com/yuanmahome/Markumo/releases/tag/v1.3.0",
+  "latest": true,
+  "assets": [
+    {
+      "name": "latest.json",
+      "size": 4105,
+      "sha256": "5a01b47fa3269822c93e39b0af0f2d2bce44147fb2ca626a82a0b21553c9513c"
+    },
+    {
+      "name": "SHA256SUMS",
+      "size": 786,
+      "sha256": "9a07353b1b4fee6c4938f9ca11e346a6230992f09b2b57a3d70b0a0aeeb736b8"
+    },
+    {
+      "name": "Markumo_1.3.0_linux_x86_64.AppImage",
+      "size": 93276664,
+      "sha256": "960cab7eae30a1fbcfa2e26818a7834faf637270f2bae9deb8c33ab933be3c7b"
+    },
+    {
+      "name": "Markumo_1.3.0_linux_x86_64.deb",
+      "size": 15683388,
+      "sha256": "f9a49e9d02518e9c4d77cd68c5e8a422cef94aca72229c0be43bad9cb161d739"
+    },
+    {
+      "name": "Markumo_1.3.0_macos_aarch64.app.tar.gz",
+      "size": 14431699,
+      "sha256": "989aa03da89de833a1a2d3200b527fcdc61c000dd944fab93128d1b17bf57b19"
+    },
+    {
+      "name": "Markumo_1.3.0_macos_aarch64.dmg",
+      "size": 14875027,
+      "sha256": "f69527d458f8f60ce579c4adbb1a6c502cf497434d0062e2f4a868d4e92da9fe"
+    },
+    {
+      "name": "Markumo_1.3.0_macos_x86_64.app.tar.gz",
+      "size": 14989137,
+      "sha256": "89e9692c7a3ce85b704ce51b272f6ec3a52e52ff015f82e8627b3c130973dbc0"
+    },
+    {
+      "name": "Markumo_1.3.0_macos_x86_64.dmg",
+      "size": 15520295,
+      "sha256": "e8b4621a95a378cd14df31ab44ef68cc1405f87513a1e5da0f36606d71b51ca5"
+    },
+    {
+      "name": "Markumo_1.3.0_windows_x86_64-setup.exe",
+      "size": 11259419,
+      "sha256": "d48c8138a4c3c5c3fac3bdeb652e4b1f92316dab461f3c8cfc55513d4fa96cba"
+    }
+  ],
+  "updaterSignatures": [
+    "windows-x86_64",
+    "linux-x86_64",
+    "darwin-aarch64",
+    "darwin-x86_64"
+  ],
+  "verifiedAt": "2026-11-18T03:55:34.373Z",
+  "sourceCommit": "0099b93fab7bf900cf80bd1109b8e56fce45c1ef",
+  "workflows": [
+    {
+      "id": 44232059825,
+      "name": "Release desktop apps",
+      "url": "https://github.com/yuanmahome/Markumo/actions/runs/44232059825",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "name": "validate",
+          "conclusion": "success"
+        },
+        {
+          "name": "build (ubuntu-22.04, x86_64-unknown-linux-gnu)",
+          "conclusion": "success"
+        },
+        {
+          "name": "build (macos-latest, aarch64-apple-darwin)",
+          "conclusion": "success"
+        },
+        {
+          "name": "build (macos-latest, x86_64-apple-darwin)",
+          "conclusion": "success"
+        },
+        {
+          "name": "build (windows-latest, x86_64-pc-windows-msvc)",
+          "conclusion": "success"
+        },
+        {
+          "name": "publish",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "id": 44231346388,
+      "name": "Quality Gate",
+      "url": "https://github.com/yuanmahome/Markumo/actions/runs/44231346388",
+      "conclusion": "success",
+      "jobs": [
+        {
+          "name": "Rust Quality",
+          "conclusion": "success"
+        },
+        {
+          "name": "Frontend Quality",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ]
+}

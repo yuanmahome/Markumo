@@ -1,6 +1,6 @@
 # 搜索工具窗口与 Markdown Mini 改造验收
 
-日期：2026-11-17～18。基线：`a1e8bd7e7c986f50622b2d4c9f39b3730dd28fa8`。所有产品修改位于 `main`。最初实现阶段未修改版本号或推送；用户于 2026-11-18 明确授权发布新版本，准备发布 1.3.0。发布准备时快进同步远端 `45221841`（1.2.9），保留其行内导航、表格光标和构建工具修复，再叠加本次改造；没有创建开发分支或新的 Git 工作树。
+日期：2026-11-17～18。基线：`a1e8bd7e7c986f50622b2d4c9f39b3730dd28fa8`。所有产品修改位于 `main`。最初实现阶段未修改版本号或推送；用户于 2026-11-18 明确授权发布新版本，现已发布 [1.3.0](https://github.com/yuanmahome/Markumo/releases/tag/v1.3.0)。发布准备时快进同步远端 `45221841`（1.2.9），保留其行内导航、表格光标和构建工具修复，再叠加本次改造；没有创建开发分支或新的 Git 工作树。
 
 ## 阶段与架构
 
@@ -36,10 +36,21 @@ Nomo 参考：[mini.rs](https://github.com/nomo-md/nomo/blob/master/src-gpui/src
 | Windows 原生窗口与 Mini | 7/7 通过，包含更新屏障、刷新、过期会话、最小化、几何恢复、8 次弹出/关闭、主窗口销毁 |
 | 完整 `pnpm test:regression` | 41/41 脚本通过，0 失败；其中无损编辑 73/73、原生 A–N 14/14、五类生产资源回收检查通过 |
 | 发布版本一致性检查 | 通过，四处版本均为 1.3.0 |
+| 云端 Quality Gate | 前端类型/构建/浏览器回归与 Linux Rust 检查/测试通过 |
+| 原生发布矩阵 | Windows x64、Linux x64、macOS Apple Silicon/Intel 四个平台全部通过 |
+| 发布附件与更新签名 | 9 个附件齐全，8 条 SHA-256 记录全部匹配，4 个 updater 签名通过公钥密码学验证 |
 
 既有验收脚本同步修正了高亮统计选择器（排除行号/文本外壳）和基于静态骨架的 DOM 增长计数，并等待 DOM 光标布局完成后测试原生方向键。最终回归还发现上游局部源码在 PM 更新前直接移除装饰 DOM，使异步 DOMObserver 覆盖方向键/Shift 选区；已调整为 PM 先移除装饰再清理资源，补充跨帧选区保持验证，没有改写文本或历史实现。
 
 另外通过只读加载 1.2.9 的对应控制器复现了既有空白段落粘贴公式后多保留分隔行的问题。空白段落不再走普通行内源码粘贴捷径，改用既有结构更新路径管理空行；公式粘贴与重新解析一致性测试通过。合成粘贴测试先等待 End/Enter 的原生选区事务完成，避免测试本身向旧段落粘贴。
+
+## 发布验收
+
+发布标签 `v1.3.0` 固定指向 `0099b93fab7bf900cf80bd1109b8e56fce45c1ef`。先通过 [Quality Gate](https://github.com/yuanmahome/Markumo/actions/runs/44231346388)，再触发 [四平台构建与发布](https://github.com/yuanmahome/Markumo/actions/runs/44232059825)，两者均成功。
+
+已从公开 Release 下载全部 7 个原生分发文件及 `latest.json`、`SHA256SUMS`，核对文件大小和 SHA-256。Windows NSIS、Linux AppImage、两个 macOS 更新归档的签名，使用应用配置中的既有公钥和与 Tauri updater 一致的 Minisign 验证算法逐个验证成功。`latest.json` 版本为 1.3.0、包含四个平台，GitHub latest 指向本版；没有单独发布 `.sig` 附件。
+
+公开校验结果见 [release-v1.3.0.json](release-v1.3.0.json)。发布后的报告补充只修改验收文档，不移动标签或替换已公开安装包；没有在本机覆盖安装用户正在使用的版本。
 
 ## 性能采样
 
@@ -64,7 +75,7 @@ Nomo 参考：[mini.rs](https://github.com/nomo-md/nomo/blob/master/src-gpui/src
 - 中文输入测试使用合成 composition 事件和真实中文文本。操作系统候选窗、拼音/五笔候选选择需要人工验证。
 - 本机只有一个显示器，早期为 1920×1080，最终前后对比均为 2560×1440、scaleFactor=1；没有实际第二屏、显示器热拔插或原生高 DPI 切屏的测试条件。保存几何信息按当前显示器工作区和缩放重新约束，但不把这一逻辑检查等同于硬件验收。
 - 多根目录/打开文档搜索由既有自动化覆盖；多个编辑主窗口同时弹出搜索并进行交互的长时间实机压力测试尚未完成。原生配对及会话按 owner 窗口隔离，不使用进程内全局搜索单例。
-- macOS 和 Linux 没有编译或实机测试。跨平台实现使用 Tauri API；Wayland 明确拒绝要求精确位置恢复的 Mini 操作并给出原因，普通独立搜索仍使用系统窗口；位置保存/恢复失败会显示错误。
+- macOS Apple Silicon/Intel 与 Linux x64 已通过 CI 原生编译、打包和更新签名校验，尚未进行交互实机测试。跨平台实现使用 Tauri API；Wayland 明确拒绝要求精确位置恢复的 Mini 操作并给出原因，普通独立搜索仍使用系统窗口；位置保存/恢复失败会显示错误。编译及签名校验不等于实机交互验收。
 - 本次未增加 UI 框架或依赖。既有搜索引擎、正则逐行限制和替换预算保持不变。
 
 ## 复现
@@ -101,6 +112,7 @@ Mini 入口位于主窗口顶部右侧，设置按钮之后、系统最小化按
 - `docs/releases/v1.3.0.md`
 - `docs/testing/global-search.md`
 - `docs/validation/search-mini-20261117.md`
+- `docs/validation/release-v1.3.0.json`（发布后补充）
 - `package.json`
 - `scripts/memory-release-build.mjs`
 - `src-tauri/Cargo.lock`
