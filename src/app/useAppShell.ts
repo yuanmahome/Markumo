@@ -1,4 +1,6 @@
 import { ref, computed, watch, onMounted, onUnmounted, markRaw, reactive, nextTick } from 'vue'
+import {useSearchWindow} from '../features/workspace/searchWindow'
+import {useMiniWindow} from '../features/windows/useMiniWindow'
 import { isTauri, invoke } from '@tauri-apps/api/core'
 import { DesktopStartup } from './desktopStartup'
 import { DocumentManager } from '../editor/core/DocumentManager'
@@ -167,6 +169,7 @@ export function useAppShell() {
   const isAlive = () => alive
 
   // --- Preferences Coordinator ---
+  const {miniActive,miniPinned,miniBusy,toggleMini,toggleMiniPin,dragMini,resizeMini}=useMiniWindow(manager,toast)
   const preferences = useShellPreferences({
     desktop,
     isAlive,
@@ -498,6 +501,9 @@ export function useAppShell() {
 
   let wasNarrow = window.innerWidth < 900
   function adaptWindowWidth() {
+    // Mini has its own visibility rules. Its native resize must not overwrite
+    // the workspace sidebar preference that will be restored on exit.
+    if(miniActive.value||miniBusy.value)return
     const narrow = window.innerWidth < 900
     if (narrow && !wasNarrow) sidebarVisible.value = false
     wasNarrow = narrow
@@ -1212,6 +1218,8 @@ export function useAppShell() {
     openPalette,
     toggleSidebar,
     toggleFocus,
+    toggleMini,
+    miniActive,
     exitFocus,
     toggleTypewriter,
     toggleTheme: preferences.toggleTheme,
@@ -1232,6 +1240,9 @@ export function useAppShell() {
     runFileOperation,
     clipboardImages,
   })
+
+  const {detachSearch}=useSearchWindow(workspace,preferences.shortcuts,()=>startupLoading.value||updateInstalling.value||!!updateConfirmRef.value?.visible||!!discardRef.value?.visible)
+  watch(()=>workspace.searchFocusRevision,()=>{if(miniActive.value&&workspace.searchDialogOpen&&!workspace.searchDetached)void detachSearch()})
 
   // --- Global Lifecycle (Mount / Unmount) ---
 
@@ -1564,6 +1575,7 @@ export function useAppShell() {
 
   // --- Return Exact Interface for App.vue ---
   return {
+    miniPinned,miniBusy,toggleMiniPin,dragMini,resizeMini,detachSearch,
     autoCheckUpdates: preferences.autoCheckUpdates,
     autoDownloadUpdates: preferences.autoDownloadUpdates,
     updateStatus,
@@ -1652,6 +1664,8 @@ export function useAppShell() {
     outlineVisible,
     toggleTheme: preferences.toggleTheme,
     toggleFocus,
+    toggleMini,
+    miniActive,
     toggleTypewriter,
     openSettings,
     openPalette,

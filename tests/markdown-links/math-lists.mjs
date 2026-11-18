@@ -180,7 +180,15 @@ $$`
     for (const formula of [String.raw`\(a+b\)`, String.raw`\[
 N=\lceil 5000/1260\rceil=4
 \]`]) {
-      await reset('Start'); await page.keyboard.press('End'); await page.keyboard.press('Enter')
+      await reset('Start'); await page.keyboard.press('End')
+      await page.waitForFunction(() => window.f.live().view.state.selection.$head.parentOffset === 5)
+      await page.keyboard.press('Enter')
+      // Synthetic paste bypasses the browser's native paste scheduling. Wait
+      // until Enter's DOM/input transaction owns the new empty paragraph.
+      await page.waitForFunction(() => {
+        const parent = window.f.live().view.state.selection.$head.parent
+        return parent.type.name === 'paragraph' && parent.content.size === 0
+      })
       await page.locator('.md-prose').evaluate((el, text) => {
         const data = new DataTransfer(); data.setData('text/plain', text)
         el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }))

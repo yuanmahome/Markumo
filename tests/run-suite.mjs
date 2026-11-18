@@ -34,6 +34,7 @@ const smokeScripts = [
   'tests/phase042/smart-clipboard.mjs',
   'tests/outline/visibility.mjs',
   'tests/search/browser.mjs',
+  'tests/search/editor-toolbar.mjs',
   'tests/drag/browser.mjs',
   'tests/workspace/open-visibility.mjs',
   'tests/workspace/delete-open-files.mjs',

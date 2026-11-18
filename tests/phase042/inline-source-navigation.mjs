@@ -124,6 +124,9 @@ try {
   await page.locator('.md-prose strong').click()
   await page.evaluate(() => window.f.live().inlineSource.focus(4))
   await page.keyboard.press('Shift+ArrowDown')
+  await page.waitForFunction(() => window.f.live().view.state.selection.$head.parent.textContent === '下一段')
+  // Selection must survive the subsequent observer/selectionchange callbacks.
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   const extended = await current()
   assert.equal(extended.parent, '下一段')
   assert.equal(extended.empty, false)
@@ -136,6 +139,7 @@ try {
   await page.locator('.md-prose strong').click()
   await page.evaluate(() => window.f.live().inlineSource.focus(4))
   await page.keyboard.press('Shift+ArrowDown')
+  await page.waitForFunction(() => window.f.live().view.state.selection.toJSON().type === 'cell')
   assert.equal(await page.evaluate(() => window.f.live().view.state.selection.toJSON().type), 'cell')
   assert.equal((await current()).source, tableSource)
   console.log('PASS Shift+Down keeps the document table-selection behavior')

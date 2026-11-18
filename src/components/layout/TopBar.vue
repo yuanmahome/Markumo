@@ -33,6 +33,7 @@
       >
         <Icon name="gear" />
       </button>
+      <button v-if="desktop" class="ib mini-entry" aria-label="进入 Mini 模式" title="Mini 悬浮小窗" :disabled="!canMini" @click="$emit('toggle-mini')"><Icon name="mini-window" /></button>
       <div v-if="desktop" class="window-controls" @mousedown.stop @dblclick.stop>
         <button aria-label="最小化窗口" title="最小化" @click="windowAction('minimize')">—</button>
         <button aria-label="最大化或还原窗口" title="最大化 / 还原" @click="windowAction('maximize')">□</button>
@@ -58,6 +59,7 @@ const props = defineProps<{
   focusMode: boolean
   desktop: boolean
   fileBusy: boolean
+  canMini: boolean
   menuGroups: MenuGroup[]
   commandRegistry: CommandRegistry
   quickShortcut: string
@@ -89,6 +91,7 @@ const emit = defineEmits<{
   (e: 'set-mode', mode: AppMode): void
   (e: 'toggle-theme'): void
   (e: 'toggle-focus'): void
+  (e: 'toggle-mini'): void
   (e: 'open-settings'): void
   (e: 'open-file'): void
   (e: 'save-file'): void
@@ -175,7 +178,7 @@ const emit = defineEmits<{
   .quickbtn .kbd,.quick-label { display: none; }
   .topbar { grid-template-columns: auto 32px auto; gap:6px;justify-content:space-between }
   .quickbtn { padding:0;justify-content:center }
-  .topright > .ib:not(.github-link):not([title='设置']) { display:none }
+  .topright > .ib:not(.github-link):not(.mini-entry):not([title='设置']) { display:none }
 }
 
 .topright {
@@ -184,6 +187,8 @@ const emit = defineEmits<{
   gap: 6px;
   justify-content: flex-end;
 }
+.mini-entry{margin-left:2px}
+.mini-entry:disabled{opacity:.35;cursor:default}
 .window-controls { display:flex;align-self:stretch;margin-right:-8px;margin-left:4px }
 .window-controls button { width:36px;height:calc(var(--ui-font-size) + 33px);border-radius:0;font-size: calc(var(--ui-font-size) + 2px);color:var(--sub) }
 .window-controls button:hover { background:var(--hover);color:var(--bright) }

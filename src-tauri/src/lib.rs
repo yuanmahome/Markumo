@@ -1,6 +1,7 @@
 mod commands;
 mod conversion;
 mod display;
+mod tool_windows;
 mod detach;
 mod files;
 mod history;
@@ -215,6 +216,7 @@ pub fn run() {
         .manage(conversion::ConversionStore::default())
         .manage(recovery::RecoveryStore::default())
         .manage(search_manager)
+        .manage(tool_windows::ToolWindows::default())
         .manage(commands::detach::DetachStore::default())
         .manage(commands::tab_drag::NativeDragStore::default())
         .manage(std::sync::Arc::new(std::sync::Mutex::new(history::HistoryStore::default())))
@@ -250,6 +252,7 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if tool_windows::auxiliary_event(window,event) { return; }
             // Require the registered frontend close handshake. Even startup or
             // failed JS registration must not silently close an unsaved editor.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event { api.prevent_close(); }
@@ -285,6 +288,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            tool_windows::search_window_open,tool_windows::search_window_identity,
+            tool_windows::search_window_send,tool_windows::search_window_dock,
+            tool_windows::mini_window,tool_windows::mini_pin,
             commands::update::update_runtime, commands::update::report_update_window, commands::update::update_windows_status,
             commands::update::begin_update_install, commands::update::end_update_install, commands::update::mark_update_pending,
             commands::update::clear_update_pending, commands::update::confirm_update_startup,

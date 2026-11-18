@@ -15,6 +15,11 @@ export function createSearchBar(actions: { change: () => void; run: (action: Sea
   search.setAttribute('main-field', 'true')
   const field = document.createElement('div'); field.className = 'search-field'; field.append(search)
   const controls = document.createElement('div'); controls.className = 'search-controls'
+  const options = document.createElement('div'); options.className = 'search-options'
+  const more = document.createElement('button'); more.type = 'button'; more.className = 'search-more'; more.textContent = '⋯'; more.title = '搜索选项'; more.setAttribute('aria-label', '更多搜索选项'); more.setAttribute('aria-expanded','false')
+  const optionItems = document.createElement('div'); optionItems.className = 'search-option-items'
+  more.onclick = () => { optionItems.hidden = !optionItems.hidden; more.setAttribute('aria-expanded',String(!optionItems.hidden)) }
+  options.append(more, optionItems); controls.append(options)
   const navigation = document.createElement('div'); navigation.className = 'search-navigation'
   const count = document.createElement('span'); count.className = 'search-count'; count.setAttribute('aria-live', 'polite')
   const error = document.createElement('div'); error.className = 'search-error'; error.id = `search-error-${++nextId}`; error.setAttribute('role', 'status'); error.hidden = true
@@ -28,14 +33,13 @@ export function createSearchBar(actions: { change: () => void; run: (action: Sea
   const option = (name: string, label: string, glyph: keyof typeof commonIconPaths) => {
     const wrapper = document.createElement('label'); wrapper.className = 'search-option'; wrapper.title = label
     const el = document.createElement('input'); el.type = 'checkbox'; el.name = name; el.setAttribute('aria-label', label); el.onchange = actions.change
-    const caption = document.createElement('span'); caption.append(icon(glyph)); wrapper.append(el, caption); controls.append(wrapper); return el
+    const caption = document.createElement('span'); caption.append(icon(glyph)); wrapper.append(el, caption); optionItems.append(wrapper); return el
   }
   const caseSensitive = option('case', '区分大小写', 'matchCase'), wholeWord = option('word', '全词匹配', 'wholeWord'), regexp = option('re', '使用正则表达式', 'regex')
   const previous = button('prev', '上一个匹配 (Shift+Enter / Shift+F3)', 'arrowUp', () => actions.run('previous'))
   const next = button('next', '下一个匹配 (Enter / F3)', 'arrowDown', () => actions.run('next'))
-  controls.append(previous, next)
-  if (actions.selectAll) controls.append(button('select', '选择全部匹配', 'selectMatches', () => actions.run('select')))
-  navigation.append(count, button('close', '关闭查找 (Esc)', 'close', () => actions.run('close')))
+  if (actions.selectAll) optionItems.append(button('select', '选择全部匹配', 'selectMatches', () => actions.run('select')))
+  navigation.append(count, previous, next, button('close', '关闭查找 (Esc)', 'close', () => actions.run('close')))
   const second = document.createElement('div'); second.className = 'search-replace-row search-row'; second.hidden = true
   const spacer = document.createElement('span'); spacer.className = 'search-spacer'; spacer.setAttribute('aria-hidden', 'true')
   const replaceActions = document.createElement('div'); replaceActions.className = 'search-replace-actions'
@@ -45,6 +49,28 @@ export function createSearchBar(actions: { change: () => void; run: (action: Sea
   const toggle = button('toggleReplace', '展开/收起替换', 'chevronRight', () => { setReplaceVisible(second.hidden); actions.toggle?.() })
   toggle.className = 'search-toggle'; toggle.setAttribute('aria-expanded', 'false')
   grid.append(toggle, field, controls, navigation, second); dom.append(grid, error)
+  const compact = button('expandSearch', '展开/收起文档搜索', 'search', () => {
+    dom.classList.toggle('search-expanded'); if (dom.classList.contains('search-expanded')) search.focus()
+  })
+  compact.className = 'search-compact-toggle'; dom.prepend(compact)
+  let observer: ResizeObserver | undefined
+  function expand() { dom.classList.add('search-expanded') }
+  function mount(container: HTMLElement) {
+    observer?.disconnect()
+    const resize = () => {
+      const width = container.getBoundingClientRect().width
+      const size = width < 320 ? 'tiny' : width < 500 ? 'narrow' : width < 800 ? 'compact' : 'full'
+      if (size !== dom.dataset.size) {
+        const inline = size === 'full' || size === 'compact'
+        optionItems.classList.toggle('search-options-menu',!inline)
+        ;(inline ? options : grid).append(optionItems)
+        optionItems.hidden = !inline; more.setAttribute('aria-expanded',String(inline))
+      }
+      dom.dataset.size = size
+      dom.style.setProperty('--search-max-height',`${Math.max(32,container.clientHeight-16)}px`)
+    }
+    observer = new ResizeObserver(resize); observer.observe(container); resize()
+  }
   function setReplaceVisible(visible: boolean) {
     second.hidden = !visible; dom.classList.toggle('search-with-replace', visible); toggle.setAttribute('aria-expanded', String(visible))
     toggle.replaceChildren(icon(visible ? 'chevronDown' : 'chevronRight'))
@@ -55,5 +81,5 @@ export function createSearchBar(actions: { change: () => void; run: (action: Sea
     previous.disabled = next.disabled = !hasMatches || !!message
     replaceOne.disabled = replaceAll.disabled = readOnly || !hasMatches || !!message
   }
-  return { dom, search, replace, count, error, caseSensitive, wholeWord, regexp, second, toggle, setReplaceVisible, setStatus }
+  return { dom, search, replace, count, error, caseSensitive, wholeWord, regexp, second, toggle, setReplaceVisible, setStatus, expand, mount, destroy: () => observer?.disconnect() }
 }

@@ -1,12 +1,16 @@
 import { createApp } from 'vue'
-import App from './App.vue'
+
 import './styles/reset.css'
 import './styles/variables.css'
 import './styles/main.css'
 import './editor/markdown/styles.css'
 import './editor/core/searchPanel.css'
 
-const app = createApp(App)
+async function start(){
+// Auxiliary windows load only search UI, without shell or document startup.
+const root = new URLSearchParams(location.search).get('searchWindow') === '1'
+  ? await import('./components/search/SearchWindowApp.vue') : await import('./App.vue')
+const app = createApp(root.default)
 
 // A thrown error inside a template-visible computed or render function leaves the
 // last painted frame on screen indefinitely, so a single bad payload can strand
@@ -33,3 +37,6 @@ window.addEventListener('markumo:dispose-window',()=>{
   for(const timer of notices)clearTimeout(timer)
   notices.clear();reported.clear();app.unmount()
 },{once:true})
+
+}
+void start()

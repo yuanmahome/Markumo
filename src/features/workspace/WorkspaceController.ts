@@ -1,8 +1,9 @@
-import { markRaw } from 'vue'
+import { markRaw, shallowReactive } from 'vue'
 import { bufferPreview, defaultSearchWindow, globPatterns, searchMatchId, type GlobalSearchStatus } from './searchModel'
 import type { DocumentManager } from '../../editor/core/DocumentManager'
 import type { FileController } from '../files/FileController'
 import { displayPathKey, readablePath } from '../shell/pathDisplay'
+import {textClipboard} from '../shell/clipboard'
 import type { EditorPaneModel, SplitDirection } from '../../editor/layout/types'
 import type {
   SearchDonePayload,
@@ -77,6 +78,10 @@ export class WorkspaceController {
   searching = false
   searchTotal = 0
   searchResults: FileSearchGroup[] = []
+  searchShowDiff=false
+  searchPreviewVisible=true
+  searchAdvanced=false
+  searchDetached=false
   searchDialogOpen=false
   searchRestoreFocus=true
   searchScope:'workspace'|'directory'|'opened'='workspace'
@@ -1004,6 +1009,7 @@ export class WorkspaceController {
   }
   focusWorkspaceSearch(replace=false,directory?:string){
     this.replaceExpanded=replace;this.searchFocusReplace=replace
+    if(!replace&&!this.replaceApplying)this.searchShowDiff=false
     const changed=directory!==undefined&&(this.searchDirectory!==directory||this.searchScope!=='directory')
     if(directory!==undefined){this.searchScope='directory';this.searchDirectory=directory}
     else if(!this.roots.length)this.searchScope='opened'
@@ -1015,12 +1021,12 @@ export class WorkspaceController {
     this.searchRestoreFocus=restoreFocus
     this.searchDialogOpen=false;clearTimeout(this.searchTimer)
     if(this.searching)this.cancelSearch()
-    if(!this.replaceApplying)this.invalidateReplace()
+    if(!this.replaceApplying){this.invalidateReplace();this.searchShowDiff=false}
     this.clearSearchPreview();this.persistSearchMetadata()
     void this.gateway.clearSearchPreview?.().catch(error=>{this.searchMessage='释放预览缓存失败：'+String(error);this.emit()})
     this.emit()
   }
-  clearSearchPreview(){++this.previewEpoch;this.searchPreview=null;this.searchPreviewError='';this.searchPreviewLoading=false;this.selectedMatchId=''}
+  clearSearchPreview(clearSelection=true){++this.previewEpoch;this.searchPreview=null;this.searchPreviewError='';this.searchPreviewLoading=false;if(clearSelection)this.selectedMatchId=''}
   private resetSearchContext(){
     clearTimeout(this.searchTimer);this.cancelSearch(false);this.invalidateReplace();this.clearSearchPreview()
     this.searchResults=[];this.searchTotal=0;this.selectedMatches=new Set();this.searchStatus='idle';this.searchMessage='';this.searchLimited=false;this.searchSkipped=0;this.searchDirty=true
@@ -1053,10 +1059,11 @@ export class WorkspaceController {
       else{const token=this.searchDocument(match)?.fileToken;if(!token||!this.gateway.revealOpenFile)throw Error('此结果没有可用的文件授权');await this.gateway.revealOpenFile(token)}
     }catch(error){this.searchPreviewError='无法在文件管理器中显示：'+String(error);this.emit()}
   }
-  async selectSearchMatch(match:SearchMatch){
+  async selectSearchMatch(match:SearchMatch,withPreview=true){
     if(!this.searchResults.some(group=>group.matches.some(item=>searchMatchId(item)===searchMatchId(match))))return
     const id=searchMatchId(match),epoch=++this.previewEpoch
-    this.selectedMatchId=id;this.searchPreview=null;this.searchPreviewError='';this.searchPreviewLoading=true;this.emit()
+    this.selectedMatchId=id;this.searchPreview=null;this.searchPreviewError='';this.searchPreviewLoading=withPreview;this.emit()
+    if(!withPreview)return
     try{
       const doc=this.textSearchDocuments().find(doc=>doc.id===match.document_id||displayPathKey(doc.path)===displayPathKey(match.path))
       let preview:SearchSourcePreview
@@ -1070,9 +1077,18 @@ export class WorkspaceController {
         preview=await this.gateway.previewSearch({path:match.path,version:match.version,line:match.line_number,column:match.column_number,length:match.match_length,query:{...this.makeSearchQuery(this.searchId),buffers:[]}})
       }
       if(epoch!==this.previewEpoch||this.disposed||!this.searchDialogOpen)return
-      this.searchPreview=preview
+      this.searchPreview=markRaw(preview)
     }catch(error){if(epoch===this.previewEpoch)this.searchPreviewError=String(error)}
     finally{if(epoch===this.previewEpoch){this.searchPreviewLoading=false;this.emit()}}
+  }
+  async copySearchMatch(match:SearchMatch){
+    try{
+      await this.selectSearchMatch(match)
+      if(this.selectedMatchId!==searchMatchId(match)||!this.searchPreview||this.searchPreviewError)return
+      const preview=this.searchPreview
+      await textClipboard.writeText(preview.text.slice(preview.selection_from,preview.selection_to))
+      if(!this.searchPreviewVisible)this.clearSearchPreview(false)
+    }catch(error){this.searchPreviewError='复制匹配失败：'+String(error);this.emit()}
   }
   async previewSelectedMatches(){
     const matches=this.searchResults.flatMap(group=>group.matches).filter(match=>this.selectedMatches.has(searchMatchId(match)))
@@ -1242,12 +1258,15 @@ export class WorkspaceController {
     const incoming=this.pendingBatch;this.pendingBatch=[]
     if(!incoming.length)return
     const groups=new Map(this.searchResults.map(group=>[displayPathKey(group.path),group]))
+    const additions=new Map<FileSearchGroup,SearchMatch[]>()
     for(const item of incoming){
       if(item.search_id!==this.searchId)continue
       const key=displayPathKey(item.path);let group=groups.get(key)
-      if(!group){group={path:item.path,relativePath:item.relative_path,matches:[],isExpanded:true};groups.set(key,group);this.searchResults.push(group)}
-      if(!group.matches.some(match=>searchMatchId(match)===searchMatchId(item))){group.matches.push(item);this.searchTotal++}
+      if(!group){group=shallowReactive({path:item.path,relativePath:item.relative_path,matches:markRaw([] as SearchMatch[]),isExpanded:true});groups.set(key,group);this.searchResults.push(group)}
+      const pending=additions.get(group)||[]
+      if(!group.matches.some(match=>searchMatchId(match)===searchMatchId(item))&&!pending.some(match=>searchMatchId(match)===searchMatchId(item))){pending.push(markRaw(item));additions.set(group,pending);this.searchTotal++}
     }
+    for(const [group,matches] of additions)group.matches=markRaw([...group.matches,...matches])
     this.emit()
   }
   private onSearchDone(payload:SearchDonePayload){
@@ -1274,7 +1293,7 @@ export class WorkspaceController {
       if(!document||this.documentManager.isComposing)return
       if(!match.document_id&&match.version&&document.lastDiskVersion!==match.version)throw Error('打开时文件版本已变化，请重新搜索')
       this.documentManager.revealPosition(document.id,match.line_number,match.column_number)
-      if(!this.searchWindow.pinned)this.closeSearchDialog(false)
+      // Keep the tool window open while navigating results.
     }catch(error){this.searchPreviewError='打开匹配失败：'+String(error);this.emit()}
   }
 

@@ -75,6 +75,8 @@ export interface ShellCommandsHost {
   openSettings: (section?: string) => void
   openPalette: (category?: 'action' | 'file' | 'all') => void
   toggleSidebar: () => void
+  miniActive: Ref<boolean>
+  toggleMini: () => Promise<void>
   toggleFocus: () => void
   exitFocus: () => void
   toggleTypewriter: () => void
@@ -292,6 +294,7 @@ export function useShellCommands(host: ShellCommandsHost) {
         pane?.querySelector<HTMLButtonElement>('.open-tabs-button')?.click()
       } },
       { id: 'toggle-outline', title: '显示/隐藏大纲', detail: host.outlineSupported.value ? '' : '当前文件不支持大纲', category: 'action', disabled: !host.outlineSupported.value, action: host.toggleOutline },
+      { id: 'toggle-mini', title: host.miniActive.value?'退出 Mini 模式':'进入 Mini 模式', detail: '', category: 'action', disabled:!host.desktop||!host.activeDoc.value, action: host.toggleMini },
       { id: 'toggle-focus', title: '切换专注模式', detail: 'F8', category: 'action', action: host.toggleFocus },
       { id: 'toggle-typewriter', title: '切换打字机模式', detail: 'F9', category: 'action', action: host.toggleTypewriter },
       { id: 'focus-left-pane', title: '聚焦左侧分栏', detail: '', category: 'action', action: () => host.manager.layout.focusDirection('left') },
@@ -453,6 +456,7 @@ export function useShellCommands(host: ShellCommandsHost) {
         wrap: host.wordWrap.value,
         split: host.manager.isSplit,
         focus: host.focusMode.value,
+        mini:host.miniActive.value,
         markdown: !!host.activeDoc.value?.mode,
         markdownMode: host.activeDoc.value?.mode,
         composing: host.manager.isComposing,

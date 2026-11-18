@@ -32,12 +32,12 @@ await page.addInitScript(()=>{
 })
 const shell=code=>page.evaluate(code)
 const settle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
-const popup=page.getByRole('dialog',{name:'全局搜索与替换'})
+const popup=page.getByRole('region',{name:'全局搜索与替换'})
 const query=()=>page.getByRole('textbox',{name:'全局搜索文本'})
 async function done(){await page.waitForFunction(()=>!window.__searchShell.workspace.searching&&['complete','empty','error','limited'].includes(window.__searchShell.workspace.searchStatus))}
 async function check(name,task){await task();results.push(name);console.log('PASS',name)}
 try{
-  await page.goto('http://127.0.0.1:1483/');await page.waitForFunction(()=>window.__searchShell?.settingsReady.value)
+  await page.goto('http://127.0.0.1:1483/',{timeout:60000});await page.waitForFunction(()=>window.__searchShell?.settingsReady.value)
   await shell(()=>{const m=window.__searchShell.manager;window.__searchId=m.openFile({token:'search-buffer',path:'C:/fixture/notes.txt',name:'notes.txt',text:Array.from({length:1200},(_,i)=>'needle '+i).join('\n'),version:'v1',encoding:'UTF-8',bom:false,eol:'LF',readOnly:false})})
   await page.locator('.cm-content').click()
   await check('keyboard open, unchanged single/sidebar state, empty query performs no scan',async()=>{
@@ -56,6 +56,9 @@ try{
     assert.equal(await shell(()=>window.__samePreview===document.querySelector('[data-search-preview-editor] .cm-editor')),true);assert.equal(await popup.locator('.ProseMirror,img,.md-diagram,.katex').count(),0)
     const text=await shell(()=>window.__searchShell.manager.getText(window.__searchId));await page.getByLabel('搜索源码预览').click();await page.keyboard.type('MUTATION');assert.equal(await shell(()=>window.__searchShell.manager.getText(window.__searchId)),text)
   })
+  await check('hidden preview releases its editor while retaining the active result',async()=>{
+    const selected=await shell(()=>window.__searchShell.workspace.selectedMatchId);await page.getByRole('button',{name:'显示源码预览',exact:true}).click();assert.equal(await popup.locator('[data-search-preview-editor]').count(),0);assert.equal(await shell(()=>window.__searchShell.workspace.selectedMatchId),selected);await page.locator('.search-hit').first().click();assert.equal(await popup.locator('[data-search-preview-editor]').count(),0);assert.equal(await shell(()=>window.__searchShell.workspace.searchPreview),null);await page.getByRole('button',{name:'显示源码预览',exact:true}).click();await page.waitForSelector('[data-search-preview-editor] .cm-editor')
+  })
   await check('keyboard navigation belongs to result focus; query arrows remain text movement; group collapse and expand',async()=>{
     const list=page.getByRole('listbox',{name:'搜索结果'});await list.focus();await page.keyboard.press('Home');const first=await shell(()=>window.__searchShell.workspace.selectedMatchId);await page.keyboard.press('ArrowDown');assert.notEqual(await shell(()=>window.__searchShell.workspace.selectedMatchId),first);const selected=await shell(()=>window.__searchShell.workspace.selectedMatchId)
     await query().focus();await page.keyboard.press('ArrowLeft');assert.equal(await shell(()=>window.__searchShell.workspace.selectedMatchId),selected);await page.getByRole('button',{name:'全部折叠',exact:true}).click();assert.equal(await page.locator('.search-hit').count(),0);await page.getByRole('button',{name:'全部展开',exact:true}).click();assert((await page.locator('.search-hit').count())>0)
@@ -71,12 +74,13 @@ try{
     await page.getByRole('button',{name:'高级过滤',exact:true}).click();await page.getByRole('textbox',{name:'包含文件',exact:true}).fill('*.{ts,vue}, *.md');await query().press('Enter');await done();assert.deepEqual(await shell(()=>window.__searchCalls.at(-1).include_globs),['*.{ts,vue}','*.md'])
     assert((await shell(()=>window.__searchShell.workspace.searchHistory)).includes('composition'));assert((await shell(()=>window.__searchShell.workspace.replacementHistory)).includes('changed'))
   })
-  await check('drag/resize, pinned editor focus, bright/dark themes and bounds',async()=>{
-    const header=popup.locator('.global-search-title');const rect=await header.boundingBox();await page.mouse.move(rect.x+80,rect.y+15);await page.mouse.down();await page.mouse.move(rect.x+120,rect.y+40);await page.mouse.up();const moved=await popup.boundingBox();assert(moved.x>=16&&moved.y>=16)
-    const corner=await popup.locator('.corner').boundingBox();await page.mouse.move(corner.x+5,corner.y+5);await page.mouse.down();await page.mouse.move(corner.x-70,corner.y-40);await page.mouse.up();assert((await popup.boundingBox()).width>=560)
-    await page.getByRole('button',{name:'固定搜索窗口',exact:true}).click();await page.locator('.editor-host .cm-content').click({position:{x:5,y:10}});assert.equal(await popup.isVisible(),true)
+  await check('docked height, horizontal preview, editor focus, themes and responsive bounds',async()=>{
+    const handle=popup.getByRole('separator',{name:'调整搜索工具窗口高度'});const rect=await handle.boundingBox();const old=(await popup.boundingBox()).height
+    await page.mouse.move(rect.x+80,rect.y+2);await page.mouse.down();await page.mouse.move(rect.x+80,rect.y-35);await page.mouse.up();assert((await popup.boundingBox()).height>old)
+    assert.equal(await popup.locator('.global-search-body').evaluate(el=>getComputedStyle(el).flexDirection),'row')
+    await page.locator('.editor-host .cm-content').click({position:{x:5,y:10}});assert.equal(await popup.isVisible(),true)
     for(const theme of ['dark','light']){await shell(()=>window.__searchShell.toggleTheme());await settle();assert((await popup.boundingBox()).width>0)}
-    await page.setViewportSize({width:640,height:600});await settle();const bounded=await popup.boundingBox();assert(bounded.x>=15&&bounded.x+bounded.width<=641);assert(bounded.height<=511);await page.setViewportSize({width:1400,height:900})
+    await page.setViewportSize({width:640,height:600});await settle();const bounded=await popup.boundingBox();assert(bounded.x>=0&&bounded.x+bounded.width<=641);assert(bounded.height<=391);assert.equal(await popup.locator('.global-search-body').evaluate(el=>getComputedStyle(el).flexDirection),'column');await page.setViewportSize({width:1400,height:900})
   })
   await check('Escape restores focus and releases preview; repeated opening retains one subscription and no rescan',async()=>{
     await query().focus();await page.keyboard.press('Escape');await popup.waitFor({state:'hidden'});assert.equal(await page.locator('[data-search-preview-editor]').count(),0);const count=await shell(()=>window.__searchCalls.length)

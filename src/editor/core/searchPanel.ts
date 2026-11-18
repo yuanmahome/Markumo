@@ -16,6 +16,7 @@ export function showEditorSearch(view: EditorView, replacement: boolean) {
     view.dispatch({ effects: setSearchQuery.of(createSearchQuery(query)) })
   }
   const bar = panels.get(view)
+  bar?.expand()
   bar?.setReplaceVisible(replacement)
   const field = replacement ? bar?.replace : bar?.search
   field?.focus(); field?.select()
@@ -69,7 +70,7 @@ export function createEditorSearchPanel(view: EditorView): Panel {
     } else if (runScopeHandlers(view, event, 'search-panel')) { event.preventDefault(); event.stopPropagation() }
   }
   sync()
-  return { dom, top: true, mount() { search.focus(); search.select() }, update(update: ViewUpdate) {
+  return { dom, top: true, mount() { bar.mount(view.dom); bar.expand(); search.focus(); search.select() }, update(update: ViewUpdate) {
     if (update.docChanged || update.selectionSet || update.transactions.some(tr => tr.effects.some(effect => effect.is(setSearchQuery)))) sync()
-  }, destroy() { if (timer) clearTimeout(timer); panels.delete(view) } }
+  }, destroy() { if (timer) clearTimeout(timer); bar.destroy(); panels.delete(view) } }
 }

@@ -1,13 +1,20 @@
 <template>
-  <div class="app" :class="{ focus: focusMode }" :inert="updateInstalling || startupLoading || undefined">
+  <div class="app" :class="{ focus: focusMode, mini:miniActive }" :inert="updateInstalling || startupLoading || undefined">
+    <header v-if="miniActive" class="mini-titlebar" @pointerdown="dragMini">
+      <span :title="activeDoc?.path">{{activeDoc?.name||'Markumo'}}{{activeDoc?.dirty?' •':''}}</span>
+      <button :aria-pressed="miniPinned" aria-label="Mini 窗口置顶" title="置顶" :disabled="miniBusy" @click="toggleMiniPin"><Icon name="pin" /></button>
+      <button aria-label="退出 Mini 模式" title="返回主窗口" :disabled="miniBusy" @click="toggleMini"><Icon name="max" /></button>
+    </header>
+    <template v-if="miniActive"><div v-for="edge in (['North','South','East','West','NorthEast','NorthWest','SouthEast','SouthWest'] as const)" :key="edge" class="mini-resize-edge" :class="edge" @pointerdown.prevent.stop="resizeMini(edge)"></div></template>
     <!-- 顶部标题栏 -->
     <TopBar
-      v-if="!focusMode"
+      v-if="!focusMode && !miniActive"
       :app-mode="appMode"
       :theme="theme"
       :focus-mode="focusMode"
       :desktop="desktop"
       :file-busy="fileBusy || (!!activeDoc?.kind && activeDoc.kind !== 'text')"
+      :can-mini="!!activeDoc && !miniBusy && !startupLoading && !updateInstalling"
       :menu-groups="menuGroups"
       :command-registry="commandRegistry"
       :quick-shortcut="shortcuts['quick-open']"
@@ -20,6 +27,7 @@
       @set-mode="setMode"
       @toggle-theme="toggleTheme"
       @toggle-focus="toggleFocus"
+      @toggle-mini="toggleMini"
       @open-settings="openSettings"
       @open-palette="openPalette"
     />
@@ -28,7 +36,7 @@
     <div class="workspace-layout">
       <!-- 活动栏 (单文件模式可自动折叠) -->
       <ActivityBar
-        v-if="!focusMode && appMode === 'workspace'"
+        v-if="!focusMode && !miniActive && appMode === 'workspace'"
         :ui-font-size="uiFontSize"
         :active-panel="sidebarPanel"
         :sidebar-visible="sidebarVisible"
@@ -44,6 +52,7 @@
       <Sidebar
         ref="navigationSidebar"
         v-if="leftSidebarOccupied"
+        v-show="!miniActive"
         v-model:width="sidebarWidth"
         :active-panel="sidebarPanel"
         :active-doc-id="activeDocId"
@@ -70,7 +79,7 @@
           v-model:outline-width="outlineWidth"
           :doc="activeDoc"
           :manager="manager"
-          :show-outline="outlineVisible"
+          :show-outline="outlineVisible && !miniActive"
           :outline-position="effectiveOutlinePosition"
           :focus-mode="focusMode"
           :desktop="desktop"
@@ -79,7 +88,7 @@
           :welcome="!openedDocuments.length && !workspace.rootPath"
           :startup-loading="startupLoading"
           :root-path="workspace.rootPath"
-          :live-toolbar="liveToolbar"
+          :live-toolbar="liveToolbar && !miniActive"
           :markdown-width="markdownTypography.width"
           :workspace="workspace"
           @open-file="openFile()"
@@ -94,12 +103,13 @@
           @toggle-outline="toggleOutline"
           @update:markdown-width="updateMarkdownWidth"
         />
+        <GlobalSearchDialog v-if="workspace.searchDialogOpen && !workspace.searchDetached && !miniActive" :workspace="workspace" :shortcuts="shortcuts" @detach="detachSearch" />
       </section>
     </div>
 
     <!-- 底部状态栏 -->
     <StatusBar :primary-statistic="primaryStatistic" @set-statistic="primaryStatistic = $event"
-      v-if="!focusMode"
+      v-if="!focusMode && !miniActive"
       :doc="activeDoc"
       :manager="manager"
       :outline-enabled="outlineVisible"
@@ -115,7 +125,7 @@
       @open-recovery="openRecovery"
     />
 
-    <GlobalSearchDialog v-if="workspace.searchDialogOpen" :workspace="workspace" :shortcuts="shortcuts" />
+
     <!-- 命令面板模态框 -->
     <CommandPalette
       ref="paletteRef"
@@ -184,7 +194,7 @@
     />
 
     <!-- 专注模式退出浮动提示 -->
-    <div v-if="focusMode" class="focus-exit-dock">
+    <div v-if="focusMode && !miniActive" class="focus-exit-dock">
       <button class="focus-exit-btn" title="退出专注模式 (Esc / F8)" @click="toggleFocus">
         <span class="focus-exit-icon">✕</span>
         <span>退出专注模式 (Esc)</span>
@@ -236,6 +246,7 @@
 import ConversionWarnings from './features/document-conversion/ConversionWarnings.vue'
 import ExternalFileDialogs from './components/modals/ExternalFileDialogs.vue'
 import TopBar from './components/layout/TopBar.vue'
+import Icon from './components/common/Icon.vue'
 import ActivityBar from './components/layout/ActivityBar.vue'
 import Sidebar from './components/layout/Sidebar.vue'
 import EditorContainer from './components/layout/EditorContainer.vue'
@@ -253,7 +264,7 @@ import { computed, defineAsyncComponent, nextTick, provide, ref } from 'vue'
 const GlobalSearchDialog=defineAsyncComponent(()=>import('./components/search/GlobalSearchDialog.vue'))
 import { workspaceNavigationKey } from './features/workspace/navigation'
 import { useAppShell } from './app/useAppShell'
-const { primaryStatistic,autoCheckUpdates,autoDownloadUpdates,updateStatus,updatePanelOpen,updateConfirmRef,updateManager,openUpdatePanel,openUpdateRelease,openUpdateLink,caretAnimation,outlineWidth,markdownClipboard,markdownTypography,appMode, sidebarVisible, sidebarWidth, sidebarPanel, focusMode, theme, uiFontSize, fontSize, fontFamily, indentSize, useTabs, shortcuts, updateShortcuts, updateKeymap, keymapPreset, wordWrap, showOutline, typewriterMode, defaultMdMode, liveToolbar, externalFileMonitoring, autoReloadExternal, autoSave, autoSaveDelay, treeClickMode, autoFollowActiveFile, smartExpand, compactFolders, syntaxStyle, bracketMode, imageRules,currentDocumentImageRules,updateDocumentImageRules,
+const {miniActive,miniPinned,miniBusy,toggleMini,toggleMiniPin,dragMini,resizeMini,detachSearch, primaryStatistic,autoCheckUpdates,autoDownloadUpdates,updateStatus,updatePanelOpen,updateConfirmRef,updateManager,openUpdatePanel,openUpdateRelease,openUpdateLink,caretAnimation,outlineWidth,markdownClipboard,markdownTypography,appMode, sidebarVisible, sidebarWidth, sidebarPanel, focusMode, theme, uiFontSize, fontSize, fontFamily, indentSize, useTabs, shortcuts, updateShortcuts, updateKeymap, keymapPreset, wordWrap, showOutline, typewriterMode, defaultMdMode, liveToolbar, externalFileMonitoring, autoReloadExternal, autoSave, autoSaveDelay, treeClickMode, autoFollowActiveFile, smartExpand, compactFolders, syntaxStyle, bracketMode, imageRules,currentDocumentImageRules,updateDocumentImageRules,
   paletteRef, settingsRef, discardRef, toastRef, historyOpen, historyPath, historyDocumentId, historyContent, manager, files, workspace, openedDocuments, activeDoc, activeDocId, exportProgress, cancelExport, importProgress, cancelImport, importResult, exportResult, dismissImportWarnings, dismissExportWarnings, paletteActions, menuGroups,commandRegistry,executeCommand,
   setMode, toggleSidebar, handleSelectPanel, leftSidebarOccupied, effectiveOutlinePosition, outlineSupported, outlineVisible, toggleOutline, toggleTheme, toggleFocus, openSettings, openPalette, handleSelectDoc,
   createNewDoc, closeDocById, cancelPendingClose, discardPending, savePending, setLanguage,
@@ -361,4 +372,16 @@ const activeRoot = computed(() => appMode.value === 'workspace' && activeDoc.val
 .conversion-notices { position:fixed;right:20px;bottom:90px;z-index:1500;display:flex;flex-direction:column;gap:8px; }
 .docx-export-progress button { cursor:pointer;padding:4px 10px;border:1px solid var(--line);border-radius:4px;color:var(--ink);background:var(--hover); }
 .docx-export-progress button:disabled { cursor:default;opacity:.55; }
+</style>
+
+<style>
+.mini-titlebar{display:flex;align-items:center;gap:4px;height:34px;flex:none;padding:0 8px;background:var(--bar);border-bottom:1px solid var(--line);user-select:none}
+.mini-titlebar>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--ui-small-font-size)}.mini-titlebar button{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:6px;color:var(--sub);transition:background .12s,color .12s}.mini-titlebar button .icon{width:16px;height:16px}.mini-titlebar button:hover{background:var(--hover);color:var(--bright)}.mini-titlebar button[aria-pressed=true]{background:var(--accentbg);color:var(--accent)}.mini-titlebar button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.app.mini .tabs,.app.mini .split-divider,.app.mini .pane-divider,.app.mini .pane:not(.active),.app.mini .split-child:not(:has(.pane.active)){display:none!important}
+.app.mini .split-child:has(.pane.active){flex:1!important;min-width:0;min-height:0}
+.app.mini .markdown-live{min-width:0}.app.mini .focus-exit-dock{display:none}
+</style>
+
+<style>
+.mini-resize-edge{position:fixed;z-index:999;touch-action:none}.mini-resize-edge.North{top:0;left:6px;right:6px;height:4px;cursor:n-resize}.mini-resize-edge.South{bottom:0;left:6px;right:6px;height:4px;cursor:s-resize}.mini-resize-edge.East{right:0;top:6px;bottom:6px;width:4px;cursor:e-resize}.mini-resize-edge.West{left:0;top:6px;bottom:6px;width:4px;cursor:w-resize}.mini-resize-edge:is(.NorthEast,.NorthWest,.SouthEast,.SouthWest){width:6px;height:6px}.mini-resize-edge.NorthEast{top:0;right:0;cursor:ne-resize}.mini-resize-edge.NorthWest{top:0;left:0;cursor:nw-resize}.mini-resize-edge.SouthEast{bottom:0;right:0;cursor:se-resize}.mini-resize-edge.SouthWest{bottom:0;left:0;cursor:sw-resize}
 </style>

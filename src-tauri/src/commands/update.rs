@@ -108,7 +108,7 @@ pub fn update_windows_status(
         .app_handle()
         .webview_windows()
         .keys()
-        .filter(|label| label.as_str() != window.label())
+        .filter(|label| label.as_str() != window.label() && !label.starts_with("search-"))
         .map(|label| coordinator.statuses.get(label).cloned())
         .collect())
 }
@@ -123,7 +123,7 @@ pub fn begin_update_install(
     let registered = launches.lock().map_err(|e| e.to_string())?.windows.len();
     coordinator.acquire(
         window.label(),
-        window.app_handle().webview_windows().len(),
+        window.app_handle().webview_windows().keys().filter(|label| !label.starts_with("search-")).count(),
         registered,
     )
 }

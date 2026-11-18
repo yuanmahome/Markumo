@@ -160,7 +160,7 @@ try {
       return {
         embCM: { ...window.__markumoMemoryProbe.editors.embeddedCM },
         highlightedBlocks: [...document.querySelectorAll('.markdown-live .md-code-block')].filter(b =>
-          b.querySelector('.md-code-line span[class]')
+          b.querySelector('.md-code-text span[class]')
         ).length,
       }
     })
@@ -175,6 +175,9 @@ try {
     const res = await page.evaluate(async () => {
       window.__resetMemorySceneProbe()
       const pane = document.querySelector('.markdown-live')
+      // The static skeleton includes line numbers/text wrappers for all fences.
+      // Bound growth from scrolling rather than an obsolete skeleton node count.
+      const baselineDom=document.querySelectorAll('*').length
       for (let pass = 0; pass < 2; pass++) {
         pane.scrollTop = 0
         while (pane.scrollTop + pane.clientHeight < pane.scrollHeight - 10) {
@@ -188,11 +191,12 @@ try {
         embCM: { ...window.__markumoMemoryProbe.editors.embeddedCM },
         tasks: { ...window.__markumoMemoryProbe.tasks },
         connectedDom: document.querySelectorAll('*').length,
+        baselineDom,
       }
     })
     assert.equal(res.embCM.peak, 0, 'Continuous rapid scrolling must never allocate embedded CM')
     assert.equal(res.embCM.live, 0)
-    assert(res.connectedDom < 9000, `DOM must stay bounded after two full-document scrolls (got ${res.connectedDom})`)
+    assert(res.connectedDom <= res.baselineDom+1000, `Scroll DOM growth must stay bounded (before ${res.baselineDom}, after ${res.connectedDom})`)
     return res
   })
 
@@ -525,7 +529,7 @@ try {
       }
       await new Promise(r => setTimeout(r, 150))
       const highlightedWhileHidden = [...document.querySelectorAll('.markdown-live .md-code-block')].filter(b =>
-        b.querySelector('.md-code-line span[class]')
+        b.querySelector('.md-code-text span[class]')
       ).length
 
       hiddenState = false
@@ -533,13 +537,13 @@ try {
       const deadline = Date.now() + 5000
       while (Date.now() < deadline) {
         const count = [...document.querySelectorAll('.markdown-live .md-code-block')].filter(b =>
-          b.querySelector('.md-code-line span[class]')
+          b.querySelector('.md-code-text span[class]')
         ).length
         if (count >= 2) break
         await new Promise(r => setTimeout(r, 15))
       }
       const highlightedAfterRestore = [...document.querySelectorAll('.markdown-live .md-code-block')].filter(b =>
-        b.querySelector('.md-code-line span[class]')
+        b.querySelector('.md-code-text span[class]')
       ).length
       delete document.hidden
       return { highlightedWhileHidden, highlightedAfterRestore }

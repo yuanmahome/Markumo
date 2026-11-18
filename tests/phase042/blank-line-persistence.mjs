@@ -211,7 +211,9 @@ try {
     assert.equal(await text(), 'A\n\n  \n\nB')
     await page.keyboard.press('Backspace'); await page.keyboard.press('Backspace')
     assert.equal(await text(), 'A\n\n\n\nB')
-    await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowDown')
+    // Native vertical navigation reads DOM caret geometry, after PM's update.
+    const settleCaret=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+    await settleCaret();await page.keyboard.press('ArrowUp');await settleCaret();await page.keyboard.press('ArrowDown');await settleCaret()
     assert.equal(await page.evaluate(() => window.f.live().view.state.selection.$from.parent.content.size), 0)
     console.log('PASS mouse caret, keyboard navigation, typed spaces and return to an empty paragraph')
 

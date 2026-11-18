@@ -351,7 +351,10 @@ export class LiveClipboard {
     ) {
       const topNode = state.doc.child($from.index(0))
       const block = bridge.blocks.find(b => b.id === topNode.attrs.sourceId)
-      if (block) {
+      // Blank paragraphs own gap separators, not an ordinary inline source
+      // span. Let the bridge promote them through its structural path so a
+      // pasted formula/mark does not retain an extra blank paragraph on reopen.
+      if (block && !block.blank) {
         const from = bridge.sourcePosition(state.selection.from)
         const to = bridge.sourcePosition(state.selection.to)
         if (from >= block.from && to <= block.to && from <= to) {

@@ -6,7 +6,7 @@ pub fn get_app_version() -> String {
 #[tauri::command]
 pub fn ensure_update_window(window: tauri::WebviewWindow) -> Result<(), String> {
     use tauri::Manager;
-    if window.app_handle().webview_windows().len() != 1 {
+    if window.app_handle().webview_windows().keys().filter(|label| !label.starts_with("search-")).count() != 1 {
         return Err("请先保存修改并关闭其他 Markumo 窗口，再安装更新。".into());
     }
     Ok(())

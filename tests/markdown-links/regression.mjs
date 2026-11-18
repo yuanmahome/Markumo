@@ -50,6 +50,8 @@ try {
     assert.equal(await input.innerText(), '[定制项目配套代码讲解文档](codeExplain.md "说明")')
     assert.equal((await requests()).length, 0)
     await page.locator('.md-prose p').filter({ hasText: 'Start plain text.' }).click(); await settle()
+    // The selection transaction may finish after the two animation frames.
+    await page.locator('.md-source-link').waitFor({state:'detached'})
     assert.equal(await page.locator('.md-source-link').count(), 0)
   })
   for (const modifier of ['Control', 'Meta']) await test(`${modifier}: first click navigates once without any editor/DOM/selection/history change`, async () => {

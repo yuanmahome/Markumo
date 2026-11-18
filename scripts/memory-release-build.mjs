@@ -37,9 +37,13 @@ if (fullRef) {
   sourceRoot = path.join(root, `source-${label}-${commit.slice(0, 12)}`)
   assert(!fs.existsSync(sourceRoot), 'Historical source snapshot already exists; use a new label')
   fs.mkdirSync(sourceRoot)
-  const archive = path.join(root, `source-${label}.tar`)
-  execFileSync('git', ['archive', '--format=tar', `--output=${archive}`, commit], { cwd: repository, windowsHide: true })
-  execFileSync('tar', ['-xf', archive, '-C', sourceRoot], { windowsHide: true })
+  const format=process.platform==='win32'?'zip':'tar'
+  const archive = path.join(root, `source-${label}.${format}`)
+  execFileSync('git', ['archive', `--format=${format}`, `--output=${archive}`, commit], { cwd: repository, windowsHide: true })
+  if(process.platform==='win32'){
+    const literal=value=>"'"+value.replaceAll("'","''")+"'"
+    execFileSync('powershell',['-NoProfile','-Command',`Expand-Archive -LiteralPath ${literal(archive)} -DestinationPath ${literal(sourceRoot)}`],{windowsHide:true})
+  }else execFileSync('tar', ['-xf', archive, '-C', sourceRoot], { windowsHide: true })
   // Build an immutable archive, not a Git worktree. Only compiler-generated
   // outputs and the external test configuration are written for historical refs.
   process.chdir(sourceRoot)
@@ -285,6 +289,11 @@ await build({
           assert(at > 0, 'Settings persistence probe anchor missing')
           return code.slice(0, at) + '\n  ;(window as any).__nativeSettingsProbe = { preferences, prepareUpdate, updateInstalling, startupLoading, ready: () => launchReady };\n' + code.slice(at)
         }
+        if (label.startsWith('search-mini-') && cleanId.endsWith('/app/useAppShell.ts')) {
+          const at=code.lastIndexOf('  return {'),end=code.lastIndexOf('}')
+          const source=code.slice(0,at)+code.slice(at,end).replace('  return {','  const __searchMiniShell = {')+'\n  ;(window as any).__searchMiniShell=__searchMiniShell; (window as any).__nativeSearchShell=__searchMiniShell; (window as any).__nativeWorkspace=workspace; return __searchMiniShell;\n'+code.slice(end)
+          return source
+        }
         if(label.startsWith('dnd-')&&cleanId.endsWith('/features/windows/tabDetach.ts'))return code.replace('pending.id=started.handoffId','pending.id=started.handoffId; (window as any).__dndLastDetach=started; if((window as any).__holdBusyAfterBegin)(window as any).__dndShell.fileBusy.value=true').replace('if (!isTauri()) return null', 'if((window as any).__holdIncoming)return new Promise(()=>{}); if (!isTauri()) return null')
         if(label.startsWith('dnd-')&&cleanId.endsWith('/editor/layout/TabDragService.ts'))return code.replace('export const tabDragService = TabDragService.getInstance()','export const tabDragService = TabDragService.getInstance(); (window as any).__dndDragService=tabDragService').replace('if(id!==this.dragId)return','if(id!==this.dragId)return; (window as any).__dndNativeReleases=((window as any).__dndNativeReleases||0)+1')
         if ((label==='global-search'||label.startsWith('dnd-')) && cleanId.endsWith('/app/useAppShell.ts')) {
@@ -391,7 +400,7 @@ if(isolatedInstaller)fs.writeFileSync(emptyHooks,'; Isolated performance install
 const config = {
   ...(installer?{productName:isolatedInstaller?'Markumo Markdown Performance Test':'Markumo Window Lifecycle Test'}:{}),
   identifier: `com.markumo.phase042-${label}`,
-  app: { appDirectoriesOverride: profileDir, ...(installer?{security:{capabilities:['default',{identifier:'lifecycle-test-focus',windows:['main','file-*','app-*','detached-*'],permissions:['core:window:allow-set-focus']}]}}:{}) },
+  app: { appDirectoriesOverride: profileDir, ...(label.startsWith('search-mini-')?{security:{capabilities:['default',{identifier:'search-mini-native-test',windows:['main','file-*','app-*','detached-*','search-*'],permissions:['core:window:allow-set-size','core:window:allow-set-position','core:window:allow-maximize','core:window:allow-unmaximize','core:window:allow-set-fullscreen','core:window:allow-set-focus']}]}}:{}), ...(installer?{security:{capabilities:['default',{identifier:'lifecycle-test-focus',windows:['main','file-*','app-*','detached-*'],permissions:['core:window:allow-set-focus']}]}}:{}) },
   build: {
     beforeBuildCommand: null,
     frontendDist: path.relative(path.resolve('src-tauri'), dist).replaceAll('\\', '/'),

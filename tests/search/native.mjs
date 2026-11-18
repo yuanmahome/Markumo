@@ -31,7 +31,7 @@ const temp=path.resolve('test-results/search/tmp');fs.mkdirSync(temp,{recursive:
 let child,browser,page
 const errors=[],results=[],metrics={}
 const state=()=>page.evaluate(()=>{const w=window.__nativeWorkspace;return {status:w.searchStatus,total:w.searchTotal,message:w.searchMessage,previewError:w.searchPreviewError,replaceMessage:w.replaceMessage,report:w.replacementReport,groups:w.searchResults.map(g=>({path:g.path,count:g.matches.length}))}})
-const popup=()=>page.getByRole('dialog',{name:'全局搜索与替换'})
+const popup=()=>page.getByRole('region',{name:'全局搜索与替换'})
 async function done(){await page.waitForFunction(()=>!window.__nativeWorkspace.searching&&!['idle','searching'].includes(window.__nativeWorkspace.searchStatus))}
 async function search(text,options={}){
  await page.evaluate(async({text,options})=>{const w=window.__nativeWorkspace;Object.assign(w,options);await w.search(text)}, {text,options});await done();return state()
@@ -109,7 +109,7 @@ try{
    await page.locator('.search-hit').first().click({button:'right'});await page.getByRole('menuitem',{name:'仅在此目录搜索',exact:true}).click();await page.waitForFunction(()=>window.__nativeWorkspace.searchScope==='directory'&&!window.__nativeWorkspace.searching);assert.equal(await page.evaluate(()=>window.__nativeWorkspace.searchDirectory.replaceAll('\\','/')),path.join(roots[0],'src').replaceAll('\\','/'))
  })
  await check('preview navigation opens/pins correct document and right split uses existing Pane layout',async()=>{
-   await search('const',{searchInclude:'Main.ts'});await page.evaluate(async()=>{const w=window.__nativeWorkspace;await w.locateMatch(w.searchResults[0].matches[0],'split')});await popup().waitFor({state:'hidden'});assert.equal(await page.evaluate(()=>window.__nativeManager.layout.getAllPanes().length),2);assert.equal(await page.evaluate(()=>window.__nativeManager.activeDocument.name),'Main.ts')
+   await search('const',{searchInclude:'Main.ts'});await page.evaluate(async()=>{const w=window.__nativeWorkspace;await w.locateMatch(w.searchResults[0].matches[0],'split')});await popup().waitFor();assert.equal(await page.evaluate(()=>window.__nativeManager.layout.getAllPanes().length),2);assert.equal(await page.evaluate(()=>window.__nativeManager.activeDocument.name),'Main.ts')
  })
  await check('2100-file scope performance and repeated popup lifecycle release',async()=>{
    await page.evaluate(()=>window.__nativeWorkspace.focusWorkspaceSearch());await popup().waitFor();const start=performance.now();await search('quiet',{searchScope:'workspace',searchInclude:'filler-1?.txt'});metrics.search2100FilesMs=Math.round(performance.now()-start);assert.equal((await state()).total,10)

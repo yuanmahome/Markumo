@@ -124,6 +124,7 @@ try {
   await reset('')
   await page.locator('.md-prose').click()
   await page.keyboard.type('AuthController`')
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
   await page.keyboard.press('Home')
   await page.keyboard.type('`')
   await page.waitForTimeout(30)

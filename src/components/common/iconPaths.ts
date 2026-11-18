@@ -1,4 +1,5 @@
 export const commonIconPaths = {
+  search: 'M21 21l-6-6 M17 10a7 7 0 1 1-14 0 7 7 0 1 1 14 0',
   copy: 'M9 9h11v12H9z M5 15H3V3h12v2',
   check: 'm5 12 4 4L19 6',
   chevronRight: 'm9 6 6 6-6 6',

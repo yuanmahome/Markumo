@@ -1,0 +1,266 @@
+{
+  "date": "2026-11-18",
+  "baselineCommit": "a1e8bd7e7c986f50622b2d4c9f39b3730dd28fa8",
+  "beforeBinarySha256": "8ad88971f05c26ce2de174b616f18f5c80e2dde1938872f9cce308fb3d950732",
+  "afterBinarySha256": "2c8d35cfad32ca7baef29f79034fb0cbdc27c46e18e7139218b5ab75c5b0d955",
+  "afterSourceInputsSha256": "d2efe5322b121c6a70ef8a4b0561a7454aeb6e013671772501b9860b18b7d8fa",
+  "method": "Windows isolated Release; fresh profiles; 1200x780 main window; same 15000-line Markdown; 1000 bounded hits; forced GC; process-tree private bytes and working set; JS/DOM metrics from main WebView, detachedUi from search WebView; one sample, not a long-term memory bound",
+  "before": {
+    "empty": {
+      "Documents": 2,
+      "Nodes": 537,
+      "JSHeapUsedSize": 6671852,
+      "workingSet": 428208128,
+      "processes": 7,
+      "privateBytes": 211021824,
+      "webviews": 1
+    },
+    "document": {
+      "Documents": 2,
+      "Nodes": 943,
+      "JSHeapUsedSize": 11312432,
+      "workingSet": 469778432,
+      "processes": 7,
+      "privateBytes": 243335168,
+      "webviews": 1
+    },
+    "search": {
+      "Documents": 2,
+      "Nodes": 1488,
+      "JSHeapUsedSize": 12914076,
+      "workingSet": 478818304,
+      "processes": 7,
+      "privateBytes": 252456960,
+      "webviews": 1
+    },
+    "monitors": [
+      {
+        "name": "\\\\.\\DISPLAY1",
+        "size": {
+          "width": 2560,
+          "height": 1440
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "workArea": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "size": {
+            "width": 2560,
+            "height": 1392
+          }
+        },
+        "scaleFactor": 1
+      }
+    ]
+  },
+  "after": {
+    "empty": {
+      "Documents": 2,
+      "Nodes": 556,
+      "JSHeapUsedSize": 7449172,
+      "workingSet": 383115264,
+      "processes": 7,
+      "privateBytes": 203980800,
+      "webviews": 1
+    },
+    "document": {
+      "Documents": 2,
+      "Nodes": 962,
+      "JSHeapUsedSize": 12083704,
+      "workingSet": 429166592,
+      "processes": 7,
+      "privateBytes": 235687936,
+      "webviews": 1
+    },
+    "search": {
+      "Documents": 2,
+      "Nodes": 1519,
+      "JSHeapUsedSize": 13661364,
+      "workingSet": 438636544,
+      "processes": 7,
+      "privateBytes": 238751744,
+      "webviews": 1
+    },
+    "detached": {
+      "Documents": 2,
+      "Nodes": 966,
+      "JSHeapUsedSize": 15108008,
+      "workingSet": 557486080,
+      "processes": 8,
+      "privateBytes": 316264448,
+      "webviews": 2
+    },
+    "detachedUi": {
+      "Documents": 1,
+      "Nodes": 715,
+      "JSHeapUsedSize": 5739112
+    },
+    "cyclesBefore": {
+      "Documents": 2,
+      "Nodes": 2393,
+      "JSHeapUsedSize": 18498368,
+      "workingSet": 552185856,
+      "processes": 7,
+      "privateBytes": 388763648,
+      "webviews": 1
+    },
+    "cyclesAfter": {
+      "Documents": 2,
+      "Nodes": 2016,
+      "JSHeapUsedSize": 18482040,
+      "workingSet": 570228736,
+      "processes": 7,
+      "privateBytes": 397000704,
+      "webviews": 1
+    },
+    "cyclesSettled": {
+      "Documents": 2,
+      "Nodes": 2016,
+      "JSHeapUsedSize": 18481992,
+      "workingSet": 565915648,
+      "processes": 7,
+      "privateBytes": 386600960,
+      "webviews": 1
+    },
+    "monitors": [
+      {
+        "name": "\\\\.\\DISPLAY1",
+        "size": {
+          "width": 2560,
+          "height": 1440
+        },
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "workArea": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "size": {
+            "width": 2560,
+            "height": 1392
+          }
+        },
+        "scaleFactor": 1
+      }
+    ]
+  },
+  "nativeCases": [
+    "native detach shares one search session without DocumentManager or workspace startup",
+    "detached typing, IME, replacement preview and canonical Undo/Redo",
+    "owner update barrier rejects auxiliary mutations",
+    "native geometry, minimize, redock and stale request isolation",
+    "Mini preserves editor instances, dirty text, selection, mode, history and native placement",
+    "repeated native detach/close frees the search WebView and preview",
+    "owner destruction closes auxiliary windows without orphaning a renderer"
+  ],
+  "errors": [],
+  "initialAfter": {
+    "binarySha256": "4930ae42a35ee47cfc27c737d765b3fa89c05004db75a5a6c1b3275d64eeb321",
+    "sourceInputsSha256": "9c9f05436767436462e8a01eed30c176b354b2cc7ba137d8521929e203883403",
+    "metrics": {
+      "empty": {
+        "Documents": 2,
+        "Nodes": 556,
+        "JSHeapUsedSize": 7453276,
+        "workingSet": 429973504,
+        "processes": 7,
+        "privateBytes": 215678976,
+        "webviews": 1
+      },
+      "document": {
+        "Documents": 2,
+        "Nodes": 962,
+        "JSHeapUsedSize": 12096892,
+        "workingSet": 469946368,
+        "processes": 7,
+        "privateBytes": 245346304,
+        "webviews": 1
+      },
+      "search": {
+        "Documents": 2,
+        "Nodes": 1519,
+        "JSHeapUsedSize": 13671240,
+        "workingSet": 478728192,
+        "processes": 7,
+        "privateBytes": 248422400,
+        "webviews": 1
+      },
+      "detached": {
+        "Documents": 2,
+        "Nodes": 966,
+        "JSHeapUsedSize": 14016000,
+        "workingSet": 597073920,
+        "processes": 8,
+        "privateBytes": 323350528,
+        "webviews": 2
+      },
+      "detachedUi": {
+        "Documents": 1,
+        "Nodes": 715,
+        "JSHeapUsedSize": 5739164
+      },
+      "cyclesBefore": {
+        "Documents": 2,
+        "Nodes": 2369,
+        "JSHeapUsedSize": 18570668,
+        "workingSet": 606420992,
+        "processes": 7,
+        "privateBytes": 404439040,
+        "webviews": 1
+      },
+      "cyclesAfter": {
+        "Documents": 2,
+        "Nodes": 1992,
+        "JSHeapUsedSize": 18473452,
+        "workingSet": 613060608,
+        "processes": 7,
+        "privateBytes": 403017728,
+        "webviews": 1
+      },
+      "cyclesSettled": {
+        "Documents": 2,
+        "Nodes": 1992,
+        "JSHeapUsedSize": 18473404,
+        "workingSet": 602169344,
+        "processes": 7,
+        "privateBytes": 388198400,
+        "webviews": 1
+      },
+      "monitors": [
+        {
+          "name": "\\\\.\\DISPLAY1",
+          "size": {
+            "width": 2560,
+            "height": 1440
+          },
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "workArea": {
+            "position": {
+              "x": 0,
+              "y": 0
+            },
+            "size": {
+              "width": 2560,
+              "height": 1392
+            }
+          },
+          "scaleFactor": 1
+        }
+      ]
+    }
+  },
+  "afterBaseCommit": "45221841ec25be897457dba1cbfec7e96342947b",
+  "afterVersion": "1.3.0",
+  "comparisonCaveat": "Final includes remote main 1.2.8/1.2.9 fixes as well as this feature; process memory varies between samples, so deltas are observations, not causal attribution or a long-term bound."
+}

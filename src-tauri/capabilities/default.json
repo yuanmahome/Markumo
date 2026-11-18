@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Default capabilities for Markumo",
-  "windows": ["main", "file-*", "app-*", "detached-*"],
+  "windows": ["main", "file-*", "app-*", "detached-*", "search-*"],
   "permissions": [
     "core:default",
     "updater:default",
@@ -15,7 +15,9 @@
     "core:window:allow-close",
     "core:window:allow-set-theme",
     "core:window:allow-minimize",
+    "core:window:allow-set-focus",
     "core:window:allow-toggle-maximize",
-    "core:window:allow-start-dragging"
+    "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging"
   ]
 }

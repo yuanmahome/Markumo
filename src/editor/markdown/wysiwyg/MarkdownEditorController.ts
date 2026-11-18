@@ -1688,7 +1688,6 @@ export class MarkdownEditorController implements LiveEditor {
           nextSelection=TextSelection.create(this.view.state.doc,this.view.posAtDOM(native.anchorNode,native.anchorOffset),this.view.posAtDOM(native.focusNode,native.focusOffset))
         } catch { /* Detached DOM selection: keep PM's current selection. */ }
       }
-      editor.destroy()
       if (!this.disposed) {
         if (this.pendingSource !== null) { const source=this.pendingSource; this.pendingSource=null; this.sync(source) }
         if (ownsFocus && hadFocus && !nextSelection) {
@@ -1697,6 +1696,10 @@ export class MarkdownEditorController implements LiveEditor {
         }
         if(nextSelection && nextSelection.$from.doc===this.view.state.doc)this.view.dispatch(this.view.state.tr.setSelection(nextSelection))
         else this.view.updateState(this.view.state)
+        // Remove the decoration through PM before releasing its DOM. An
+        // external removal is otherwise observed as a document mutation and
+        // can overwrite the arrow/Shift-arrow selection handed off next.
+        editor.destroy()
         if (ownsFocus && hadFocus) this.view.focus()
       }
     })

@@ -49,6 +49,7 @@ export class LiveSearchController {
     this.dom.addEventListener('compositionstart', () => { this.composing = true })
     this.dom.addEventListener('compositionend', () => { this.composing = false; this.handleInput() })
     parent.append(this.dom)
+    this.bar.mount(parent)
 
     this.dom.onkeydown = event => {
       if (event.isComposing || this.composing || event.keyCode === 229) return
@@ -85,6 +86,7 @@ export class LiveSearchController {
 
   open(replace = false) {
     this.dom.hidden = false
+    this.bar.expand()
     this.setReplaceVisible(replace)
 
     const sel = this.view.state.selection
@@ -282,6 +284,7 @@ export class LiveSearchController {
 
   destroy() {
     if (this.syncTimer) clearTimeout(this.syncTimer)
+    this.bar.destroy()
     this.dom.remove()
   }
 }
