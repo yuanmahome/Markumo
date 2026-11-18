@@ -32,6 +32,23 @@ let child,browser,page
 const errors=[],results=[],metrics={}
 const state=()=>page.evaluate(()=>{const w=window.__nativeWorkspace;return {status:w.searchStatus,total:w.searchTotal,message:w.searchMessage,previewError:w.searchPreviewError,replaceMessage:w.replaceMessage,report:w.replacementReport,groups:w.searchResults.map(g=>({path:g.path,count:g.matches.length}))}})
 const popup=()=>page.getByRole('region',{name:'全局搜索与替换'})
+async function dockSearch(){
+ const deadline=Date.now()+15000
+ while(Date.now()<deadline){
+   const child=browser.contexts().flatMap(context=>context.pages()).find(p=>!p.isClosed()&&p.url().includes('searchWindow=1'))
+   if(child){
+     await child.getByRole('button',{name:'打开查找窗口',exact:true}).click()
+     await popup().waitFor()
+     return
+   }
+   await new Promise(resolve=>setTimeout(resolve,50))
+ }
+ throw Error('Search window did not open')
+}
+async function openDocked(replace=false){
+ await page.evaluate(replace=>window.__nativeWorkspace.focusWorkspaceSearch(replace),replace)
+ await dockSearch()
+}
 async function done(){await page.waitForFunction(()=>!window.__nativeWorkspace.searching&&!['idle','searching'].includes(window.__nativeWorkspace.searchStatus))}
 async function search(text,options={}){
  await page.evaluate(async({text,options})=>{const w=window.__nativeWorkspace;Object.assign(w,options);await w.search(text)}, {text,options});await done();return state()
@@ -50,7 +67,7 @@ try{
  })
  await check('single-file opened scope includes unsaved buffer and pathless draft; no workspace/layout mutation',async()=>{
    await open('alpha/open.txt');await page.evaluate(()=>{const m=window.__nativeManager;const d=m.activeDocument;m.dispatch(d.id,{changes:{from:0,to:6,insert:'unsaved'}});window.__searchDraft=m.createRecoveredDocument({id:'search-native-draft',name:'Draft.txt',text:'unsaved draft needle\n'})})
-   await page.keyboard.press('Control+Shift+f');await popup().waitFor();const s=await search('unsaved');assert.equal(s.total,2);assert.equal(await page.evaluate(()=>window.__nativeWorkspace.roots.length),0);assert.equal(await page.evaluate(()=>window.__nativeSearchShell.appMode.value),'single')
+   await page.keyboard.press('Control+Shift+f');await dockSearch();const s=await search('unsaved');assert.equal(s.total,2);assert.equal(await page.evaluate(()=>window.__nativeWorkspace.roots.length),0);assert.equal(await page.evaluate(()=>window.__nativeSearchShell.appMode.value),'single')
    assert.equal(fs.readFileSync(path.join(output,'alpha/open.txt'),'utf8'),fixtures.get('alpha/open.txt'))
  })
  await check('opened draft replacement uses real Rust capture expansion and undoable canonical transactions',async()=>{
@@ -73,6 +90,18 @@ try{
    await page.evaluate(()=>{const w=window.__nativeWorkspace;void w.search('needle');w.cancelSearch()});await page.waitForTimeout(300);assert.equal((await state()).status,'canceled')
    await page.evaluate(async()=>{const w=window.__nativeWorkspace;void w.search('needle');await w.search('const')});await done();assert.equal((await state()).total,1)
  })
+ await check('switch from workspace to opened excludes a recently closed tab',async()=>{
+   await open('alpha/closed.txt')
+   await page.evaluate(()=>{
+    const m=window.__nativeManager
+    m.close(m.openedDocuments.find(doc=>doc.name==='closed.txt').id,true)
+   })
+   assert.equal((await search('needle',{searchScope:'workspace',searchInclude:'closed.txt'})).total,1)
+   await popup().getByRole('button',{name:'已打开文件',exact:true}).click()
+   await done()
+   assert.equal((await state()).total,0)
+   await search('needle',{searchScope:'workspace',searchInclude:''})
+ })
  await check('bounded disk preview, one reused CodeMirror, Markdown remains source and stale disk rejected',async()=>{
    await search('needle',{searchInclude:'preview.md',isCaseSensitive:false});await page.locator('.search-hit').first().click();await page.waitForSelector('[data-search-preview-editor] .cm-editor');await page.waitForFunction(()=>!!window.__nativeWorkspace.searchPreview)
    assert.equal(await popup().locator('.ProseMirror,img,.katex,svg.mermaid').count(),0);const before=browser.contexts().flatMap(context=>context.pages()).filter(page=>!page.url().startsWith('devtools:')).length;assert.equal(before,metrics.initialWebViews,'Search must not create another WebView')
@@ -92,7 +121,7 @@ try{
  await check('unsaved workspace buffer replacement remains undoable and does not write disk',async()=>{
    await search('unsaved',{searchInclude:'open.txt'});await page.evaluate(async()=>{const w=window.__nativeWorkspace;w.replacementText='buffer-edit';await w.previewReplace();await w.applyReplacements()});assert.match((await state()).report[0],/可撤销/)
    assert.equal(fs.readFileSync(path.join(output,'alpha/open.txt'),'utf8'),fixtures.get('alpha/open.txt'))
-   await page.evaluate(()=>{const w=window.__nativeWorkspace,m=window.__nativeManager;w.closeSearchDialog(false);m.open(m.openedDocuments.find(doc=>doc.name==='open.txt').id,false);m.activeEditorView.focus()});await popup().waitFor({state:'hidden'});await page.keyboard.press('Control+z');assert((await page.evaluate(()=>window.__nativeManager.getText(window.__nativeManager.activeDocument.id))).startsWith('unsaved'));await page.keyboard.press('Control+y');assert((await page.evaluate(()=>window.__nativeManager.getText(window.__nativeManager.activeDocument.id))).startsWith('buffer-edit'));await page.evaluate(()=>window.__nativeWorkspace.focusWorkspaceSearch(true));await popup().waitFor()
+   await page.evaluate(()=>{const w=window.__nativeWorkspace,m=window.__nativeManager;w.closeSearchDialog(false);m.open(m.openedDocuments.find(doc=>doc.name==='open.txt').id,false);m.activeEditorView.focus()});await popup().waitFor({state:'hidden'});await page.keyboard.press('Control+z');assert((await page.evaluate(()=>window.__nativeManager.getText(window.__nativeManager.activeDocument.id))).startsWith('unsaved'));await page.keyboard.press('Control+y');assert((await page.evaluate(()=>window.__nativeManager.getText(window.__nativeManager.activeDocument.id))).startsWith('buffer-edit'));await openDocked(true)
  })
  await check('cancel replacement stops remaining files without claiming the first write was undone',async()=>{
    await search('cancelneedle',{searchInclude:'batch-*.txt'});await page.evaluate(async()=>{const w=window.__nativeWorkspace;w.replacementText='executed';await w.previewReplace();const apply=w.gateway.applyReplace;w.gateway.applyReplace=async request=>{const result=await apply(request);w.cancelReplace();return result};try{await w.applyReplacements()}finally{w.gateway.applyReplace=apply}})
@@ -102,19 +131,37 @@ try{
  await check('closing search during a checked disk write allows the approved batch to complete',async()=>{
    await search('cancelneedle',{searchInclude:'batch-*.txt'});await page.evaluate(async()=>{const w=window.__nativeWorkspace;w.replacementText='executed';await w.previewReplace();const apply=w.gateway.applyReplace;w.gateway.applyReplace=async request=>{w.closeSearchDialog();return apply(request)};try{await w.applyReplacements()}finally{w.gateway.applyReplace=apply}})
    await popup().waitFor({state:'hidden'});assert.equal((await state()).report.filter(item=>item.includes('已保存')).length,2);for(const name of ['a','b','c'])assert.equal(fs.readFileSync(path.join(roots[1],`batch-${name}.txt`),'utf8'),'executed\n')
-   await page.evaluate(()=>window.__nativeWorkspace.focusWorkspaceSearch());await popup().waitFor()
+   await openDocked()
  })
  await check('result context menu copies native location and can restrict the same search to its directory',async()=>{
    await search('const',{searchInclude:'Main.ts'});await page.locator('.search-hit').first().click({button:'right'});await page.getByRole('menuitem',{name:'复制文件路径:行号:列号',exact:true}).click();const copied=await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('plugin:clipboard-manager|read_text'));assert.match(copied,/Main\.ts:1:1$/)
-   await page.locator('.search-hit').first().click({button:'right'});await page.getByRole('menuitem',{name:'仅在此目录搜索',exact:true}).click();await page.waitForFunction(()=>window.__nativeWorkspace.searchScope==='directory'&&!window.__nativeWorkspace.searching);assert.equal(await page.evaluate(()=>window.__nativeWorkspace.searchDirectory.replaceAll('\\','/')),path.join(roots[0],'src').replaceAll('\\','/'))
+   await page.locator('.search-hit').first().click({button:'right'});await page.getByRole('menuitem',{name:'仅在此目录搜索',exact:true}).click();await dockSearch();await page.waitForFunction(()=>window.__nativeWorkspace.searchScope==='directory'&&!window.__nativeWorkspace.searching);assert.equal(await page.evaluate(()=>window.__nativeWorkspace.searchDirectory.replaceAll('\\','/')),path.join(roots[0],'src').replaceAll('\\','/'))
  })
  await check('preview navigation opens/pins correct document and right split uses existing Pane layout',async()=>{
    await search('const',{searchInclude:'Main.ts'});await page.evaluate(async()=>{const w=window.__nativeWorkspace;await w.locateMatch(w.searchResults[0].matches[0],'split')});await popup().waitFor();assert.equal(await page.evaluate(()=>window.__nativeManager.layout.getAllPanes().length),2);assert.equal(await page.evaluate(()=>window.__nativeManager.activeDocument.name),'Main.ts')
  })
+ await check('disk hit editing opens an undoable buffer and preserves disk until save',async()=>{
+   await search('needle',{searchInclude:'Other.js'})
+   assert.equal(await page.evaluate(()=>window.__nativeManager.openedDocuments.some(doc=>doc.name==='Other.js')),false)
+   const opening=page.context().waitForEvent('page')
+   await page.evaluate(()=>window.__nativeWorkspace.focusWorkspaceSearch())
+   const searchWindow=await opening
+   await searchWindow.locator('.search-hit').first().click()
+   await searchWindow.getByRole('button',{name:'编辑',exact:true}).click()
+   const snippet=searchWindow.getByLabel('搜索源码编辑',{exact:true})
+   await snippet.press('Control+Home')
+   await searchWindow.keyboard.insertText('// edited\n')
+   await searchWindow.getByRole('button',{name:'应用修改',exact:true}).click()
+   await page.waitForFunction(()=>window.__nativeManager.getText(window.__nativeManager.activeId).startsWith('// edited'))
+   assert.equal(fs.readFileSync(path.join(output,'alpha/src/Other.js'),'utf8'),fixtures.get('alpha/src/Other.js'))
+   await page.evaluate(()=>window.__nativeManager.command('undo'))
+   assert.equal(await page.evaluate(()=>window.__nativeManager.getText(window.__nativeManager.activeId)),fixtures.get('alpha/src/Other.js'))
+   await dockSearch()
+ })
  await check('2100-file scope performance and repeated popup lifecycle release',async()=>{
-   await page.evaluate(()=>window.__nativeWorkspace.focusWorkspaceSearch());await popup().waitFor();const start=performance.now();await search('quiet',{searchScope:'workspace',searchInclude:'filler-1?.txt'});metrics.search2100FilesMs=Math.round(performance.now()-start);assert.equal((await state()).total,10)
+   const start=performance.now();await search('quiet',{searchScope:'workspace',searchInclude:'filler-1?.txt'});metrics.search2100FilesMs=Math.round(performance.now()-start);assert.equal((await state()).total,10)
    const cdp=await browser.contexts()[0].newCDPSession(page);await cdp.send('Performance.enable');metrics.before=(await cdp.send('Performance.getMetrics')).metrics.filter(m=>['JSHeapUsedSize','Nodes','Documents'].includes(m.name))
-   for(let i=0;i<15;i++){await page.evaluate(()=>window.__nativeWorkspace.closeSearchDialog());await popup().waitFor({state:'hidden'});assert.equal(await page.locator('[data-search-preview-editor]').count(),0);await page.evaluate(()=>window.__nativeWorkspace.focusWorkspaceSearch());await popup().waitFor()}
+   for(let i=0;i<15;i++){await page.evaluate(()=>window.__nativeWorkspace.closeSearchDialog());await popup().waitFor({state:'hidden'});assert.equal(await page.locator('[data-search-preview-editor]').count(),0);await openDocked()}
    await cdp.send('HeapProfiler.collectGarbage');metrics.after=(await cdp.send('Performance.getMetrics')).metrics.filter(m=>['JSHeapUsedSize','Nodes','Documents'].includes(m.name));await cdp.detach()
    await page.locator('.search-hit').first().click();await page.waitForFunction(()=>!!window.__nativeWorkspace.searchPreview);await page.screenshot({path:path.join(output,'global-search.png')})
  })

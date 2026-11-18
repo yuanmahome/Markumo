@@ -7,8 +7,8 @@
           <button class="icon-button" aria-label="关闭设置" title="关闭" @click="close"><Icon name="close" /></button>
         </header>
         <div class="settings-body">
-          <nav class="settings-nav" aria-label="设置分类">
-            <button v-for="section in sections" :key="section.id" :aria-label="section.title" :aria-current="activeSection === section.id ? 'location' : undefined" :aria-controls="`settings-${section.id}`" :class="{ active: activeSection === section.id }" @click="goToSection(section.id)">
+          <nav ref="navRef" class="settings-nav" aria-label="设置分类">
+            <button v-for="section in sections" :key="section.id" :aria-label="section.title" :title="section.title" :aria-current="activeSection === section.id ? 'location' : undefined" :aria-controls="`settings-${section.id}`" :class="{ active: activeSection === section.id }" @click="goToSection(section.id)">
               <Icon :name="section.icon" size="small" /><span>{{ section.title }}</span>
             </button>
           </nav>
@@ -356,6 +356,16 @@ function updateUiFont(event: Event) {
 function finishUiFont() { uiFontDraft.value = String(props.uiFontSize); uiFontError.value = '' }
 
 const activeSection = ref('appearance')
+const navRef = ref<HTMLElement>()
+watch(activeSection,()=>{
+  const nav = navRef.value
+  const item = nav?.querySelector('[aria-current="location"]')
+  if(!nav||!item)return
+  const viewport = nav.getBoundingClientRect()
+  const bounds = item.getBoundingClientRect()
+  if(bounds.bottom>viewport.bottom)nav.scrollTop+=bounds.bottom-viewport.bottom+4
+  else if(bounds.top<viewport.top)nav.scrollTop+=bounds.top-viewport.top-4
+},{flush:'post'})
 const fontDraft = ref(String(props.fontSize)), fontError = ref('')
 const delays = [500, 1500, 3000, 5000]
 
@@ -537,7 +547,7 @@ h2 { margin:0;font-size: calc(var(--ui-font-size) + 2px);font-weight:600 }
 .icon-button { display:grid;place-items:center;width:var(--ui-control-height);height:var(--ui-control-height);border-radius:6px;color:var(--muted) }
 .icon-button:hover { background:var(--hover);color:var(--bright) }
 .settings-body { display:flex;flex:1;min-height:0 }
-.settings-nav { flex:none;width:calc(140px + (var(--ui-font-size) - 14px) * 5);padding:16px 10px;background:var(--sidebar);border-right:1px solid var(--line) }
+.settings-nav { flex:none;width:calc(140px + (var(--ui-font-size) - 14px) * 5);min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:16px 10px;background:var(--sidebar);border-right:1px solid var(--line) }
 .settings-nav button { width:100%;display:flex;align-items:center;gap:9px;padding:9px 12px;margin-bottom:4px;border-radius:7px;color:var(--sub);font-size: var(--ui-font-size);text-align:left }
 .settings-nav button:hover { background:var(--hover) }
 .settings-nav button.active { background:var(--accentbg);color:var(--accent);font-weight:600 }
@@ -718,7 +728,7 @@ select:disabled { opacity:.45 }
 }
 
 @media(max-width:560px) {
-  .settings-nav { width:44px;padding:12px 4px }.settings-nav button { padding:10px;justify-content:center }.settings-nav span { display:none }.settings-content { padding:16px }.settings-head { padding:14px 16px }
+  .settings-nav { width:44px;padding:12px 4px }.settings-nav button { padding:10px 2px;justify-content:center }.settings-nav span { display:none }.settings-content { padding:16px }.settings-head { padding:14px 16px }
 }
 .fade-enter-active,.fade-leave-active { transition:opacity .15s }.fade-enter-from,.fade-leave-to { opacity:0 }
 .shortcuts-toolbar {position:sticky;top:-20px;z-index:2;background:var(--paper);padding:10px 0;flex-wrap:wrap;gap:8px}

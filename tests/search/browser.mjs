@@ -71,7 +71,7 @@ try{
   })
   await check('IME guard, advanced Glob values, scope and metadata histories',async()=>{
     await page.getByRole('button',{name:'返回源码预览',exact:true}).click();await query().dispatchEvent('compositionstart',{data:''});const count=await shell(()=>window.__searchCalls.length);await query().fill('composition');await page.waitForTimeout(300);assert.equal(await shell(()=>window.__searchCalls.length),count);await query().dispatchEvent('compositionend',{data:'composition'});await page.waitForTimeout(300);await done()
-    await page.getByRole('button',{name:'高级过滤',exact:true}).click();await page.getByRole('textbox',{name:'包含文件',exact:true}).fill('*.{ts,vue}, *.md');await query().press('Enter');await done();assert.deepEqual(await shell(()=>window.__searchCalls.at(-1).include_globs),['*.{ts,vue}','*.md'])
+    await page.getByRole('combobox',{name:'选择文件掩码',exact:true}).selectOption('*.txt, *.log');assert.equal(await page.getByRole('textbox',{name:'文件掩码',exact:true}).inputValue(),'*.txt, *.log');await page.getByRole('textbox',{name:'文件掩码',exact:true}).fill('*.{ts,vue}, *.md');await query().press('Enter');await done();assert.deepEqual(await shell(()=>window.__searchCalls.at(-1).include_globs),['*.{ts,vue}','*.md'])
     assert((await shell(()=>window.__searchShell.workspace.searchHistory)).includes('composition'));assert((await shell(()=>window.__searchShell.workspace.replacementHistory)).includes('changed'))
   })
   await check('docked height, horizontal preview, editor focus, themes and responsive bounds',async()=>{
@@ -91,6 +91,27 @@ try{
     const saved=await shell(()=>JSON.parse(localStorage.getItem('markumo.globalSearch.v1')));assert.deepEqual(Object.keys(saved).sort(),['queries','replacements','window']);assert(saved.queries.includes('composition'));assert(saved.replacements.includes('changed'))
     await page.reload();await page.waitForFunction(()=>window.__searchShell?.settingsReady.value);assert.equal(await shell(()=>window.__searchCalls.length),0);assert((await shell(()=>window.__searchShell.workspace.searchHistory)).includes('composition'));assert.equal(await shell(()=>window.__searchShell.workspace.searchWindow.width),saved.window.width)
     await page.keyboard.press('Control+Shift+f');await popup.waitFor();await page.getByLabel('搜索历史',{exact:true}).click();await page.getByRole('button',{name:'清空搜索历史',exact:true}).click();assert.deepEqual(await shell(()=>window.__searchShell.workspace.searchHistory),[])
+  })
+  await check('IME Process event triggers the modified search shortcut',async()=>{
+    await query().press('Escape')
+    await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{
+      key:'Process',code:'KeyF',ctrlKey:true,shiftKey:true,isComposing:true,bubbles:true,cancelable:true,
+    })))
+    await popup.waitFor()
+    await query().press('Escape')
+  })
+  await check('short settings window scrolls the category list separately from the footer',async()=>{
+    await page.setViewportSize({width:664,height:440})
+    await shell(()=>window.__searchShell.openSettings('shortcuts'))
+    const nav=page.getByRole('navigation',{name:'设置分类'})
+    await nav.getByRole('button',{name:'快捷键',exact:true}).click()
+    await page.waitForFunction(()=>{
+      const nav=document.querySelector('.settings-nav'), rect=nav.getBoundingClientRect()
+      const entry=nav.lastElementChild.getBoundingClientRect(),footer=document.querySelector('.settings-foot').getBoundingClientRect()
+      return nav.scrollHeight>nav.clientHeight&&entry.bottom<=rect.bottom&&rect.bottom<=footer.top
+    })
+    await nav.getByRole('button',{name:'外观',exact:true}).click()
+    await page.getByRole('button',{name:'关闭设置',exact:true}).click()
   })
   assert.deepEqual(errors,[]);fs.mkdirSync('test-results/search',{recursive:true});fs.writeFileSync('test-results/search/browser.json',JSON.stringify({results,errors},null,2));console.log(`GLOBAL SEARCH UI ${results.length}/${results.length} passed`)
 }catch(error){console.error(await shell(()=>({message:window.__searchShell?.workspace.replaceMessage,files:window.__searchShell?.workspace.replaceFiles,status:window.__searchShell?.workspace.searchStatus})).catch(()=>null),errors);throw error}finally{await browser.close();await server.close()}

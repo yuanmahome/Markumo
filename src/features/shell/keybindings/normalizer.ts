@@ -23,8 +23,8 @@ export function normalizeKeybinding(raw: string): string | null {
 /**
  * 从键盘事件解析并生成规范化快捷键字符串
  */
-export function eventToKeybinding(event: KeyboardEvent, platform?: string): string | null {
-  if (event.isComposing || event.getModifierState?.('AltGraph')) return null
+export function eventToKeybinding(event: KeyboardEvent, platform?: string, imeShortcut = false): string | null {
+  if ((event.isComposing && !imeShortcut) || event.getModifierState?.('AltGraph')) return null
   if (isMacPlatform(platform) ? event.ctrlKey : event.metaKey) return null
   // 如果是纯修饰键按下，不构成有效快捷键
   if (['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) {
@@ -38,7 +38,7 @@ export function eventToKeybinding(event: KeyboardEvent, platform?: string): stri
 
   // 获取主要按键
   let key = event.key === ' ' ? 'Space' : event.key
-  if (isAlt && /^Key[A-Z]$/.test(event.code)) key = event.code.slice(3)
+  if (/^Key[A-Z]$/.test(event.code) && (isAlt || (isMod && !/^[a-z]$/i.test(key)))) key = event.code.slice(3)
 
   // 针对特定数字键与符号键对齐
   if ((isMod || event.altKey) && /^Digit[0-9]$/.test(event.code)) {

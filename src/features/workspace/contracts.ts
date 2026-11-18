@@ -24,6 +24,8 @@ export interface WorkspaceInfo {
 }
 
 export interface SearchMatch {
+  owner_window?: string
+  buffer_revision?: string
   id?: string
   document_id?: string | null
   version?: string
@@ -76,7 +78,7 @@ export interface SearchDonePayload {
 }
 
 export interface SearchPreviewRequest {path:string;version:string;line:number;column:number;length:number;query:SearchQuery}
-export interface SearchSourcePreview {path:string;version:string;text:string;start_line:number;selection_from:number;selection_to:number;hits:{from:number;to:number}[];truncated:boolean}
+export interface SearchSourcePreview {path:string;version:string;text:string;start_line:number;selection_from:number;selection_to:number;hits:{from:number;to:number}[];truncated:boolean;editable?:boolean;edit_id?:string}
 
 type usize = number
 

@@ -1,5 +1,6 @@
 import { ref, computed, watch, onMounted, onUnmounted, markRaw, reactive, nextTick } from 'vue'
 import {useSearchWindow} from '../features/workspace/searchWindow'
+import {useSearchPeers} from '../features/workspace/searchPeers'
 import {useMiniWindow} from '../features/windows/useMiniWindow'
 import { isTauri, invoke } from '@tauri-apps/api/core'
 import { DesktopStartup } from './desktopStartup'
@@ -1241,8 +1242,9 @@ export function useAppShell() {
     clipboardImages,
   })
 
-  const {detachSearch}=useSearchWindow(workspace,preferences.shortcuts,()=>startupLoading.value||updateInstalling.value||!!updateConfirmRef.value?.visible||!!discardRef.value?.visible)
-  watch(()=>workspace.searchFocusRevision,()=>{if(miniActive.value&&workspace.searchDialogOpen&&!workspace.searchDetached)void detachSearch()})
+  const searchBlocked = ()=>startupLoading.value||updateInstalling.value||!!updateConfirmRef.value?.visible||!!discardRef.value?.visible
+  useSearchPeers(workspace, searchBlocked)
+  const {detachSearch}=useSearchWindow(workspace,preferences.shortcuts,searchBlocked,()=>miniActive.value)
 
   // --- Global Lifecycle (Mount / Unmount) ---
 

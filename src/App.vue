@@ -103,7 +103,7 @@
           @toggle-outline="toggleOutline"
           @update:markdown-width="updateMarkdownWidth"
         />
-        <GlobalSearchDialog v-if="workspace.searchDialogOpen && !workspace.searchDetached && !miniActive" :workspace="workspace" :shortcuts="shortcuts" @detach="detachSearch" />
+        <GlobalSearchDialog v-if="workspace.searchDialogOpen && !workspace.searchDetached && !miniActive && (!desktop || workspace.searchDocked)" :workspace="workspace" :shortcuts="shortcuts" @detach="detachSearch" />
       </section>
     </div>
 

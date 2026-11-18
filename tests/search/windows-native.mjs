@@ -22,7 +22,7 @@ async function sample(name){
  const processInfo=JSON.parse(execFileSync('powershell',['-NoProfile','-Command',`$all=Get-CimInstance Win32_Process; $ids=@(${child.pid}); do {$next=@($all | Where-Object { $ids -contains $_.ParentProcessId -and $ids -notcontains $_.ProcessId } | Select-Object -ExpandProperty ProcessId); $ids+=$next}while($next.Count); $p=Get-Process -Id $ids -ErrorAction SilentlyContinue; @{privateBytes=($p | Measure-Object PrivateMemorySize64 -Sum).Sum;workingSet=($p | Measure-Object WorkingSet64 -Sum).Sum;processes=$p.Count}|ConvertTo-Json -Compress`],{encoding:'utf8',windowsHide:true}))
  metrics[name]={...Object.fromEntries(values.filter(m=>['JSHeapUsedSize','Nodes','Documents'].includes(m.name)).map(m=>[m.name,m.value])),...processInfo,webviews:browser.contexts().flatMap(c=>c.pages()).filter(p=>!p.url().startsWith('devtools:')).length}
 }
-async function popout(){const previous=new Set(browser.contexts().flatMap(c=>c.pages()));searchPage=undefined;await page.getByRole('button',{name:'弹出搜索窗口',exact:true}).click();const until=Date.now()+15000;while(!searchPage||searchPage.isClosed()){searchPage=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('searchWindow=1')&&!previous.has(p)&&!p.isClosed());assert(Date.now()<until,'Detached search WebView missing');await wait(80)}searchPage.on('pageerror',e=>errors.push(e.message));await searchPage.getByRole('textbox',{name:'全局搜索文本',exact:true}).waitFor();return searchPage}
+async function popout(action=()=>shell(()=>window.__nativeWorkspace.focusWorkspaceSearch())){const previous=new Set(browser.contexts().flatMap(c=>c.pages()));searchPage=undefined;await action();const until=Date.now()+15000;while(!searchPage||searchPage.isClosed()){searchPage=browser.contexts().flatMap(c=>c.pages()).find(p=>p.url().includes('searchWindow=1')&&!previous.has(p)&&!p.isClosed());assert(Date.now()<until,'Detached search WebView missing');await wait(80)}searchPage.on('pageerror',e=>errors.push(e.message));await searchPage.getByRole('textbox',{name:'全局搜索文本',exact:true}).waitFor();return searchPage}
 try{
  child=spawn(path.join(root,`markumo-${label}.exe`),[],{windowsHide:true,env:{...process.env,TEMP:path.resolve('test-results/tmp'),TMP:path.resolve('test-results/tmp'),WEBVIEW2_USER_DATA_FOLDER:path.join(output,'webview-'+Date.now()),WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`}})
  const until=Date.now()+45000;while(true){assert(child.exitCode===null,'Native app exited');try{if((await fetch(`http://127.0.0.1:${port}/json/version`)).ok)break}catch{}assert(Date.now()<until,'Native startup timeout');await wait(200)}
@@ -30,12 +30,67 @@ try{
  await page.waitForFunction(()=>window.__nativeManager&&!document.querySelector('.startup-overlay'));await wait(1000);await sample('empty')
  await page.evaluate(async file=>{const f=await window.__TAURI_INTERNALS__.invoke('open_recent',{path:file,encoding:null});window.__testDoc=window.__nativeManager.openFile(f,false);window.__nativeManager.setMarkdownMode(window.__testDoc,'source')},fixture)
  await page.locator('.cm-content').last().waitFor();await wait(300);await sample('document')
- await page.keyboard.press('Control+Shift+f');const region=page.getByRole(baseline?'dialog':'region',{name:'全局搜索与替换'});await region.waitFor();await page.getByRole('textbox',{name:'全局搜索文本',exact:true}).fill('needle');await page.keyboard.press('Enter');await page.locator('.search-hit').first().waitFor();await page.locator('.search-hit').first().click();await page.locator('[data-search-preview-editor] .cm-editor').waitFor();await sample('search')
+ const region=page.getByRole(baseline?'dialog':'region',{name:'全局搜索与替换'})
+ if(baseline)await page.keyboard.press('Control+Shift+f')
+ else{
+  await popout(()=>page.keyboard.press('Control+Shift+f'))
+  assert.equal(await region.count(),0)
+  assert.equal(await native('is_decorated',{},searchPage),false)
+  assert.equal(await searchPage.locator('.global-search-body').evaluate(el=>getComputedStyle(el).flexDirection),'column')
+  await searchPage.getByRole('textbox',{name:'全局搜索文本',exact:true}).press('Control+Enter')
+  await page.waitForFunction(()=>window.__nativeWorkspace.searchDocked&&!window.__nativeWorkspace.searchDetached)
+ }
+ await region.waitFor();await page.getByRole('textbox',{name:'全局搜索文本',exact:true}).fill('needle');await page.keyboard.press('Enter');await page.locator('.search-hit').first().waitFor();await page.locator('.search-hit').first().click();await page.locator('[data-search-preview-editor] .cm-editor').waitFor();await sample('search')
  if(baseline){metrics.monitors=await native('available_monitors');await page.screenshot({path:path.join(output,'search.png')});}
  else{
   await check('native detach shares one search session without DocumentManager or workspace startup',async()=>{
    const id=await shell(()=>window.__nativeWorkspace.searchId);await popout();assert.equal(await page.locator('.global-search-dialog').count(),0);assert.equal(await searchPage.evaluate(()=>window.__nativeManager),undefined);assert.equal(await searchPage.locator('.ProseMirror,.tabs,.sidebar-wrapper').count(),0);assert.equal(await shell(()=>window.__nativeWorkspace.searchId),id);assert((await searchPage.locator('.search-hit').count())<40)
    await searchPage.locator('.search-hit').nth(1).click();await searchPage.locator('[data-search-preview-editor] .cm-editor').waitFor();await page.waitForFunction(()=>!!window.__nativeWorkspace.searchPreview);await searchPage.screenshot({path:path.join(output,'detached.png')});await sample('detached');const childCdp=await searchPage.context().newCDPSession(searchPage);await childCdp.send('HeapProfiler.collectGarbage');await childCdp.send('Performance.enable');metrics.detachedUi=Object.fromEntries((await childCdp.send('Performance.getMetrics')).metrics.filter(m=>['JSHeapUsedSize','Nodes','Documents'].includes(m.name)).map(m=>[m.name,m.value]));await childCdp.detach()
+  })
+  await check('simultaneous search windows, live peer scope and undoable peer editing',async()=>{
+   const peerFile=path.join(output,'peer.txt')
+   fs.writeFileSync(peerFile,'cross-window disk text\n')
+   const context=page.context()
+   const before=new Set(context.pages())
+   const peerOpening=context.waitForEvent('page',{predicate:p=>!before.has(p),timeout:30000})
+   spawn(path.join(root,'markumo-'+label+'.exe'),[peerFile],{windowsHide:true})
+   const peer=await peerOpening
+   await peer.waitForFunction(()=>window.__nativeManager?.activeDocument?.name==='peer.txt'&&window.__nativeWorkspace?.searchPeers)
+   try{
+    const searchOpening=context.waitForEvent('page',{predicate:p=>p!==peer&&p!==searchPage,timeout:15000})
+    await peer.evaluate(()=>{
+      const m=window.__nativeManager
+      m.dispatch(m.activeId,{changes:{from:0,to:m.getState(m.activeId).doc.length,insert:'cross-window unsaved text\n'}})
+      window.__nativeWorkspace.focusWorkspaceSearch()
+    })
+    const peerSearch=await searchOpening
+    const peerQuery=peerSearch.getByRole('textbox',{name:'全局搜索文本',exact:true})
+    await peerQuery.fill('unsaved')
+    await peerQuery.press('Enter')
+    await peerSearch.locator('.search-hit').first().waitFor()
+    const mainQuery=searchPage.getByRole('textbox',{name:'全局搜索文本',exact:true})
+    await mainQuery.fill('cross-window')
+    await mainQuery.press('Enter')
+    await page.waitForFunction(()=>window.__nativeWorkspace.searchStatus==='empty'&&window.__nativeWorkspace.searchQuery==='cross-window')
+    await searchPage.getByRole('button',{name:'所有窗口',exact:true}).click()
+    await searchPage.locator('.search-hit').filter({hasText:'unsaved text'}).waitFor()
+    assert.equal(await searchPage.locator('.search-hit').count(),1)
+    assert.equal(await peerQuery.inputValue(),'unsaved')
+    await native('set_focus',{},searchPage)
+    await searchPage.locator('.search-hit').first().click()
+    await searchPage.getByRole('button',{name:'编辑',exact:true}).click()
+    const editor=searchPage.getByLabel('搜索源码编辑',{exact:true})
+    await editor.press('Control+Home')
+    await searchPage.keyboard.insertText('applied ')
+    assert.match(await editor.innerText(),/^applied cross-window unsaved text/)
+    await searchPage.getByRole('button',{name:'应用修改',exact:true}).click()
+    await peer.waitForFunction(()=>window.__nativeManager.getText(window.__nativeManager.activeId).startsWith('applied cross-window'))
+    assert.equal(fs.readFileSync(peerFile,'utf8'),'cross-window disk text\n')
+    await peer.evaluate(()=>window.__nativeManager.command('undo'))
+    assert.equal(await peer.evaluate(()=>window.__nativeManager.getText(window.__nativeManager.activeId)),'cross-window unsaved text\n')
+    await searchPage.getByRole('button',{name:'已打开文件',exact:true}).click()
+    await page.waitForFunction(()=>window.__nativeWorkspace.searchScope==='opened'&&window.__nativeWorkspace.searchStatus==='empty')
+   }finally{await native('destroy',{},peer).catch(()=>{})}
   })
   await check('detached typing, IME, replacement preview and canonical Undo/Redo',async()=>{
    await searchPage.getByTitle('正则表达式（Rust regex，按行匹配，不支持跨行正则）',{exact:true}).click();await searchPage.getByRole('textbox',{name:'全局搜索文本',exact:true}).fill('needle|中文');await searchPage.getByRole('textbox',{name:'全局搜索文本',exact:true}).press('Enter');await page.waitForFunction(()=>!window.__nativeWorkspace.searching&&window.__nativeWorkspace.searchQuery==='needle|中文');await searchPage.locator('.search-hit mark').nth(1).filter({hasText:'中文'}).waitFor();await searchPage.locator('.search-hit').nth(1).click({button:'right'});await searchPage.getByRole('menuitem',{name:'复制匹配文本',exact:true}).click();await page.waitForFunction(async()=>{try{return await window.__TAURI_INTERNALS__.invoke('plugin:clipboard-manager|read_text')==='中文'}catch{return false}})
@@ -48,10 +103,10 @@ try{
   await check('native geometry, minimize, redock and stale request isolation',async()=>{
    await native('set_size',{value:{Logical:{width:850,height:550}}},searchPage);await native('set_position',{value:{Physical:{x:100,y:100}}},searchPage);await native('minimize',{},searchPage);await wait(13000);assert.equal(searchPage.isClosed(),false);assert.equal(await native('is_minimized',{},searchPage),true)
    await page.evaluate(()=>window.__nativeWorkspace.focusWorkspaceSearch());await wait(300);assert.equal(await native('is_minimized',{},searchPage),false)
-   const identity=await searchPage.evaluate(()=>window.__TAURI_INTERNALS__.invoke('search_window_identity'));await searchPage.getByRole('button',{name:'停靠搜索窗口'}).click();await page.waitForFunction(()=>!window.__nativeWorkspace.searchDetached);await region.waitFor();await popout();const size=await native('inner_size',{},searchPage);assert(size.width>=850)
+   const identity=await searchPage.evaluate(()=>window.__TAURI_INTERNALS__.invoke('search_window_identity'));await searchPage.getByRole('button',{name:'打开查找窗口'}).click();await page.waitForFunction(()=>!window.__nativeWorkspace.searchDetached);await region.waitFor();await popout();const size=await native('inner_size',{},searchPage);assert(size.width>=850)
    const currentId=await shell(()=>window.__nativeWorkspace.searchId);await searchPage.reload();await searchPage.getByRole('textbox',{name:'全局搜索文本',exact:true}).waitFor();await searchPage.getByRole('textbox',{name:'全局搜索文本',exact:true}).fill('needle');await searchPage.getByRole('textbox',{name:'全局搜索文本',exact:true}).press('Enter');await page.waitForFunction(id=>window.__nativeWorkspace.searchQuery==='needle'&&window.__nativeWorkspace.searchId!==id,currentId)
    assert.equal(await searchPage.evaluate(async session=>{try{await window.__TAURI_INTERNALS__.invoke('search_window_send',{session,payload:{kind:'action',request:999,action:'applyReplacements'}});return false}catch{return true}},identity[1]),true)
-   await searchPage.getByRole('button',{name:'停靠搜索窗口'}).click();await page.waitForFunction(()=>!window.__nativeWorkspace.searchDetached);fs.writeFileSync(path.join(profile,'search-window-main.json'),JSON.stringify({x:-100000,y:-100000,width:800,height:500}));await popout();const recovered=await native('outer_position',{},searchPage);assert(recovered.x>=0&&recovered.y>=0)
+   await searchPage.getByRole('button',{name:'打开查找窗口'}).click();await page.waitForFunction(()=>!window.__nativeWorkspace.searchDetached);fs.writeFileSync(path.join(profile,'search-window-main.json'),JSON.stringify({x:-100000,y:-100000,width:800,height:500}));await popout();const recovered=await native('outer_position',{},searchPage);assert(recovered.x>=0&&recovered.y>=0)
   })
   await check('Mini preserves editor instances, dirty text, selection, mode, history and native placement',async()=>{
    await page.evaluate(()=>{const s=window.__searchMiniShell;s.appMode.value='workspace';s.sidebarVisible.value=true;s.showOutline.value=true});await wait(200)
@@ -71,12 +126,12 @@ try{
    await native('maximize');await page.evaluate(()=>window.__searchMiniShell.toggleMini());await page.evaluate(()=>window.__searchMiniShell.toggleMini());assert.equal(await native('is_maximized'),true);await native('unmaximize')
   })
   await check('repeated native detach/close frees the search WebView and preview',async()=>{
-   await searchPage.getByRole('button',{name:'停靠搜索窗口'}).click();await page.waitForFunction(()=>!window.__nativeWorkspace.searchDetached);await shell(()=>{delete window.__beforeEditor;delete window.__beforeScroll;delete window.__beforeState;delete window.__beforeProbe});await sample('cyclesBefore')
+   await searchPage.getByRole('button',{name:'打开查找窗口'}).click();await page.waitForFunction(()=>!window.__nativeWorkspace.searchDetached);await shell(()=>{delete window.__beforeEditor;delete window.__beforeScroll;delete window.__beforeState;delete window.__beforeProbe});await sample('cyclesBefore')
    for(let i=0;i<8;i++){await popout();await native('close',{},searchPage);await page.waitForFunction(()=>!window.__nativeWorkspace.searchDetached);searchPage=undefined}
    await shell(()=>window.__nativeWorkspace.closeSearchDialog());await wait(400);await sample('cyclesAfter');assert.equal(metrics.cyclesAfter.webviews,1);assert.equal(await page.locator('[data-search-preview-editor]').count(),0);await wait(10000);await sample('cyclesSettled')
   })
   metrics.monitors=await native('available_monitors');await page.screenshot({path:path.join(output,'restored.png')})
-  await check('owner destruction closes auxiliary windows without orphaning a renderer',async()=>{await shell(()=>window.__nativeWorkspace.focusWorkspaceSearch());await popout();await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('plugin:window|destroy',{label:null})).catch(()=>{});await searchPage.waitForEvent('close',{timeout:10000}).catch(error=>{if(!searchPage.isClosed())throw error})})
+  await check('owner destruction closes auxiliary windows without orphaning a renderer',async()=>{await popout();await page.evaluate(()=>window.__TAURI_INTERNALS__.invoke('plugin:window|destroy',{label:null})).catch(()=>{});await searchPage.waitForEvent('close',{timeout:10000}).catch(error=>{if(!searchPage.isClosed())throw error})})
  }
  assert.deepEqual(errors,[]);fs.writeFileSync(path.join(output,'results.json'),JSON.stringify({label,baseline,results,metrics,errors},null,2));console.log(JSON.stringify({results,metrics},null,2))
 }catch(e){console.error('NATIVE STATE',await shell(()=>({query:window.__nativeWorkspace?.searchQuery,id:window.__nativeWorkspace?.searchId,selected:window.__nativeWorkspace?.selectedMatchId,error:window.__nativeWorkspace?.searchPreviewError,message:window.__nativeWorkspace?.searchMessage})).catch(()=>null));throw e}finally{await browser?.close().catch(()=>{});if(child?.exitCode===null)child.kill()}

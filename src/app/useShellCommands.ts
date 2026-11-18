@@ -18,7 +18,7 @@ import {
 import { DoubleShiftShortcut } from '../features/shell/keybindings/DoubleShiftShortcut'
 import { CommandRegistry, recentFileCommand, recentWorkspaceCommand } from '../features/shell/menuModel'
 import { mainMenu } from '../features/shell/mainMenu'
-import { shortcutLabel, eventShortcut } from '../features/shell/editorSettings'
+import { shortcutLabel, eventShortcut, eventToKeybinding } from '../features/shell/editorSettings'
 import { textClipboard } from '../features/shell/clipboard'
 import { editorClipboard, inputClipboard, type ClipboardOperation } from '../editor/commands/clipboard'
 import { isMedia } from '../features/files/media'
@@ -582,9 +582,7 @@ export function useShellCommands(host: ShellCommandsHost) {
     ) return
     if (
       document.querySelector('.workspace-operation-dialog') ||
-      event.isComposing ||
       alreadyHandled ||
-      host.manager.isComposing ||
       host.paletteRef.value?.visible ||
       host.settingsRef.value?.visible ||
       host.discardRef.value?.visible ||
@@ -593,6 +591,19 @@ export function useShellCommands(host: ShellCommandsHost) {
     const binding = eventShortcut(event)
     const context = keybindingContext(event.target, !!host.manager.activeDocument?.mode)
     if (context === 'dialog') return
+    if (event.isComposing || event.keyCode === 229 || host.manager.isComposing) {
+      // Modified search shortcuts can be reported as Process by Windows IMEs.
+      // Leave candidate navigation and every other editor command to the IME.
+      const chord = eventToKeybinding(event, undefined, true)
+      const command = (event.ctrlKey || event.metaKey) && chord
+        ? matchingCommand(chord, host.shortcuts.value, context) : undefined
+      if (command?.id === 'workspace-search' || command?.id === 'workspace-replace') {
+        event.preventDefault()
+        event.stopPropagation()
+        if (!event.repeat) executeCommand(command.id)
+      }
+      return
+    }
     if (
       (context === 'input' || context === 'search') &&
       ['Mod+Z', 'Mod+Y', 'Mod+Shift+Z', 'Mod+C', 'Mod+V', 'Mod+X', 'Mod+A'].includes(binding)

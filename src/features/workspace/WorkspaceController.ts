@@ -4,6 +4,9 @@ import type { DocumentManager } from '../../editor/core/DocumentManager'
 import type { FileController } from '../files/FileController'
 import { displayPathKey, readablePath } from '../shell/pathDisplay'
 import {textClipboard} from '../shell/clipboard'
+import {textPatch} from '../../editor/markdown/wysiwyg/sourcePatch'
+import type {Text} from '@codemirror/state'
+import type {SearchPeers} from './searchPeers'
 import type { EditorPaneModel, SplitDirection } from '../../editor/layout/types'
 import type {
   SearchDonePayload,
@@ -29,6 +32,7 @@ export interface OpenWorkspaceFileInPaneOptions {
   paneId: string
   zone?: 'center' | 'left' | 'right' | 'top' | 'bottom'
   pin?: boolean
+  focus?: boolean
   version?: number
   cancellationToken?: { isCancelled: boolean }
   signal?: AbortSignal
@@ -80,11 +84,12 @@ export class WorkspaceController {
   searchResults: FileSearchGroup[] = []
   searchShowDiff=false
   searchPreviewVisible=true
-  searchAdvanced=false
   searchDetached=false
+  searchDocked=false
   searchDialogOpen=false
   searchRestoreFocus=true
-  searchScope:'workspace'|'directory'|'opened'='workspace'
+  searchScope:'workspace'|'directory'|'opened'|'windows'='workspace'
+  searchPeers?: SearchPeers
   searchStatus:GlobalSearchStatus='idle'
   searchMessage=''
   searchLimited=false
@@ -107,6 +112,8 @@ export class WorkspaceController {
   private batchTimer:ReturnType<typeof setTimeout>|undefined
   private pendingBatch:SearchMatch[]=[]
   private searchDirty=false
+  private remoteSearch?: AbortController
+  private readonly bufferRevisions = new WeakMap<Text, string>()
   private searchSnapshots=new Map<string,{id:string;text:NonNullable<ReturnType<DocumentManager['getState']>>['doc']}>()
   private stopSearchDocuments:(()=>void)|undefined
   isCaseSensitive = false
@@ -160,7 +167,7 @@ export class WorkspaceController {
       if(!this.searchQuery||this.replaceApplying)return
       const documents=this.textSearchDocuments()
       const ids=new Set(documents.map(doc=>doc.id))
-      const changed=documents.some(doc=>{const before=this.searchSnapshots.get(doc.id);return before?this.documentManager.getState(doc.id)?.doc!==before.text:doc.dirty||this.searchScope==='opened'}) || [...this.searchSnapshots.keys()].some(id=>!ids.has(id))
+      const changed=documents.some(doc=>{const before=this.searchSnapshots.get(doc.id);return before?this.documentManager.getState(doc.id)?.doc!==before.text:doc.dirty||this.searchScope==='opened'||this.searchScope==='windows'}) || [...this.searchSnapshots.keys()].some(id=>!ids.has(id))
       if(changed){this.searchDirty=true;if(this.searchDialogOpen)this.scheduleSearch();else this.searchSnapshots=new Map(documents.map(doc=>[doc.id,{id:doc.id,text:markRaw(this.documentManager.getState(doc.id)!.doc)}]))}
     })
   }
@@ -728,7 +735,7 @@ export class WorkspaceController {
         : manager.splitPane(zone as SplitDirection, effectivePane, existingDoc.id)
       manager.open(existingDoc.id, preview, pane, false)
       if (pin) manager.pin(existingDoc.id, pane)
-      manager.focusPane(pane, true)
+      if(options.focus!==false)manager.focusPane(pane, true)
       return { success: true, paneId: pane, docId: existingDoc.id }
     }
 
@@ -765,7 +772,7 @@ export class WorkspaceController {
       doc => doc.fileToken === file.token || (doc.path && displayPathKey(doc.path) === key)
     )
     if (opened && pin) manager.pin(opened.id, pane)
-    manager.focusPane(pane, true)
+    if(options.focus!==false)manager.focusPane(pane, true)
     return { success: true, paneId: pane, docId: opened?.id }
   }
 
@@ -1010,14 +1017,18 @@ export class WorkspaceController {
   focusWorkspaceSearch(replace=false,directory?:string){
     this.replaceExpanded=replace;this.searchFocusReplace=replace
     if(!replace&&!this.replaceApplying)this.searchShowDiff=false
-    const changed=directory!==undefined&&(this.searchDirectory!==directory||this.searchScope!=='directory')
+    const changed=(replace&&this.searchScope==='windows') ||
+      (directory!==undefined&&(this.searchDirectory!==directory||this.searchScope!=='directory'))
     if(directory!==undefined){this.searchScope='directory';this.searchDirectory=directory}
-    else if(!this.roots.length)this.searchScope='opened'
+    else if(replace&&this.searchScope==='windows')this.searchScope='opened'
+    else if(!this.roots.length&&this.searchScope!=='windows')this.searchScope='opened'
+    this.searchDocked=false
     this.searchDialogOpen=true;this.searchFocusRevision++
     if((changed||this.searchDirty)&&this.searchQuery)this.scheduleSearch()
     this.emit()
   }
   closeSearchDialog(restoreFocus=true){
+    this.searchDocked=false
     this.searchRestoreFocus=restoreFocus
     this.searchDialogOpen=false;clearTimeout(this.searchTimer)
     if(this.searching)this.cancelSearch()
@@ -1030,7 +1041,7 @@ export class WorkspaceController {
   private resetSearchContext(){
     clearTimeout(this.searchTimer);this.cancelSearch(false);this.invalidateReplace();this.clearSearchPreview()
     this.searchResults=[];this.searchTotal=0;this.selectedMatches=new Set();this.searchStatus='idle';this.searchMessage='';this.searchLimited=false;this.searchSkipped=0;this.searchDirty=true
-    if(!this.roots.length)this.searchScope='opened'
+    if(!this.roots.length&&this.searchScope!=='windows')this.searchScope='opened'
     if(this.searchDialogOpen&&this.searchQuery)this.scheduleSearch()
   }
   scheduleSearch(delay=250){
@@ -1052,6 +1063,86 @@ export class WorkspaceController {
   setSearchExpanded(expanded:boolean){for(const group of this.searchResults)group.isExpanded=expanded;this.emit()}
   toggleSearchSelection(match:SearchMatch){const id=searchMatchId(match);if(this.selectedMatches.has(id))this.selectedMatches.delete(id);else this.selectedMatches.add(id);this.emit()}
   private searchDocument(match:SearchMatch){return this.textSearchDocuments().find(doc=>doc.id===match.document_id||displayPathKey(doc.path||doc.id)===displayPathKey(match.path))}
+  searchBufferRevision(text: Text) {
+    let revision = this.bufferRevisions.get(text)
+    if (!revision) {
+      revision = crypto.randomUUID()
+      this.bufferRevisions.set(text, revision)
+    }
+    return revision
+  }
+  searchPeerBuffers() {
+    return this.textSearchDocuments().map(doc => {
+      const text = this.documentManager.getState(doc.id)!.doc
+      return {
+        buffer: {path: doc.path || doc.id, document_id: doc.id, relative_path: this.searchRelativePath(doc.path, doc.name), text: text.toString(), encoding: doc.encoding, read_only: doc.readOnly},
+        revision: this.searchBufferRevision(text),
+      }
+    })
+  }
+  private peerDocument(match: SearchMatch) {
+    const doc = this.textSearchDocuments().find(doc => doc.id === match.document_id)
+    const state = doc && this.documentManager.getState(doc.id)
+    if (!doc || !state || this.searchBufferRevision(state.doc) !== match.buffer_revision) {
+      throw Error('对应窗口的文件已关闭或修改，请重新搜索')
+    }
+    return {doc, state}
+  }
+  previewPeerMatch(match: SearchMatch) {
+    const {doc, state} = this.peerDocument(match)
+    const preview = bufferPreview(state.doc, match, [match])
+    return {...preview, editable: !preview.truncated && !state.readOnly && !doc.readOnly}
+  }
+  openPeerMatch(match: SearchMatch, mode: 'preview'|'pinned'|'split') {
+    const {doc} = this.peerDocument(match)
+    const manager = this.documentManager
+    if (!manager.open(doc.id, mode === 'preview')) throw Error('当前无法切换文件')
+    if (mode === 'split') manager.splitPane('right', manager.activePane, doc.id)
+    manager.revealPosition(doc.id, match.line_number, match.column_number)
+  }
+  private applySearchExcerpt(id: string, expected: Text, preview: SearchSourcePreview, insert: string) {
+    if (!preview.editable || preview.truncated || insert.length > 256 * 1024 || /\r|\0/.test(insert)) {
+      throw Error('这段源码无法在搜索窗口应用，请在文件中编辑')
+    }
+    if (this.fileController.workspaceBusy || this.fileController.activeOperationCount || this.replaceApplying) {
+      throw Error('请等待当前文件操作完成')
+    }
+    const from = expected.line(preview.start_line).from
+    if (expected.sliceString(from, from + preview.text.length) !== preview.text) throw Error('文件内容已变化，请重新搜索')
+    const change = textPatch(preview.text, insert)
+    if (change && !this.documentManager.applyWorkspaceReplacement(id, expected, [{
+      from: from + change.from, to: from + change.to, insert: change.insert,
+    }])) throw Error('文件已变化、只读或正在输入，请在编辑窗口检查')
+  }
+  editPeerMatch(match: SearchMatch, insert: string) {
+    const {doc, state} = this.peerDocument(match)
+    this.applySearchExcerpt(doc.id, state.doc, this.previewPeerMatch(match), insert)
+  }
+  async applySearchEdit(match: SearchMatch, editId: string, insert: string) {
+    const preview = this.searchPreview
+    if (!preview?.editable || preview.edit_id !== editId || this.selectedMatchId !== searchMatchId(match) || this.replaceApplying) {
+      throw Error('这段源码已过期，请重新选择搜索结果')
+    }
+    if (match.owner_window) {
+      if (!this.searchPeers) throw Error('对应的窗口不可用')
+      await this.searchPeers.request(match.owner_window, {kind:'edit', match, insert})
+    } else {
+      let doc = this.searchDocument(match)
+      const wasOpen = Boolean(doc)
+      if (!doc && !match.document_id) {
+        const opened = await this.openWorkspaceFileInPane({path: match.path, paneId: this.documentManager.activePane, pin: true, focus: false})
+        doc = opened.docId ? this.searchDocument(match) : undefined
+      }
+      if (this.searchPreview !== preview || !doc || !this.documentManager.getState(doc.id)) throw Error('无法编辑已过期或已关闭的文件')
+      const state = this.documentManager.getState(doc.id)!
+      const unchanged = wasOpen && this.searchSnapshots.has(doc.id)
+        ? this.searchSnapshots.get(doc.id)?.text === state.doc
+        : !doc.dirty && doc.lastDiskVersion === match.version
+      if (!unchanged) throw Error('文件版本已变化，请重新搜索')
+      this.applySearchExcerpt(doc.id, state.doc, preview, insert)
+    }
+    this.scheduleSearch()
+  }
   canRevealSearchMatch(match:SearchMatch){return !!this.rootForPath(match.path)||!!(this.gateway.revealOpenFile&&this.searchDocument(match)?.fileToken)}
   async revealSearchMatch(match:SearchMatch){
     try{
@@ -1067,17 +1158,20 @@ export class WorkspaceController {
     try{
       const doc=this.textSearchDocuments().find(doc=>doc.id===match.document_id||displayPathKey(doc.path)===displayPathKey(match.path))
       let preview:SearchSourcePreview
-      if(doc){
+      if(match.owner_window){
+        if(!this.searchPeers)throw Error('对应的窗口不可用')
+        preview=await this.searchPeers.request<SearchSourcePreview>(match.owner_window,{kind:'preview',match})
+      }else if(doc){
         const state=this.documentManager.getState(doc.id)!,snapshot=this.searchSnapshots.get(doc.id)
         if(!snapshot||snapshot.text!==state.doc)throw Error('当前缓冲区与搜索时不一致，请重新搜索')
         const matches=this.searchResults.find(group=>group.path===match.path)?.matches||[match]
-        preview=bufferPreview(state.doc,match,matches)
+        preview={...bufferPreview(state.doc,match,matches),editable:!doc.readOnly&&!state.readOnly}
       }else{
         if(!this.gateway.previewSearch||!match.version)throw Error('当前环境无法提供有界文件预览，请重新搜索')
-        preview=await this.gateway.previewSearch({path:match.path,version:match.version,line:match.line_number,column:match.column_number,length:match.match_length,query:{...this.makeSearchQuery(this.searchId),buffers:[]}})
+        preview={...await this.gateway.previewSearch({path:match.path,version:match.version,line:match.line_number,column:match.column_number,length:match.match_length,query:{...this.makeSearchQuery(this.searchId,undefined,false),buffers:[]}}),editable:true}
       }
       if(epoch!==this.previewEpoch||this.disposed||!this.searchDialogOpen)return
-      this.searchPreview=markRaw(preview)
+      this.searchPreview=markRaw({...preview,editable:!!preview.editable&&!preview.truncated,edit_id:crypto.randomUUID()})
     }catch(error){if(epoch===this.previewEpoch)this.searchPreviewError=String(error)}
     finally{if(epoch===this.previewEpoch){this.searchPreviewLoading=false;this.emit()}}
   }
@@ -1108,19 +1202,20 @@ export class WorkspaceController {
     this.emit()
   }
 
-  private makeSearchQuery(id: string, text = this.searchQuery): SearchQuery {
+  private makeSearchQuery(id: string, text = this.searchQuery, withBuffers = true): SearchQuery {
     return {
       search_id: id, query: text, is_case_sensitive: this.isCaseSensitive,
       is_whole_word: this.isWholeWord, is_regex: this.isRegex, max_results: 1000,
-      scope:this.searchScope,include_globs:globPatterns(this.searchInclude),exclude_globs:globPatterns(this.searchExclude),
+      scope:this.searchScope==='windows'?'opened':this.searchScope,include_globs:globPatterns(this.searchInclude),exclude_globs:globPatterns(this.searchExclude),
       include_ignored: this.searchIncludeIgnored, directory: this.searchScope==='directory'?this.searchDirectory || null:null,
-      buffers: this.textSearchDocuments().filter(doc => this.searchScope==='opened'||this.roots.some(root => this.isWithin(doc.path, root.rootPath)))
+      buffers: withBuffers ? this.textSearchDocuments().filter(doc => this.searchScope==='opened'||this.searchScope==='windows'||this.roots.some(root => this.isWithin(doc.path, root.rootPath)))
         .filter(doc => this.searchScope!=='directory'||!this.searchDirectory || this.isWithin(doc.path, this.searchDirectory))
-        .map(doc => ({ path: doc.path||doc.id, document_id:doc.id,relative_path:this.searchRelativePath(doc.path,doc.name),read_only:doc.readOnly,text: this.documentManager.getText(doc.id) ?? '', encoding: doc.encoding })),
+        .map(doc => ({ path: doc.path||doc.id, document_id:doc.id,relative_path:this.searchRelativePath(doc.path,doc.name),read_only:doc.readOnly,text: this.documentManager.getText(doc.id) ?? '', encoding: doc.encoding })) : [],
     }
   }
 
   async previewReplace(path?: string, match?: SearchMatch, selection?:SearchMatch[]) {
+    if(this.searchScope==='windows')return
     if (this.replaceApplying || !this.searchQuery || this.searching || this.documentManager.isComposing) return
     if (!this.gateway.previewReplace) { this.notify('当前环境不支持工作区替换预览。'); return }
     if(!path&&!selection&&this.searchStatus!=='complete'&&this.searchStatus!=='empty'){this.replaceMessage='搜索结果不完整；请缩小范围，或明确选择文件/匹配后核对替换预览';this.emit();return}
@@ -1232,7 +1327,7 @@ export class WorkspaceController {
     this.searchQuery=queryText;this.searchDirty=false
     if(!queryText){this.searchId='';this.searchStatus='idle';this.emit();return}
     this.connectSearch()
-    if(this.searchScope!=='opened'&&!this.roots.length){this.searchStatus='error';this.searchMessage='未打开工作区；请选择已打开文件范围或打开文件夹';this.emit();return}
+    if(this.searchScope!=='opened'&&this.searchScope!=='windows'&&!this.roots.length){this.searchStatus='error';this.searchMessage='未打开工作区；请选择已打开文件范围或打开文件夹';this.emit();return}
     this.searchId='search-'+Date.now()+'-'+(++this.searchSequence);const id=this.searchId
     this.searchSnapshots=new Map(this.textSearchDocuments().map(doc=>[doc.id,{id:doc.id,text:markRaw(this.documentManager.getState(doc.id)!.doc)}]))
     this.searching=true;this.searchStatus='searching';this.rememberSearch();this.emit()
@@ -1241,6 +1336,7 @@ export class WorkspaceController {
   }
   cancelSearch(markCanceled=true){
     clearTimeout(this.searchTimer)
+    this.remoteSearch?.abort()
     if(this.searching&&this.searchId){
       const id=this.searchId;this.flushSearchBatch();this.searching=false
       if(markCanceled){this.searchStatus='canceled';this.searchMessage='搜索已取消；当前结果不完整'}
@@ -1250,7 +1346,11 @@ export class WorkspaceController {
   }
   private onSearchBatch(batch:SearchMatch[]){
     if(this.disposed||!this.searching)return
-    this.pendingBatch.push(...batch.filter(match=>match.search_id===this.searchId).slice(0,Math.max(0,1000-this.searchTotal-this.pendingBatch.length)))
+    const openIds = this.searchScope==='opened'||this.searchScope==='windows'
+      ? new Set(this.textSearchDocuments().map(doc => doc.id)) : undefined
+    this.pendingBatch.push(...batch.filter(match=>match.search_id===this.searchId &&
+      (!openIds || (match.owner_window ? this.searchScope==='windows' : !!match.document_id && openIds.has(match.document_id))))
+      .slice(0,Math.max(0,1000-this.searchTotal-this.pendingBatch.length)))
     if(!this.batchTimer)this.batchTimer=setTimeout(()=>{this.batchTimer=undefined;this.flushSearchBatch()},50)
   }
   private flushSearchBatch(){
@@ -1269,8 +1369,43 @@ export class WorkspaceController {
     for(const [group,matches] of additions)group.matches=markRaw([...group.matches,...matches])
     this.emit()
   }
-  private onSearchDone(payload:SearchDonePayload){
+  private async onSearchDone(payload:SearchDonePayload){
     if(payload.search_id!==this.searchId||!this.searching||this.disposed)return
+    if (this.searchScope==='windows' && this.searchPeers && !payload.error && !payload.canceled) {
+      this.flushSearchBatch()
+      const abort = new AbortController()
+      this.remoteSearch = abort
+      try {
+        const query = this.makeSearchQuery(payload.search_id, undefined, false)
+        const paths = new Set(this.textSearchDocuments().filter(doc=>doc.path).map(doc=>displayPathKey(doc.path)))
+        for (const owner of await this.searchPeers.windows()) {
+          if (abort.signal.aborted || this.searchTotal >= 1000) break
+          try {
+            const found = await this.searchPeers.request<{matches: SearchMatch[]; limited: boolean; skipped: number}>(
+              owner, {kind:'search', query:{...query, max_results:1000-this.searchTotal}}, abort.signal,
+            )
+            if (abort.signal.aborted) break
+            const matches = found.matches.filter(match=>!paths.has(displayPathKey(match.path))).map(match=>({
+              ...match, owner_window:owner, id:owner+':'+searchMatchId(match), search_id:payload.search_id,
+              path:match.path===match.document_id ? owner+':'+match.path : match.path,
+            }))
+            for (const match of matches) paths.add(displayPathKey(match.path))
+            this.onSearchBatch(matches)
+            this.flushSearchBatch()
+            payload.skipped=(payload.skipped||0)+found.skipped
+            payload.limited ||= found.limited
+          } catch {
+            if (!abort.signal.aborted) payload.skipped=(payload.skipped||0)+1
+          }
+        }
+      } catch {
+        payload.skipped=(payload.skipped||0)+1
+      } finally {
+        if (this.remoteSearch===abort) this.remoteSearch=undefined
+      }
+      if (abort.signal.aborted || payload.search_id!==this.searchId || !this.searching || this.disposed) return
+      payload.total=this.searchTotal
+    }
     this.flushSearchBatch();this.searching=false;this.searchLimited=!!payload.limited||payload.total>=1000;this.searchSkipped=payload.skipped||0
     this.searchStatus=payload.error?'error':payload.canceled?'canceled':this.searchLimited?'limited':this.searchSkipped?'partial':this.searchTotal?'complete':'empty'
     this.searchMessage=payload.error||payload.reason||(payload.canceled?'搜索已取消；当前结果不完整':this.searchLimited?'结果达到上限，请缩小范围':this.searchSkipped?'部分文件因大小、二进制、权限或解码限制被跳过':'')
@@ -1279,6 +1414,11 @@ export class WorkspaceController {
   async locateMatch(match:SearchMatch,mode:'preview'|'pinned'|'split'='pinned'){
     const pane=this.documentManager.activePane
     try{
+      if (match.owner_window) {
+        if (!this.searchPeers) throw Error('对应的窗口不可用')
+        await this.searchPeers.request(match.owner_window,{kind:'open',match,mode})
+        return
+      }
       await this.selectSearchMatch(match)
       if(this.searchPreviewError||this.selectedMatchId!==searchMatchId(match))return
       const existing=this.textSearchDocuments().find(doc=>doc.id===match.document_id||displayPathKey(doc.path||doc.id)===displayPathKey(match.path))

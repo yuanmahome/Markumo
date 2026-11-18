@@ -140,7 +140,7 @@ pub async fn search_window_open(window: WebviewWindow, session: String) -> Resul
     if let Some(existing) = existing {
         if existing.session != session {
             // A reloaded owner cannot adopt a renderer using the old nonce.
-            close_search(app, window.label())?;
+            close_search(app, window.label(), false)?;
         } else if let Some(child) = app.get_webview_window(&existing.label) {
             child.unminimize().map_err(err)?;
             child.set_focus().map_err(err)?;
@@ -165,6 +165,7 @@ pub async fn search_window_open(window: WebviewWindow, session: String) -> Resul
         tauri::WebviewUrl::App("index.html?searchWindow=1".into()),
     )
     .title("Markumo · 全局搜索")
+    .decorations(false)
     .inner_size(960., 600.)
     .min_inner_size(320., 300.)
     .visible(false)
@@ -203,6 +204,83 @@ pub fn search_window_identity(window: WebviewWindow) -> Result<(String, String),
         .map(|(owner, pair)| (owner.clone(), pair.session.clone()))
         .ok_or("搜索主窗口已关闭".into())
 }
+
+#[tauri::command]
+pub fn search_peer_windows(window: WebviewWindow) -> Result<Vec<String>, String> {
+    owner_only(&window)?;
+    let labels = window
+        .app_handle()
+        .state::<crate::session::LaunchStore>()
+        .lock()
+        .map_err(err)?
+        .order
+        .clone();
+    Ok(labels
+        .into_iter()
+        .filter(|label| label != window.label())
+        .collect())
+}
+
+#[tauri::command]
+pub fn search_peer_send(
+    window: WebviewWindow,
+    target: Option<String>,
+    payload: Value,
+) -> Result<(), String> {
+    owner_only(&window)?;
+    if payload.to_string().len() > 8 * 1024 * 1024 {
+        return Err("跨窗口搜索消息超出预算".into());
+    }
+    let peers = search_peer_windows(window.clone())?;
+    if let Some(target) = &target {
+        if !peers.contains(target) || window.app_handle().get_webview_window(target).is_none() {
+            return Err("对应的编辑窗口已关闭".into());
+        }
+    }
+    let message = serde_json::json!({"source":window.label(),"payload":payload});
+    for label in peers
+        .into_iter()
+        .filter(|label| target.as_ref().is_none_or(|target| target == label))
+    {
+        window
+            .emit_to(label, "search-peer-message", &message)
+            .map_err(err)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn search_peer_buffers(
+    window: WebviewWindow,
+    mut query: crate::workspace::search::SearchQuery,
+    search_manager: tauri::State<'_, crate::workspace::search::SearchManager>,
+) -> Result<
+    (
+        Vec<crate::workspace::search::SearchMatch>,
+        crate::workspace::search::SearchSummary,
+    ),
+    String,
+> {
+    use crate::workspace::search::WorkspaceSearcher;
+    owner_only(&window)?;
+    query.scope = "opened".into();
+    let scoped_id = format!("{}:{}", window.label(), query.search_id);
+    let cancel_token = search_manager.create_token(&scoped_id);
+    let manager = search_manager.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut matches = Vec::new();
+        let result = WorkspaceSearcher::execute_search_detailed(
+            &[],
+            &query,
+            cancel_token.clone(),
+            |batch| matches.extend(batch),
+        );
+        manager.cleanup(&scoped_id, &cancel_token);
+        result.map(|summary| (matches, summary))
+    })
+    .await
+    .map_err(err)?
+}
 #[tauri::command]
 pub fn search_window_send(
     window: WebviewWindow,
@@ -239,7 +317,11 @@ pub fn search_window_send(
         .map_err(err)
 }
 #[tauri::command]
-pub fn search_window_dock(window: WebviewWindow, session: String) -> Result<(), String> {
+pub fn search_window_dock(
+    window: WebviewWindow,
+    session: String,
+    docked: Option<bool>,
+) -> Result<(), String> {
     let app = window.app_handle();
     let store = app.state::<ToolWindows>();
     let owner = store
@@ -253,9 +335,9 @@ pub fn search_window_dock(window: WebviewWindow, session: String) -> Result<(), 
         })
         .map(|(o, _)| o.clone())
         .ok_or("搜索会话已失效")?;
-    close_search(app, &owner)
+    close_search(app, &owner, docked.unwrap_or(true))
 }
-fn close_search(app: &tauri::AppHandle, owner: &str) -> Result<(), String> {
+fn close_search(app: &tauri::AppHandle, owner: &str, docked: bool) -> Result<(), String> {
     let pair = app
         .state::<ToolWindows>()
         .searches
@@ -275,7 +357,7 @@ fn close_search(app: &tauri::AppHandle, owner: &str) -> Result<(), String> {
         app.emit_to(
             owner,
             "search-window-closed",
-            serde_json::json!({"session":pair.session,"error":failure}),
+            serde_json::json!({"session":pair.session,"error":failure,"docked":docked}),
         )
         .map_err(err)?;
     }
@@ -297,10 +379,8 @@ pub fn auxiliary_event(window: &tauri::Window, event: &tauri::WindowEvent) -> bo
                         .find(|(_, p)| p.label == window.label())
                         .map(|(owner, _)| owner.clone())
                 });
-            if let Some(owner) = owner {
-                if let Err(error) = close_search(app, &owner) {
-                    let _ = app.emit_to(owner, "search-window-error", error);
-                }
+            if owner.is_some() {
+                let _ = window.emit_to(window.label(), "search-window-close-request", ());
             } else if let Some(child) = app.get_webview_window(window.label()) {
                 let _ = child.destroy();
             }
@@ -318,13 +398,13 @@ pub fn auxiliary_event(window: &tauri::Window, event: &tauri::WindowEvent) -> bo
                         .map(|(owner, _)| owner.clone())
                 });
             if let Some(owner) = owner {
-                let _ = close_search(app, &owner);
+                let _ = close_search(app, &owner, false);
             }
         }
         return true;
     }
     if let tauri::WindowEvent::Destroyed = event {
-        let _ = close_search(app, window.label());
+        let _ = close_search(app, window.label(), false);
         if let Ok(mut states) = app.state::<ToolWindows>().mini.lock() {
             states.remove(window.label());
         }

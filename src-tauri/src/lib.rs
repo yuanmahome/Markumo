@@ -275,7 +275,13 @@ pub fn run() {
                 app.state::<conversion::ConversionStore>().close(window.label());
                 if let Ok(mut update)=app.state::<commands::update::UpdateStore>().lock(){update.release(window.label());update.statuses.remove(window.label());}
                 app.state::<WorkspaceStore>().remove(window.label());
-                if let Ok(mut registry)=app.state::<session::LaunchStore>().lock(){registry.remove(window.label());}
+                let remaining_windows=if let Ok(mut registry)=app.state::<session::LaunchStore>().lock(){
+                    registry.remove(window.label());
+                    registry.order.clone()
+                }else{Vec::new()};
+                for label in remaining_windows {
+                    let _=app.emit_to(label,"search-peer-message",serde_json::json!({"source":window.label(),"payload":{"kind":"changed"}}));
+                }
                 // A detached window that closed before adopting must not leak
                 // the document body or keep the source tab blocked.
                 commands::detach::forget_window(
@@ -290,6 +296,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             tool_windows::search_window_open,tool_windows::search_window_identity,
             tool_windows::search_window_send,tool_windows::search_window_dock,
+            tool_windows::search_peer_windows,tool_windows::search_peer_send,tool_windows::search_peer_buffers,
             tool_windows::mini_window,tool_windows::mini_pin,
             commands::update::update_runtime, commands::update::report_update_window, commands::update::update_windows_status,
             commands::update::begin_update_install, commands::update::end_update_install, commands::update::mark_update_pending,

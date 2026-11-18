@@ -1,16 +1,20 @@
 <template>
       <section ref="dialog" class="global-search-dialog" :class="{standalone}" role="region" aria-label="全局搜索与替换" :style="geometry" @keydown="keydown">
+        <div v-if="standalone" v-for="edge in resizeEdges" :key="edge" class="search-window-edge" :class="edge" @pointerdown.prevent.stop="resizeNative(edge)"></div>
         <div v-if="!standalone" class="global-dock-resizer" role="separator" aria-label="调整搜索工具窗口高度" tabindex="0" @pointerdown="beginGeometry($event,'s')" @keydown.up.prevent="resizeDock(30)" @keydown.down.prevent="resizeDock(-30)"></div>
-        <header class="global-search-title">
+        <header class="global-search-title" @pointerdown="dragNative" @dblclick="maximizeNative">
           <strong>{{workspace.replaceExpanded?'全局替换':'全局搜索'}}</strong><span class="global-search-stat" role="status">{{statistics}}</span>
-          <button class="ib" :aria-pressed="previewVisible" aria-label="显示源码预览" title="显示/隐藏源码预览" @click="togglePreview"><Icon name="split" /></button>
-          <button v-if="desktop || standalone" class="ib" :aria-label="standalone?'停靠搜索窗口':'弹出搜索窗口'" :title="standalone?'停靠回主窗口':'弹出为独立系统窗口'" @click="standalone?$emit('dock'):$emit('detach')"><Icon :name="standalone?'panel':'max'" /></button>
-          <details class="search-history"><summary aria-label="更多搜索操作">⋯</summary><div class="search-history-popup"><button @click="filters=!filters">高级过滤</button><button @click="togglePreview">{{previewVisible?'隐藏源码预览':'显示源码预览'}}</button></div></details>
+          <div v-if="standalone" class="mask-controls" :inert="editing">
+            <SearchFileMask label="文件掩码" :model-value="workspace.searchInclude" placeholder="所有文件" :presets="includeMasks" :disabled="workspace.replaceApplying" @update:model-value="setMask('searchInclude',$event)" />
+            <SearchFileMask label="排除文件掩码" :model-value="workspace.searchExclude" placeholder="无" :presets="excludeMasks" :disabled="workspace.replaceApplying" @update:model-value="setMask('searchExclude',$event)" />
+          </div>
+          <button v-if="!standalone" class="ib" :aria-pressed="previewVisible" aria-label="显示源码预览" title="显示/隐藏源码预览" @click="togglePreview"><Icon name="split" /></button>
+          <button v-if="!standalone && desktop" class="ib" aria-label="弹出搜索窗口" title="弹出搜索窗口" @click="$emit('detach')"><Icon name="max" /></button>
           <button class="ib" aria-label="关闭全局搜索" title="关闭 (Esc)" @pointerdown.stop @click="close"><Icon name="close" /></button>
         </header>
-        <div class="global-search-inputs">
+        <div class="global-search-inputs" :inert="editing">
           <div class="global-query-row">
-            <button class="ib" :disabled="workspace.replaceApplying" :aria-expanded="workspace.replaceExpanded" aria-label="切换替换模式" @click="workspace.replaceExpanded=!workspace.replaceExpanded"><Icon :name="workspace.replaceExpanded?'chevron-down':'chevron-right'" /></button>
+            <button class="ib" :disabled="workspace.replaceApplying||workspace.searchScope==='windows'" :aria-expanded="workspace.replaceExpanded" aria-label="切换替换模式" @click="workspace.replaceExpanded=!workspace.replaceExpanded"><Icon :name="workspace.replaceExpanded?'chevron-down':'chevron-right'" /></button>
             <Icon name="search" size="small" />
             <input ref="queryInput" v-model="workspace.searchQuery" class="global-query-input" aria-label="全局搜索文本" placeholder="搜索文本" :disabled="workspace.replaceApplying" autocomplete="off" spellcheck="false" @input="changed" @keydown="queryKey" @compositionstart="startComposition" @compositionend="endComposition(true)" />
             <button class="ib" aria-label="清空搜索" :disabled="workspace.replaceApplying||!workspace.searchQuery" @click="workspace.searchQuery='';changed()"><Icon name="close" size="small" /></button>
@@ -25,71 +29,128 @@
             <button class="ib" aria-label="清空替换" :disabled="workspace.replaceApplying||!workspace.replacementText" @click="workspace.replacementText='';replaceChanged()"><Icon name="close" size="small" /></button>
             <details class="search-history"><summary aria-label="替换历史">历史</summary><div class="search-history-popup"><button v-for="value in workspace.replacementHistory" :key="value" :title="value" @click="useHistory(value,true,$event)">{{value}}</button><span v-if="!workspace.replacementHistory.length">暂无历史</span><button @click="workspace.clearSearchHistory(true)">清空替换历史</button></div></details>
           </div>
-          <div class="global-search-scope">
-            <label>范围 <select v-model="workspace.searchScope" aria-label="搜索范围" :disabled="workspace.replaceApplying" @change="changed"><option value="workspace" :disabled="!workspace.roots.length">全部工作区（{{workspace.roots.length}}）</option><option value="directory" :disabled="!workspace.roots.length">指定目录</option><option value="opened">已打开文件</option></select></label>
+          <div class="global-search-scope" role="group" aria-label="搜索范围">
+            <button v-for="scope in scopes" :key="scope.value" type="button" :aria-pressed="workspace.searchScope===scope.value"
+              :disabled="workspace.replaceApplying||scope.disabled" @click="selectScope(scope.value)">{{scope.label}}</button>
             <template v-if="workspace.searchScope==='directory'"><input v-model="workspace.searchDirectory" aria-label="搜索目录" placeholder="已授权工作区内的目录" :disabled="workspace.replaceApplying" @input="changed" @keydown="queryKey" /><button :disabled="workspace.replaceApplying" @click="workspace.chooseSearchDirectory()">选择目录…</button></template>
-            <button :aria-expanded="filters" @click="filters=!filters">高级过滤</button>
-            <span v-if="workspace.searchIncludeIgnored" class="search-ignored-note">包含忽略文件；替换仍遵守安全忽略规则</span>
+            <label v-if="workspace.searchScope==='workspace'||workspace.searchScope==='directory'" class="ignored-option"><input type="checkbox" v-model="workspace.searchIncludeIgnored" :disabled="workspace.replaceApplying" @change="changed" />包含忽略文件</label>
+            <button v-if="standalone&&workspace.searching" class="cancel-popup-search" @click="workspace.cancelSearch()">取消搜索</button>
           </div>
-          <div v-if="filters" class="global-search-filters">
-            <label>包含文件<input v-model="workspace.searchInclude" aria-label="包含文件" placeholder="*.md, *.vue, src/**/*.ts" :disabled="workspace.replaceApplying" @input="changed" /></label>
-            <label>排除文件<input v-model="workspace.searchExclude" aria-label="排除文件" placeholder="node_modules/**, dist/**, *.min.js" :disabled="workspace.replaceApplying" @input="changed" /></label>
-            <label><input type="checkbox" v-model="workspace.searchIncludeIgnored" :disabled="workspace.replaceApplying" @change="changed" />搜索被忽略文件</label>
-            <small>逗号分隔标准 Glob：无 / 匹配文件名，有 / 匹配根目录相对路径；** 递归目录。Windows 忽略大小写。不会跟随符号链接。</small>
+          <div v-if="!standalone" class="mask-controls">
+            <SearchFileMask label="文件掩码" :model-value="workspace.searchInclude" placeholder="所有文件" :presets="includeMasks" :disabled="workspace.replaceApplying" @update:model-value="setMask('searchInclude',$event)" />
+            <SearchFileMask label="排除文件掩码" :model-value="workspace.searchExclude" placeholder="无" :presets="excludeMasks" :disabled="workspace.replaceApplying" @update:model-value="setMask('searchExclude',$event)" />
           </div>
         </div>
-        <div class="global-result-tools"><label>排序 <select v-model="workspace.searchSort" aria-label="结果排序"><option value="path">文件路径</option><option value="name">文件名</option><option value="count">匹配数量</option></select></label><button @click="workspace.setSearchExpanded(true)">全部展开</button><button @click="workspace.setSearchExpanded(false)">全部折叠</button><button :disabled="!workspace.searchTotal" @click="copyResults">复制结果</button><button v-if="workspace.searching" @click="workspace.cancelSearch()">取消搜索</button><button v-else :disabled="!workspace.searchQuery||workspace.replaceApplying" @click="runNow">重新搜索</button></div>
+        <div v-if="!standalone" class="global-result-tools" :inert="editing"><label>排序 <select v-model="workspace.searchSort" aria-label="结果排序"><option value="path">文件路径</option><option value="name">文件名</option><option value="count">匹配数量</option></select></label><button @click="workspace.setSearchExpanded(true)">全部展开</button><button @click="workspace.setSearchExpanded(false)">全部折叠</button><button :disabled="!workspace.searchTotal" @click="copyResults">复制结果</button><button v-if="workspace.searching" @click="workspace.cancelSearch()">取消搜索</button><button v-else :disabled="!workspace.searchQuery||workspace.replaceApplying" @click="runNow">重新搜索</button></div>
         <div ref="body" class="global-search-body" :class="{stacked,'preview-hidden':!previewVisible}">
-          <div class="global-results-pane" :style="{flex:workspace.searchWindow.split}">
+          <div class="global-results-pane" :style="{flex:workspace.searchWindow.split}" :inert="editing">
             <SearchResultList v-if="workspace.searchResults.length" :groups="workspace.searchResults" :sort="workspace.searchSort" :active-id="workspace.selectedMatchId" :replacement="workspace.replaceExpanded" :selected="workspace.selectedMatches" @select="selectMatch" @open="openMatch" @context="resultContext" @toggle="workspace.toggleSearchSelection($event)" @select-file="selectFile" />
             <div v-else class="global-search-empty"><Icon name="search" /><p>{{emptyMessage}}</p><button v-if="!workspace.roots.length" @click="workspace.openWorkspaceDialog()">打开文件夹…</button></div>
           </div>
           <div v-if="previewVisible" class="global-preview-resizer" role="separator" aria-label="调整结果与预览比例" :aria-orientation="stacked?'horizontal':'vertical'" tabindex="0" :aria-valuenow="Math.round(workspace.searchWindow.split*100)" @pointerdown="beginSplit" @keydown.up.prevent="resizeSplit(-.05)" @keydown.down.prevent="resizeSplit(.05)" @keydown.left.prevent="resizeSplit(-.05)" @keydown.right.prevent="resizeSplit(.05)"></div>
           <div v-if="previewVisible" class="global-preview-pane" :style="{flex:1-workspace.searchWindow.split}">
-            <div class="global-preview-head"><span :title="activeMatch?.path">{{showDiff?'替换 Diff 预览':activeMatch?.relative_path||'源码预览'}}</span><button v-if="showDiff" @click="showDiff=false">返回源码预览</button><button v-else :disabled="!workspace.searchPreview" @click="copyPreview">复制预览</button></div>
+            <div class="global-preview-head">
+              <span :title="activeMatch?.path">{{showDiff?'替换 Diff 预览':editMatch?.relative_path||activeMatch?.relative_path||'源码'}}</span>
+              <button v-if="showDiff" @click="showDiff=false">返回源码预览</button>
+              <template v-else-if="editing">
+                <button :disabled="applyingEdit" @click="stopEdit">取消编辑</button>
+                <button class="search-primary" :disabled="applyingEdit||draft===editPreview?.text" @click="applyEdit">应用修改</button>
+              </template>
+              <template v-else>
+                <button v-if="standalone && workspace.searchPreview?.editable" :disabled="workspace.replaceApplying||workspace.searching" @click="startEdit">编辑</button>
+                <button v-if="!standalone" :disabled="!workspace.searchPreview" @click="copyPreview">复制预览</button>
+              </template>
+            </div>
             <SearchReplacePreview v-if="showDiff" :workspace="workspace" />
             <div v-show="!showDiff" class="global-source-pane" :aria-busy="workspace.searchPreviewLoading">
-              <SearchCodePreview v-if="previewStarted" :preview="workspace.searchPreview" @open="activeMatch&&openMatch(activeMatch,'pinned')" />
-              <div v-if="workspace.searchPreviewLoading||workspace.searchPreviewError||!workspace.searchPreview" class="global-preview-message" role="status">{{workspace.searchPreviewLoading?'正在读取源码预览…':workspace.searchPreviewError||'单击结果预览源码；双击或 Enter 打开文件'}}</div>
+              <SearchCodePreview v-if="previewStarted||editing" :inert="applyingEdit" :preview="editPreview||workspace.searchPreview" :editing="editing" @edit="draft=$event" @save="applyEdit" @open="activeMatch&&openMatch(activeMatch,'pinned')" />
+              <div v-if="editing && editError" class="global-edit-error" role="alert">{{editError}}</div>
+              <div v-if="!editing&&(workspace.searchPreviewLoading||workspace.searchPreviewError||!workspace.searchPreview)" class="global-preview-message" role="status">{{workspace.searchPreviewLoading?'正在读取源码…':workspace.searchPreviewError||'选择结果查看源码'}}</div>
               <div v-if="workspace.searchPreview?.truncated" class="global-preview-budget">预览达到 256 KiB 预算；请打开文件查看完整内容</div>
             </div>
           </div>
         </div>
         <details v-if="workspace.replacementReport.length" class="global-replacement-report"><summary>上次替换报告</summary><p v-for="(entry,index) in workspace.replacementReport" :key="index">{{entry}}</p></details>
-        <footer class="global-search-footer"><button :disabled="!activeMatch" @click="activeMatch&&openMatch(activeMatch,'pinned')">在新标签中打开</button><span>{{workspace.selectedMatches.size?`已选 ${workspace.selectedMatches.size} 处`:`${workspace.searchTotal} 处匹配`}}{{workspace.searchSkipped?` · 跳过 ${workspace.searchSkipped} 项`:''}}</span><template v-if="workspace.replaceExpanded"><button :disabled="workspace.replaceBusy||workspace.searching||!activeMatch" @click="previewCurrent">替换当前匹配…</button><button :disabled="workspace.replaceBusy||workspace.searching||!activeMatch" @click="previewFile">替换当前文件…</button><button :disabled="workspace.replaceBusy||workspace.searching||!workspace.selectedMatches.size" @click="previewSelected">替换选中…</button><button :disabled="!canReplaceAll" title="先核对 Diff 预览，再应用替换" @click="previewAll">预览替换 / 替换全部…</button></template></footer>
+        <footer class="global-search-footer" :inert="editing"><button :disabled="!activeMatch" @click="activeMatch&&openMatch(activeMatch,'pinned')">在新标签中打开</button><span>{{workspace.selectedMatches.size?`已选 ${workspace.selectedMatches.size} 处`:`${workspace.searchTotal} 处匹配`}}{{workspace.searchSkipped?` · 跳过 ${workspace.searchSkipped} 项`:''}}</span><template v-if="workspace.replaceExpanded"><button :disabled="workspace.replaceBusy||workspace.searching||!activeMatch" @click="previewCurrent">替换当前匹配…</button><button :disabled="workspace.replaceBusy||workspace.searching||!activeMatch" @click="previewFile">替换当前文件…</button><button :disabled="workspace.replaceBusy||workspace.searching||!workspace.selectedMatches.size" @click="previewSelected">替换选中…</button><button :disabled="!canReplaceAll" title="先核对 Diff 预览，再应用替换" @click="previewAll">预览替换 / 替换全部…</button></template><button v-if="standalone && canDock" class="search-primary open-find-tool" title="Ctrl+Enter" @click="$emit('dock')">打开查找窗口</button></footer>
         <ContextMenu ref="contextMenu" />
       </section>
 </template>
 <script setup lang="ts">
 import {computed,defineAsyncComponent,nextTick,onMounted,onUnmounted,ref,watch} from 'vue'
 import {isTauri} from '@tauri-apps/api/core'
+import {getCurrentWindow} from '@tauri-apps/api/window'
 import type {WorkspaceController,FileSearchGroup} from '../../features/workspace/WorkspaceController'
-import type {SearchMatch} from '../../features/workspace/contracts'
+import type {SearchMatch,SearchSourcePreview} from '../../features/workspace/contracts'
 import {searchMatchId} from '../../features/workspace/searchModel'
 import {textClipboard} from '../../features/shell/clipboard'
 import {CommandRegistry,menuCommand as cmd,separator} from '../../features/shell/menuModel'
-import {eventShortcut} from '../../features/shell/editorSettings'
+import {eventToKeybinding,isMacPlatform} from '../../features/shell/keybindings'
 import {matchingCommand} from '../../features/shell/keybindings'
 import SearchResultList from './SearchResultList.vue'
 import SearchReplacePreview from './SearchReplacePreview.vue'
+import SearchFileMask from './SearchFileMask.vue'
 import Icon from '../common/Icon.vue'
 import ContextMenu from '../common/ContextMenu.vue'
 const SearchCodePreview=defineAsyncComponent(()=>import('./SearchCodePreview.vue'))
-const props=defineProps<{workspace:WorkspaceController;shortcuts:Record<string,string>;standalone?:boolean}>()
-defineEmits<{(e:'detach'):void;(e:'dock'):void}>()
+const props=defineProps<{workspace:WorkspaceController;shortcuts:Record<string,string>;standalone?:boolean;canDock?:boolean;canSearchPeers?:boolean}>()
+const emit=defineEmits<{(e:'detach'):void;(e:'dock'):void}>()
 const desktop=isTauri(),stacked=ref(false)
-const previewVisible=computed({get:()=>workspace.searchPreviewVisible,set:value=>{workspace.searchPreviewVisible=value}})
+const previewVisible=computed({get:()=>props.standalone||workspace.searchPreviewVisible,set:value=>{workspace.searchPreviewVisible=value}})
 const workspace=props.workspace,dialog=ref<HTMLElement>(),queryInput=ref<HTMLInputElement>(),replaceInput=ref<HTMLInputElement>(),body=ref<HTMLElement>(),contextMenu=ref<InstanceType<typeof ContextMenu>>()
-const filters=computed({get:()=>workspace.searchAdvanced,set:value=>{workspace.searchAdvanced=value}}),showDiff=computed({get:()=>workspace.searchShowDiff,set:value=>{workspace.searchShowDiff=value}}),previewStarted=ref(!!workspace.selectedMatchId),composing=ref(false),viewport=ref({width:window.innerWidth,height:window.innerHeight})
+const showDiff=computed({get:()=>workspace.searchShowDiff,set:value=>{workspace.searchShowDiff=value}}),previewStarted=ref(!!workspace.selectedMatchId),composing=ref(false),viewport=ref({width:window.innerWidth,height:window.innerHeight})
 const previous=document.activeElement instanceof HTMLElement?document.activeElement:null
 const activeMatch=computed(()=>workspace.searchResults.flatMap(group=>group.matches).find(match=>searchMatchId(match)===workspace.selectedMatchId))
 const canReplaceAll=computed(()=>!workspace.replaceBusy&&!workspace.searching&&workspace.searchTotal>0&&workspace.searchStatus==='complete')
 const statistics=computed(()=>workspace.searchStatus==='searching'?`正在搜索 · ${workspace.searchTotal} 处`:`在 ${workspace.searchResults.length} 个文件中找到 ${workspace.searchTotal} 处匹配${['limited','partial','canceled','error'].includes(workspace.searchStatus)?'（结果不完整）':''}`)
 const emptyMessage=computed(()=>workspace.searchStatus==='error'?workspace.searchMessage:workspace.searching?'正在搜索…':workspace.searchStatus==='empty'?'未找到匹配':workspace.searchStatus==='canceled'?'搜索已取消':!workspace.searchQuery?'输入文本开始搜索':workspace.searchScope==='opened'&&!workspace.textSearchDocuments().length?'没有已打开的文本文件':'等待搜索…')
 const geometry=computed(()=>props.standalone?{}:{height:`${Math.min(viewport.value.height*.65,Math.max(180,workspace.searchWindow.height??360))}px`})
+const includeMasks=['*.md, *.markdown','*.txt, *.log','*.java, *.kt','*.js, *.ts, *.vue','*.json, *.yml, *.yaml','*.sql']
+const excludeMasks=['node_modules/**, dist/**','*.min.js, *.map','**/target/**, **/build/**','**/vendor/**']
+const scopes=computed<{value:WorkspaceController['searchScope'];label:string;disabled?:boolean}[]>(()=>[
+  {value:'workspace',label:'工作区',disabled:!workspace.roots.length},
+  {value:'directory',label:'目录',disabled:!workspace.roots.length},
+  {value:'opened',label:'已打开文件'},
+  ...(props.canSearchPeers||workspace.searchPeers?[{value:'windows' as const,label:'所有窗口',disabled:workspace.replaceExpanded}]:[]),
+])
+const resizeEdges=['North','South','East','West','NorthEast','NorthWest','SouthEast','SouthWest'] as const
+const editPreview=ref<SearchSourcePreview>(),editMatch=ref<SearchMatch>()
+const draft=ref(''),editError=ref(''),applyingEdit=ref(false)
+const editing=computed(()=>!!editPreview.value)
+function setMask(field:'searchInclude'|'searchExclude',value:string){workspace[field]=value;changed()}
+function selectScope(scope:WorkspaceController['searchScope']){
+  if(workspace.searchScope===scope)return
+  workspace.searchScope=scope
+  changed()
+}
+function nativeAction(action:()=>Promise<unknown>){if(desktop&&props.standalone)void action().catch(error=>{workspace.searchPreviewError=String(error)})}
+function dragNative(event:PointerEvent){
+  if(event.button===0&&!(event.target as HTMLElement).closest('button,input,select,.mask-controls')){
+    nativeAction(()=>getCurrentWindow().startDragging())
+  }
+}
+function maximizeNative(event:MouseEvent){
+  if(!(event.target as HTMLElement).closest('button,input,select,.mask-controls'))nativeAction(()=>getCurrentWindow().toggleMaximize())
+}
+function resizeNative(edge:typeof resizeEdges[number]){nativeAction(()=>getCurrentWindow().startResizeDragging(edge))}
+function startEdit(){
+  if(!workspace.searchPreview?.editable||!activeMatch.value)return
+  editMatch.value=activeMatch.value
+  editPreview.value=workspace.searchPreview
+  draft.value=editPreview.value.text
+  editError.value=''
+}
+function stopEdit(){editPreview.value=undefined;editMatch.value=undefined;draft.value='';editError.value=''}
+async function applyEdit(){
+  if(applyingEdit.value||!editMatch.value||!editPreview.value?.edit_id||draft.value===editPreview.value.text)return
+  applyingEdit.value=true
+  editError.value=''
+  try{await workspace.applySearchEdit(editMatch.value,editPreview.value.edit_id,draft.value);stopEdit()}
+  catch(error){editError.value=String(error)}
+  finally{applyingEdit.value=false}
+}
 function clampGeometry(){
   viewport.value={width:window.innerWidth,height:window.innerHeight}
-  stacked.value=(body.value?.clientWidth??window.innerWidth)<760
+  stacked.value=!!props.standalone||(body.value?.clientWidth??window.innerWidth)<760
 }
 function resizeDock(delta:number){workspace.searchWindow.height=Math.min(window.innerHeight*.65,Math.max(180,(workspace.searchWindow.height??360)+delta));workspace.persistSearchMetadata()}
 function togglePreview(){previewVisible.value=!previewVisible.value;if(!previewVisible.value){previewStarted.value=false;workspace.clearSearchPreview(false)}else if(activeMatch.value)selectMatch(activeMatch.value)}
@@ -97,14 +158,31 @@ function changed(){if(!composing.value)workspace.scheduleSearch()}
 function replaceChanged(){if(!composing.value)workspace.invalidateReplace()}
 function startComposition(){composing.value=true;workspace.setSearchComposition(true)}
 function endComposition(search:boolean){composing.value=false;workspace.setSearchComposition(false);void nextTick(()=>search?changed():replaceChanged())}
-function queryKey(event:KeyboardEvent){if(!event.isComposing&&!composing.value&&event.keyCode!==229&&event.key==='Enter'){event.preventDefault();event.stopPropagation();runNow()}}
+function queryKey(event:KeyboardEvent){
+  if(event.isComposing||composing.value||event.keyCode===229||event.key!=='Enter')return
+  event.preventDefault();event.stopPropagation()
+  if(props.standalone&&props.canDock&&(isMacPlatform()?event.metaKey:event.ctrlKey))emit('dock')
+  else runNow()
+}
 function runNow(){if(!composing.value)void workspace.search(workspace.searchQuery)}
-function close(){workspace.closeSearchDialog()}
+function close(){if(editing.value){if(!applyingEdit.value)editError.value='请先应用修改或取消编辑';return}workspace.closeSearchDialog()}
+defineExpose({close})
 async function focusInput(){await nextTick();(workspace.searchFocusReplace?replaceInput.value:queryInput.value)?.focus();(workspace.searchFocusReplace?replaceInput.value:queryInput.value)?.select()}
-watch(()=>workspace.searchFocusRevision,()=>void focusInput())
+watch(()=>workspace.searchFocusRevision,()=>{if(!editing.value)void focusInput()})
 watch(()=>workspace.selectedMatchId,id=>{if(id)previewStarted.value=true})
 watch(()=>workspace.searchResults,()=>{if(workspace.selectedMatchId&&!activeMatch.value)workspace.clearSearchPreview()})
-function selectMatch(match:SearchMatch){showDiff.value=false;previewStarted.value=previewVisible.value;void workspace.selectSearchMatch(match,previewVisible.value)}
+watch(()=>[workspace.searchId,workspace.searching,workspace.searchResults.length] as const,()=>{
+  if(props.standalone&&!editing.value&&!workspace.searching&&!workspace.selectedMatchId){
+    const first=workspace.searchResults[0]?.matches[0]
+    if(first)selectMatch(first)
+  }
+})
+function selectMatch(match:SearchMatch){
+  showDiff.value=false
+  previewStarted.value=previewVisible.value
+  if(previewVisible.value&&workspace.selectedMatchId===searchMatchId(match)&&(workspace.searchPreview||workspace.searchPreviewLoading))return
+  void workspace.selectSearchMatch(match,previewVisible.value)
+}
 function openMatch(match:SearchMatch,mode:'preview'|'pinned'|'split'){void workspace.locateMatch(match,mode)}
 function selectFile(group:FileSearchGroup,checked:boolean){for(const match of group.matches){const id=searchMatchId(match);if(checked)workspace.selectedMatches.add(id);else workspace.selectedMatches.delete(id)}}
 function useHistory(value:string,replacement:boolean,event:MouseEvent){if(replacement){workspace.replacementText=value;replaceChanged()}else{workspace.searchQuery=value;changed()}(event.target as HTMLElement).closest('details')?.removeAttribute('open');void focusInput()}
@@ -129,12 +207,15 @@ function resultContext(match:SearchMatch,event:MouseEvent){
   contextMenu.value?.open(event,[cmd('search-open'),cmd('search-pin'),cmd('search-split'),separator('search-copy'),cmd('search-copy-match'),cmd('search-copy-path'),cmd('search-copy-relative'),cmd('search-copy-location'),separator('search-location'),cmd('search-reveal'),cmd('search-directory')],registry,'搜索结果操作')
 }
 function keydown(event:KeyboardEvent){
+  const command=matchingCommand(eventToKeybinding(event,undefined,true)||'',props.shortcuts,'shell')
+  if(!editing.value&&command&&['workspace-search','workspace-replace'].includes(command.id)){event.preventDefault();event.stopPropagation();if(!event.repeat)workspace.focusWorkspaceSearch(command.id==='workspace-replace');return}
   if(event.isComposing||composing.value||event.keyCode===229)return
-  const command=matchingCommand(eventShortcut(event),props.shortcuts,'shell')
-  if(command&&['workspace-search','workspace-replace'].includes(command.id)){event.preventDefault();event.stopPropagation();workspace.focusWorkspaceSearch(command.id==='workspace-replace');return}
+  if(!editing.value&&props.standalone&&props.canDock&&event.key==='Enter'&&(isMacPlatform()?event.metaKey:event.ctrlKey)){
+    event.preventDefault();event.stopPropagation();emit('dock');return
+  }
   if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close();return}
   if(event.key==='Tab'&&props.standalone&&dialog.value){
-    const elements=[...dialog.value.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary,[tabindex="0"]')].filter(el=>el.getClientRects().length)
+    const elements=[...dialog.value.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),summary,[tabindex="0"]')].filter(el=>el.getClientRects().length&&!el.closest('[inert]'))
     const index=elements.indexOf(document.activeElement as HTMLElement)
     if(event.shiftKey&&index<=0){elements.at(-1)?.focus();event.preventDefault()}else if(!event.shiftKey&&index===elements.length-1){elements[0]?.focus();event.preventDefault()}
   }
@@ -169,4 +250,43 @@ onUnmounted(()=>{resizeObserver?.disconnect();stopGeometry();stopSplit();window.
 
 <style scoped>
 .global-search-dialog{overflow:auto}.global-search-body.stacked{min-height:120px}.global-search-inputs,.global-result-tools,.global-search-footer,.global-search-title{flex-shrink:0}
+.standalone {
+  position:relative;
+  overflow:hidden;
+  background:var(--editor);
+  border:1px solid var(--line);
+}
+.standalone .global-search-title { min-height:42px; cursor:move; flex-wrap:wrap; padding:5px 12px; gap:6px 12px }
+.mask-controls { display:flex; flex-wrap:wrap; gap:5px 10px; align-items:center; font-size:var(--ui-small-font-size); cursor:default }
+.global-search-title .mask-controls { margin-left:auto }
+.global-search-inputs>.mask-controls { padding:3px 0 }
+.global-search-scope { padding-top:5px; gap:4px }
+.global-search-scope button { border-radius:5px; padding:4px 8px; color:var(--sub); white-space:nowrap }
+.global-search-scope button:hover { background:var(--hover) }
+.global-search-scope button[aria-pressed="true"] { color:var(--accent); background:var(--accentbg); font-weight:600 }
+.ignored-option { display:flex; align-items:center; gap:4px; padding-left:5px }
+.cancel-popup-search { margin-left:auto }
+.standalone .global-search-body.stacked { min-height:0 }
+.standalone .global-search-footer>.open-find-tool { margin-left:auto }
+.global-search-dialog .search-primary { background:var(--accentbg); color:var(--accent); border-radius:5px; padding:4px 9px }
+.global-preview-head button:first-of-type { margin-left:auto }
+.global-edit-error { position:absolute; bottom:0; left:0; right:0; background:var(--bar); color:var(--red); padding:6px 10px; border-top:1px solid var(--line) }
+.search-window-edge { position:absolute; z-index:12; touch-action:none }
+.North,.South { left:10px; right:10px; height:5px; cursor:ns-resize }
+.North { top:0 } .South { bottom:0 }
+.East,.West { top:10px; bottom:10px; width:5px; cursor:ew-resize }
+.East { right:0 } .West { left:0 }
+.NorthEast,.NorthWest,.SouthEast,.SouthWest { width:10px; height:10px }
+.NorthEast { top:0; right:0; cursor:nesw-resize }
+.NorthWest { top:0; left:0; cursor:nwse-resize }
+.SouthEast { bottom:0; right:0; cursor:nwse-resize }
+.SouthWest { bottom:0; left:0; cursor:nesw-resize }
+@container global-search (max-width:650px) {
+  .standalone .global-search-title .mask-controls { order:1; flex:1 0 100%; margin-left:0 }
+  .standalone .global-search-title>button { margin-left:auto }
+}
+@media (max-height:420px) {
+  .standalone { overflow:auto }
+  .standalone .global-search-body.stacked { min-height:128px }
+}
 </style>
