@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
-use tauri::{AppHandle, State, Window};
+use tauri::{AppHandle, Manager, State, Window};
 use tauri_plugin_dialog::DialogExt;
 
 pub type FileStore = Arc<Mutex<FileService>>;
@@ -138,6 +138,23 @@ async fn operate<T: Send + 'static>(
     .map_err(|error| FileError::new("task", &error.to_string()))?
 }
 
+fn is_mini(window: &Window) -> Result<bool> {
+    let launches = window.app_handle().state::<crate::session::LaunchStore>();
+    let registry = launches.lock().map_err(|_| FileError::new("state", "启动状态不可用"))?;
+    registry.windows.get(window.label()).map(|launch| launch.mini)
+        .ok_or_else(|| FileError::new("state", "窗口未注册"))
+}
+
+async fn open_in_regular_window(app: AppHandle, paths: Vec<PathBuf>, encoding: Option<String>) -> Result<()> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    tauri::async_runtime::spawn_blocking(move || crate::route_open_files(&app, paths, encoding.as_deref()))
+        .await
+        .map_err(|error| FileError::new("task", &error.to_string()))?
+        .map_err(|error| FileError::new("open", &error))
+}
+
 #[tauri::command]
 pub async fn open_dialog(
     app: AppHandle,
@@ -146,28 +163,34 @@ pub async fn open_dialog(
     encoding: Option<String>,
 ) -> Result<OpenBatch> {
     let owner = window.label().to_owned();
+    let dialog_window = window.clone();
+    let dialog_app = app.clone();
     let paths = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
+        dialog_app.dialog()
             .file()
-            .set_parent(&window)
+            .set_parent(&dialog_window)
             .blocking_pick_files()
     })
     .await
     .map_err(|error| FileError::new("dialog", &error.to_string()))?;
-    operate(store.inner().clone(), owner, move |service| {
-        let mut paths_buf = Vec::new();
-        let mut errors = Vec::new();
-        for file in paths.unwrap_or_default() {
-            match file.into_path() {
-                Ok(path) => paths_buf.push(path),
-                Err(error) => errors.push(error.to_string()),
-            }
+    let mut selected = Vec::new();
+    let mut errors = Vec::new();
+    for file in paths.unwrap_or_default() {
+        match file.into_path() {
+            Ok(path) => selected.push(path),
+            Err(error) => errors.push(error.to_string()),
         }
-        let mut batch = service.open_batch(paths_buf, encoding.as_deref());
-        batch.errors.extend(errors);
-        Ok(batch)
-    })
-    .await
+    }
+    let mut batch = if is_mini(&window)? {
+        open_in_regular_window(app, selected, encoding).await?;
+        OpenBatch::default()
+    } else {
+        operate(store.inner().clone(), owner, move |service| {
+            Ok(service.open_batch(selected, encoding.as_deref()))
+        }).await?
+    };
+    batch.errors.extend(errors);
+    Ok(batch)
 }
 
 #[tauri::command]
@@ -316,6 +339,21 @@ pub async fn open_recent(
     })
     .await
 }
+#[tauri::command]
+pub async fn open_recent_in_regular_window(
+    window: Window,
+    store: State<'_, FileStore>,
+    path: String,
+) -> Result<()> {
+    if !is_mini(&window)? {
+        return Err(FileError::new("state", "当前窗口已退出 Mini 模式"));
+    }
+    let path = operate(store.inner().clone(), window.label().into(), move |service| {
+        service.recent_path(&path)
+    }).await?;
+    open_in_regular_window(window.app_handle().clone(), vec![path], None).await
+}
+
 #[tauri::command]
 pub async fn reopen_file(
     window: Window,
@@ -648,10 +686,17 @@ pub async fn open_dropped_files(
     store: State<'_, FileStore>,
     tokens: Vec<String>,
 ) -> Result<OpenBatch> {
-    operate(store.inner().clone(), window.label().into(), move |s| {
-        Ok(s.open_image_inputs(&tokens))
-    })
-    .await
+    if is_mini(&window)? {
+        let paths = operate(store.inner().clone(), window.label().into(), move |service| {
+            Ok(service.take_file_inputs(&tokens))
+        }).await?;
+        open_in_regular_window(window.app_handle().clone(), paths, None).await?;
+        Ok(OpenBatch::default())
+    } else {
+        operate(store.inner().clone(), window.label().into(), move |service| {
+            Ok(service.open_image_inputs(&tokens))
+        }).await
+    }
 }
 
 #[tauri::command]
@@ -730,7 +775,7 @@ pub async fn drain_pending(
         std::mem::take(&mut launch.pending)
     };
     operate(store.inner().clone(), owner, move |service| {
-        Ok(service.open_batch(paths, None))
+        Ok(service.open_requests(paths.into_iter().map(|file| (file.path, file.encoding))))
     })
     .await
 }

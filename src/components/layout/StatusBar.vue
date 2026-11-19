@@ -50,7 +50,6 @@
         @click="$emit('open-recovery')"
       >可恢复 {{ recoveryCount }}</button>
       <template v-if="doc?.kind !== 'javaClass' && !isMedia(doc)">
-        <span class="stat-item position">Ln {{ doc?.line || 1 }}, Col {{ doc?.column || 1 }}</span>
         <span class="stat-item optional">{{ useTabs ? 'Tabs' : 'Spaces' }}: {{ indentSize }}</span>
         <button
           class="stat-item encoding-btn"
@@ -63,7 +62,6 @@
           <span>{{ encodingDisplay }}</span>
           <span v-if="doc" class="encoding-arrow" aria-hidden="true">▾</span>
         </button>
-        <span class="stat-item">{{ doc?.eol || 'LF' }}</span>
       </template>
       <span v-if="doc?.kind === 'javaClass'" class="stat-item">JVM ClassFile</span>
       <span v-else-if="isMedia(doc)" class="stat-item">{{ doc?.media?.format }} · {{ mediaSize(doc?.media?.byteLength || 0) }}</span>
@@ -74,6 +72,7 @@
       <span v-if="doc?.languageStatus === 'loading'" class="optional">加载中…</span>
       <span v-if="doc?.kind === 'javaClass'" class="stat-item">{{ doc.classInfo?.byteLength.toLocaleString() }} 字节</span>
       <DocumentStats v-else-if="doc && manager && !isMedia(doc) && doc.encoding !== 'Hex'" :manager="manager" :id="doc.id" :kind="primaryStatistic" @change="emit('set-statistic', $event)" />
+      <span v-if="doc && doc.kind !== 'javaClass' && !isMedia(doc)" class="stat-item position" :title="`第 ${doc.line || 1} 行，第 ${doc.column || 1} 列`">{{ doc.line || 1 }}:{{ doc.column || 1 }}</span>
     </div>
     <ContextMenu ref="encodingMenuRef" />
     <NavigationPopup
@@ -502,7 +501,7 @@ function openEncodingMenu(event: MouseEvent | KeyboardEvent) {
   padding: 0 4px;
   border-radius: 3px;
 }
-@media (max-width: 720px) { .dirty-item, .position { display: none; } .stat-group { gap: 6px; } }
+@media (max-width: 720px) { .dirty-item { display: none; } .stat-group { gap: 6px; } }
 
 .lang-item:hover {
   background: var(--hover);

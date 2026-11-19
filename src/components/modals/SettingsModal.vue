@@ -56,7 +56,7 @@
               <div class="settingrow"><label for="settings-update-check">自动检查更新</label><input id="settings-update-check" class="setting-switch" type="checkbox" :checked="autoCheckUpdates" @change="emit('update:autoCheckUpdates', ($event.target as HTMLInputElement).checked)" /></div>
               <div class="settingrow"><label for="settings-update-download">自动后台下载更新</label><input id="settings-update-download" class="setting-switch" type="checkbox" :checked="autoDownloadUpdates" @change="emit('update:autoDownloadUpdates', ($event.target as HTMLInputElement).checked)" /></div>
               <p class="setting-hint">发现新版本后，在后台下载安装包。下载完成后仍由你决定何时安装和重启。</p>
-              <div class="settingrow"><span>当前版本 {{ currentVersion || '读取中…' }}</span><button class="reset-font" @click="emit('check-update')">检查更新</button></div>
+              <div class="settingrow"><span>当前版本</span><span>{{ currentVersion || '读取中…' }}</span></div>
             </section>
 
             <!-- 3. 保存 -->
@@ -289,7 +289,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:autoCheckUpdates' | 'update:autoDownloadUpdates', value: boolean): void
-  (e: 'check-update'): void
   (e: 'update:markdownClipboard', value: MarkdownClipboardSettings): void
   (e: 'update:markdownTypography', value: MarkdownTypography): void
   (e: 'update:theme', val: ThemePreference): void

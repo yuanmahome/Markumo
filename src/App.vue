@@ -18,8 +18,6 @@
       :menu-groups="menuGroups"
       :command-registry="commandRegistry"
       :quick-shortcut="shortcuts['quick-open']"
-      :update-state="updateStatus"
-      @open-update="openUpdatePanel"
       @execute-command="executeCommand"
       @open-file="openFile()"
       @save-file="saveActive()"
@@ -156,7 +154,6 @@
       v-model:auto-check-updates="autoCheckUpdates"
       v-model:auto-download-updates="autoDownloadUpdates"
       :current-version="updateStatus.currentVersion"
-      @check-update="settingsRef?.close();openUpdatePanel()"
       v-model:markdown-clipboard="markdownClipboard"
       v-model:markdown-typography="markdownTypography"
       v-model:image-rules="imageRules"
@@ -225,7 +222,7 @@
     @diff="showRecoveryDiff"
     @close-diff="clearRecoveryDiff"
   />
-  <UpdatePanel v-if="updatePanelOpen" :state="updateStatus" @close="updatePanelOpen=false" @check="updateManager.checkForUpdates()" @download="updateManager.downloadUpdate()" @install="updateManager.installUpdate()" @release="openUpdateRelease" @link="openUpdateLink" />
+  <UpdatePanel v-if="updatePanelOpen" :state="updateStatus" @close="dismissUpdate" @skip="skipUpdate" @update="applyUpdate" @release="openUpdateRelease" />
   <UpdateConfirm ref="updateConfirmRef" />
   <div class="conversion-notices">
     <ConversionWarnings v-if="importResult?.warnings.length" label="导入提示" :warnings="importResult.warnings" @close="dismissImportWarnings" />
@@ -264,7 +261,7 @@ import { computed, defineAsyncComponent, nextTick, provide, ref } from 'vue'
 const GlobalSearchDialog=defineAsyncComponent(()=>import('./components/search/GlobalSearchDialog.vue'))
 import { workspaceNavigationKey } from './features/workspace/navigation'
 import { useAppShell } from './app/useAppShell'
-const {miniActive,miniPinned,miniBusy,toggleMini,toggleMiniPin,dragMini,resizeMini,detachSearch, primaryStatistic,autoCheckUpdates,autoDownloadUpdates,updateStatus,updatePanelOpen,updateConfirmRef,updateManager,openUpdatePanel,openUpdateRelease,openUpdateLink,caretAnimation,outlineWidth,markdownClipboard,markdownTypography,appMode, sidebarVisible, sidebarWidth, sidebarPanel, focusMode, theme, uiFontSize, fontSize, fontFamily, indentSize, useTabs, shortcuts, updateShortcuts, updateKeymap, keymapPreset, wordWrap, showOutline, typewriterMode, defaultMdMode, liveToolbar, externalFileMonitoring, autoReloadExternal, autoSave, autoSaveDelay, treeClickMode, autoFollowActiveFile, smartExpand, compactFolders, syntaxStyle, bracketMode, imageRules,currentDocumentImageRules,updateDocumentImageRules,
+const {miniActive,miniPinned,miniBusy,toggleMini,toggleMiniPin,dragMini,resizeMini,detachSearch, primaryStatistic,autoCheckUpdates,autoDownloadUpdates,updateStatus,updatePanelOpen,updateConfirmRef,dismissUpdate,skipUpdate,applyUpdate,openUpdateRelease,caretAnimation,outlineWidth,markdownClipboard,markdownTypography,appMode, sidebarVisible, sidebarWidth, sidebarPanel, focusMode, theme, uiFontSize, fontSize, fontFamily, indentSize, useTabs, shortcuts, updateShortcuts, updateKeymap, keymapPreset, wordWrap, showOutline, typewriterMode, defaultMdMode, liveToolbar, externalFileMonitoring, autoReloadExternal, autoSave, autoSaveDelay, treeClickMode, autoFollowActiveFile, smartExpand, compactFolders, syntaxStyle, bracketMode, imageRules,currentDocumentImageRules,updateDocumentImageRules,
   paletteRef, settingsRef, discardRef, toastRef, historyOpen, historyPath, historyDocumentId, historyContent, manager, files, workspace, openedDocuments, activeDoc, activeDocId, exportProgress, cancelExport, importProgress, cancelImport, importResult, exportResult, dismissImportWarnings, dismissExportWarnings, paletteActions, menuGroups,commandRegistry,executeCommand,
   setMode, toggleSidebar, handleSelectPanel, leftSidebarOccupied, effectiveOutlinePosition, outlineSupported, outlineVisible, toggleOutline, toggleTheme, toggleFocus, openSettings, openPalette, handleSelectDoc,
   createNewDoc, closeDocById, cancelPendingClose, discardPending, savePending, setLanguage,
@@ -292,7 +289,7 @@ function updateMarkdownWidth(width: number) {
 }
 // These refs are bound by name from the template only; TypeScript cannot see
 // string template refs, so reference them explicitly.
-void [updateConfirmRef, paletteRef, discardRef, toastRef, gotoLineRef]
+void [updateConfirmRef, settingsRef, paletteRef, discardRef, toastRef, gotoLineRef]
 
 const activeDocLineCount = computed(() => {
   if (!activeDoc.value) return 1

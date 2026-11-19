@@ -2,7 +2,11 @@
 //! Mini changes only the existing native window's placement.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{mpsc, Mutex},
+    time::{Duration, Instant},
+};
 use tauri::{Emitter, Manager, WebviewWindow};
 
 #[derive(Clone)]
@@ -21,12 +25,15 @@ struct Geometry {
 struct Placement {
     geometry: Geometry,
     maximized: bool,
+    #[cfg(windows)]
+    maximized_frame: Option<MaximizedFrame>,
     topmost: bool,
 }
 #[derive(Default)]
 pub struct ToolWindows {
     searches: Mutex<HashMap<String, SearchWindow>>,
     mini: Mutex<HashMap<String, Placement>>,
+    mini_switching: Mutex<HashSet<String>>,
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -44,7 +51,10 @@ fn capture(window: &WebviewWindow) -> Result<Geometry, String> {
 }
 // Physical desktop coordinates can be negative on monitors left of the primary.
 // Clamp to a current work area, including after a saved monitor is unplugged.
-fn place(window: &WebviewWindow, geometry: &Geometry) -> Result<(), String> {
+fn fit_geometry(
+    window: &WebviewWindow,
+    geometry: &Geometry,
+) -> Result<(Geometry, tauri::Monitor), String> {
     let monitors = window.available_monitors().map_err(err)?;
     let monitor = monitors
         .iter()
@@ -75,11 +85,23 @@ fn place(window: &WebviewWindow, geometry: &Geometry) -> Result<(), String> {
         area.position.y,
         area.position.y + (area.size.height as i32 - (height * scale) as i32 - 40).max(0),
     );
+    Ok((
+        Geometry {
+            x,
+            y,
+            width,
+            height,
+        },
+        monitor,
+    ))
+}
+fn place(window: &WebviewWindow, geometry: &Geometry) -> Result<(), String> {
+    let (geometry, _) = fit_geometry(window, geometry)?;
     window
-        .set_size(tauri::LogicalSize::new(width, height))
+        .set_size(tauri::LogicalSize::new(geometry.width, geometry.height))
         .map_err(err)?;
     window
-        .set_position(tauri::PhysicalPosition::new(x, y))
+        .set_position(tauri::PhysicalPosition::new(geometry.x, geometry.y))
         .map_err(err)
 }
 fn geometry_path(window: &WebviewWindow) -> Result<std::path::PathBuf, String> {
@@ -412,102 +434,425 @@ pub fn auxiliary_event(window: &tauri::Window, event: &tauri::WindowEvent) -> bo
     // Scale and monitor topology changes are reconciled when restoring or reopening.
     false
 }
-#[tauri::command]
-pub fn mini_window(window: WebviewWindow, enabled: bool) -> Result<(), String> {
-    owner_only(&window)?;
-    let app = window.app_handle();
-    let store = app.state::<ToolWindows>();
-    if enabled {
-        #[cfg(target_os = "linux")]
-        if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-            return Err(
-                "当前 Wayland 会话不支持精确恢复原生窗口位置；请使用 X11 会话进入 Mini 模式".into(),
-            );
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct WindowFrame {
+    position: tauri::PhysicalPosition<i32>,
+    size: tauri::PhysicalSize<u32>,
+}
+impl WindowFrame {
+    fn capture(window: &WebviewWindow) -> Result<Self, String> {
+        Ok(Self {
+            position: window.outer_position().map_err(err)?,
+            size: window.inner_size().map_err(err)?,
+        })
+    }
+
+    fn fitted(geometry: &Geometry, monitor: &tauri::Monitor) -> Self {
+        Self {
+            position: tauri::PhysicalPosition::new(geometry.x, geometry.y),
+            size: tauri::LogicalSize::new(geometry.width, geometry.height)
+                .to_physical(monitor.scale_factor()),
         }
-        if window.is_fullscreen().map_err(err)? {
-            return Err("请先退出系统全屏，再进入 Mini 模式".into());
+    }
+
+    fn apply(self, window: &WebviewWindow) -> Result<(), String> {
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{
+                SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER,
+            };
+            // Move and resize in one UI-thread operation without changing focus or z-order.
+            let inner = window.inner_size().map_err(err)?;
+            let outer = window.outer_size().map_err(err)?;
+            let width = self.size.width as i32 + outer.width as i32 - inner.width as i32;
+            let height = self.size.height as i32 + outer.height as i32 - inner.height as i32;
+            let hwnd = window.hwnd().map_err(err)?.0;
+            if unsafe {
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    self.position.x,
+                    self.position.y,
+                    width,
+                    height,
+                    SWP_NOACTIVATE | SWP_NOZORDER,
+                )
+            } == 0
+            {
+                return Err(err(std::io::Error::last_os_error()));
+            }
+            Ok(())
         }
-        if store.mini.lock().map_err(err)?.contains_key(window.label()) {
+        #[cfg(not(windows))]
+        {
+            window.set_size(self.size).map_err(err)?;
+            window.set_position(self.position).map_err(err)
+        }
+    }
+
+    fn interpolate(self, target: Self, progress: f64) -> Self {
+        let ease = progress * progress * (3. - 2. * progress);
+        let interpolate = |from: f64, to: f64| (from + (to - from) * ease).round();
+        Self {
+            position: tauri::PhysicalPosition::new(
+                interpolate(self.position.x.into(), target.position.x.into()) as i32,
+                interpolate(self.position.y.into(), target.position.y.into()) as i32,
+            ),
+            size: tauri::PhysicalSize::new(
+                interpolate(self.size.width.into(), target.size.width.into()) as u32,
+                interpolate(self.size.height.into(), target.size.height.into()) as u32,
+            ),
+        }
+    }
+}
+
+#[cfg(windows)]
+#[derive(Clone)]
+struct MaximizedFrame {
+    frame: WindowFrame,
+    monitor: Option<tauri::Monitor>,
+    placement: windows_sys::Win32::UI::WindowsAndMessaging::WINDOWPLACEMENT,
+}
+#[cfg(windows)]
+impl MaximizedFrame {
+    fn capture(window: &WebviewWindow) -> Result<Self, String> {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{GetWindowPlacement, WINDOWPLACEMENT};
+        let mut placement = WINDOWPLACEMENT {
+            length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+            ..Default::default()
+        };
+        let hwnd = window.hwnd().map_err(err)?.0;
+        if unsafe { GetWindowPlacement(hwnd, &mut placement) } == 0 {
+            return Err(err(std::io::Error::last_os_error()));
+        }
+        Ok(Self {
+            frame: WindowFrame::capture(window)?,
+            monitor: window.current_monitor().map_err(err)?,
+            placement,
+        })
+    }
+
+    fn begin_animation(&self, window: &WebviewWindow) -> Result<Option<Geometry>, String> {
+        use windows_sys::Win32::{
+            Foundation::RECT,
+            UI::WindowsAndMessaging::{GetWindowRect, SetWindowPlacement, SW_SHOWNORMAL},
+        };
+        let Some(monitor) = &self.monitor else {
+            return Ok(None);
+        };
+        let hwnd = window.hwnd().map_err(err)?.0;
+        let mut visible = RECT::default();
+        if unsafe { GetWindowRect(hwnd, &mut visible) } == 0 {
+            return Err(err(std::io::Error::last_os_error()));
+        }
+        // WINDOWPLACEMENT uses workspace coordinates, while GetWindowRect uses screen coordinates.
+        let dx = monitor.work_area().position.x - monitor.position().x;
+        let dy = monitor.work_area().position.y - monitor.position().y;
+        let normal = self.placement.rcNormalPosition;
+        let scale = monitor.scale_factor();
+        let inset_width = visible.right - visible.left - self.frame.size.width as i32;
+        let inset_height = visible.bottom - visible.top - self.frame.size.height as i32;
+        let geometry = Geometry {
+            x: normal.left + dx,
+            y: normal.top + dy,
+            width: ((normal.right - normal.left - inset_width).max(1) as f64) / scale,
+            height: ((normal.bottom - normal.top - inset_height).max(1) as f64) / scale,
+        };
+        let mut placement = self.placement;
+        placement.showCmd = SW_SHOWNORMAL as u32;
+        placement.rcNormalPosition = RECT {
+            left: visible.left - dx,
+            right: visible.right - dx,
+            top: visible.top - dy,
+            bottom: visible.bottom - dy,
+        };
+        if unsafe { SetWindowPlacement(hwnd, &placement) } == 0 {
+            return Err(err(std::io::Error::last_os_error()));
+        }
+        Ok(Some(geometry))
+    }
+
+    fn restore(&self, window: &WebviewWindow) -> Result<(), String> {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SetWindowPlacement, ShowWindow, SW_SHOWMAXIMIZED,
+        };
+        let hwnd = window.hwnd().map_err(err)?.0;
+        let mut placement = self.placement;
+        placement.showCmd = SW_SHOWMAXIMIZED as u32;
+        // Maximize at the current size first, then restore the original normal bounds.
+        unsafe { ShowWindow(hwnd, SW_SHOWMAXIMIZED) };
+        if unsafe { SetWindowPlacement(hwnd, &placement) } == 0 {
+            return Err(err(std::io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+}
+
+// Wait on the worker between frames so a slow UI thread never accumulates resize requests.
+fn on_window_thread<T: Send + 'static>(
+    window: &WebviewWindow,
+    work: impl FnOnce(&WebviewWindow) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let (send, receive) = mpsc::channel();
+    let handle = window.clone();
+    window
+        .run_on_main_thread(move || {
+            let result = if handle
+                .app_handle()
+                .get_webview_window(handle.label())
+                .is_some()
+            {
+                work(&handle)
+            } else {
+                Err("编辑窗口已关闭".into())
+            };
+            let _ = send.send(result);
+        })
+        .map_err(err)?;
+    receive.recv().map_err(err)?
+}
+
+fn same_display(first: &tauri::Monitor, second: &tauri::Monitor) -> bool {
+    first.position() == second.position()
+        && first.size() == second.size()
+        && first.scale_factor() == second.scale_factor()
+        && first.work_area().position == second.work_area().position
+        && first.work_area().size == second.work_area().size
+}
+
+fn animate_mini(
+    window: &WebviewWindow,
+    target: WindowFrame,
+    monitor: &tauri::Monitor,
+    animated: bool,
+) -> Result<(), String> {
+    let start = WindowFrame::capture(window)?;
+    if start == target {
+        return Ok(());
+    }
+    // Separate displays can have different DPI or gaps in the desktop layout.
+    if !animated
+        || !window
+            .current_monitor()
+            .map_err(err)?
+            .is_some_and(|m| same_display(&m, monitor))
+    {
+        return on_window_thread(window, move |window| target.apply(window));
+    }
+
+    const DURATION: Duration = Duration::from_millis(220);
+    const FRAME_INTERVAL: Duration = Duration::from_millis(16);
+    let started = Instant::now();
+    let mut last = start;
+    loop {
+        std::thread::sleep(FRAME_INTERVAL);
+        let progress = (started.elapsed().as_secs_f64() / DURATION.as_secs_f64()).min(1.);
+        let frame = start.interpolate(target, progress);
+        if frame != last {
+            on_window_thread(window, move |window| frame.apply(window))?;
+            last = frame;
+        }
+        if progress == 1. {
             return Ok(());
         }
+    }
+}
+
+#[tauri::command]
+pub async fn mini_window(
+    window: WebviewWindow,
+    enabled: bool,
+    reduced_motion: Option<bool>,
+) -> Result<(), String> {
+    owner_only(&window)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = window.app_handle().state::<ToolWindows>();
+        let label = window.label();
+        if !store
+            .mini_switching
+            .lock()
+            .map_err(err)?
+            .insert(label.into())
+        {
+            return Err("窗口正在切换 Mini 模式".into());
+        }
+        let result = (|| {
+            let launches = window.app_handle().state::<crate::session::LaunchStore>();
+            if enabled {
+                let mut registry = launches.lock().map_err(err)?;
+                let launch = registry.windows.get_mut(label).ok_or("编辑窗口已失效")?;
+                if !launch.pending.is_empty() {
+                    return Err("请等待当前文件打开后再切换 Mini 模式".into());
+                }
+                launch.mini = true;
+            }
+            let result = switch_mini(&window, &store, enabled, !reduced_motion.unwrap_or(false));
+            if enabled != result.is_ok() {
+                if let Some(launch) = launches.lock().map_err(err)?.windows.get_mut(label) {
+                    launch.mini = false;
+                }
+            }
+            result
+        })();
+        store.mini_switching.lock().map_err(err)?.remove(label);
+        result
+    })
+    .await
+    .map_err(err)?
+}
+
+fn switch_mini(
+    window: &WebviewWindow,
+    store: &ToolWindows,
+    enabled: bool,
+    animated: bool,
+) -> Result<(), String> {
+    let label = window.label();
+    let saved = store.mini.lock().map_err(err)?.get(label).cloned();
+    if !enabled {
+        if let Some(previous) = saved {
+            restore_mini(window, &previous, animated)?;
+            store.mini.lock().map_err(err)?.remove(label);
+        }
+        return Ok(());
+    }
+    if saved.is_some() {
+        return Ok(());
+    }
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+        return Err(
+            "当前 Wayland 会话不支持精确恢复原生窗口位置；请使用 X11 会话进入 Mini 模式".into(),
+        );
+    }
+    if window.is_fullscreen().map_err(err)? {
+        return Err("请先退出系统全屏，再进入 Mini 模式".into());
+    }
+    #[cfg(windows)]
+    let animate_from_maximized = animated;
+    let previous = on_window_thread(window, move |window| {
         let maximized = window.is_maximized().map_err(err)?;
         let topmost = window.is_always_on_top().map_err(err)?;
-        if maximized {
-            window.unmaximize().map_err(err)?;
-        }
-        let geometry = match capture(&window) {
-            Ok(geometry) => geometry,
-            Err(error) => {
+        #[cfg(windows)]
+        let maximized_frame = maximized
+            .then(|| MaximizedFrame::capture(window))
+            .transpose()?;
+        #[cfg(windows)]
+        let from_visible = maximized_frame
+            .as_ref()
+            .filter(|_| animate_from_maximized)
+            .map(|frame| frame.begin_animation(window))
+            .transpose()?
+            .flatten();
+        #[cfg(not(windows))]
+        let from_visible = None;
+        let geometry = if let Some(geometry) = from_visible {
+            geometry
+        } else {
+            if maximized {
+                window.unmaximize().map_err(err)?;
+            }
+            capture(window).inspect_err(|_| {
                 if maximized {
                     let _ = window.maximize();
                 }
-                return Err(error);
-            }
+            })?
         };
-        let previous = Placement {
+        Ok(Placement {
             geometry,
             maximized,
+            #[cfg(windows)]
+            maximized_frame,
             topmost,
-        };
-        store
-            .mini
-            .lock()
-            .map_err(err)?
-            .insert(window.label().into(), previous.clone());
-        let result = (|| {
-            window
-                .set_min_size(Some(tauri::LogicalSize::new(240., 240.)))
-                .map_err(err)?;
-            window.unmaximize().map_err(err)?;
-            place(
-                &window,
-                &Geometry {
-                    width: 400.,
-                    height: 520.,
-                    ..previous.geometry.clone()
-                },
-            )?;
-            window.set_always_on_top(true).map_err(err)
-        })();
-        if let Err(error) = result {
-            let recovery = restore_mini(&window, &previous);
-            if recovery.is_ok() {
-                store.mini.lock().map_err(err)?.remove(window.label());
-            }
-            return Err(format!(
-                "Mini 切换失败：{error}{}",
-                recovery
-                    .err()
-                    .map(|e| format!("；恢复失败：{e}"))
-                    .unwrap_or_default()
-            ));
+        })
+    })?;
+    store
+        .mini
+        .lock()
+        .map_err(err)?
+        .insert(label.into(), previous.clone());
+    let result = (|| {
+        window
+            .set_min_size(Some(tauri::LogicalSize::new(240., 240.)))
+            .map_err(err)?;
+        let (geometry, monitor) = fit_geometry(
+            window,
+            &Geometry {
+                width: 400.,
+                height: 520.,
+                ..previous.geometry.clone()
+            },
+        )?;
+        animate_mini(
+            window,
+            WindowFrame::fitted(&geometry, &monitor),
+            &monitor,
+            animated,
+        )?;
+        window.set_always_on_top(true).map_err(err)
+    })();
+    if let Err(error) = result {
+        let recovery = restore_mini(window, &previous, false);
+        if recovery.is_ok() || window.app_handle().get_webview_window(label).is_none() {
+            store.mini.lock().map_err(err)?.remove(label);
         }
-    } else {
-        let previous = store.mini.lock().map_err(err)?.get(window.label()).cloned();
-        if let Some(previous) = previous {
-            restore_mini(&window, &previous)?;
-            store.mini.lock().map_err(err)?.remove(window.label());
-        }
+        return Err(format!(
+            "Mini 切换失败：{error}{}",
+            recovery
+                .err()
+                .map(|e| format!("；恢复失败：{e}"))
+                .unwrap_or_default()
+        ));
     }
     Ok(())
 }
-fn restore_mini(window: &WebviewWindow, previous: &Placement) -> Result<(), String> {
-    window.set_always_on_top(previous.topmost).map_err(err)?;
+
+fn restore_mini(
+    window: &WebviewWindow,
+    previous: &Placement,
+    animated: bool,
+) -> Result<(), String> {
     window.unmaximize().map_err(err)?;
-    place(window, &previous.geometry)?;
-    if window.label() == "main" {
-        window
-            .set_min_size(Some(tauri::LogicalSize::new(680., 480.)))
-            .map_err(err)?;
-    } else {
-        window
-            .set_min_size(None::<tauri::LogicalSize<f64>>)
-            .map_err(err)?;
-    }
-    if previous.maximized {
-        window.maximize().map_err(err)?
-    }
-    Ok(())
+    let (geometry, monitor) = fit_geometry(window, &previous.geometry)?;
+    let restored = WindowFrame::fitted(&geometry, &monitor);
+    #[cfg(windows)]
+    let exact_maximized = previous.maximized_frame.clone().filter(|frame| {
+        frame
+            .monitor
+            .as_ref()
+            .is_some_and(|display| same_display(display, &monitor))
+    });
+    #[cfg(windows)]
+    let target = exact_maximized
+        .as_ref()
+        .filter(|_| animated)
+        .map_or(restored, |frame| frame.frame);
+    #[cfg(not(windows))]
+    let target = restored;
+    animate_mini(window, target, &monitor, animated)?;
+
+    let maximized = previous.maximized;
+    let topmost = previous.topmost;
+    on_window_thread(window, move |window| {
+        window.set_always_on_top(topmost).map_err(err)?;
+        if window.label() == "main" {
+            window
+                .set_min_size(Some(tauri::LogicalSize::new(680., 480.)))
+                .map_err(err)?;
+        } else {
+            window
+                .set_min_size(None::<tauri::LogicalSize<f64>>)
+                .map_err(err)?;
+        }
+        #[cfg(windows)]
+        if let Some(maximized) = exact_maximized {
+            return maximized.restore(window);
+        }
+        if maximized {
+            window.maximize().map_err(err)?;
+        }
+        Ok(())
+    })
 }
 #[tauri::command]
 pub fn mini_pin(window: WebviewWindow, pinned: bool) -> Result<(), String> {

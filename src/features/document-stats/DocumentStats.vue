@@ -25,37 +25,85 @@ const trigger=ref<HTMLButtonElement>(),host=ref<HTMLElement>(),panel=ref<HTMLEle
 const failure=ref('')
 const position=ref({right:'8px',bottom:'32px'})
 const cache=new WeakMap<Text,Counts>()
-let worker:Worker|undefined,generation=0,stop:(()=>void)|undefined,snapshot:Text|undefined,selected:Text|undefined,lastSelection='',timer:ReturnType<typeof setTimeout>|undefined
+let worker: Worker | undefined
+let generation = 0
+let stop: (() => void) | undefined
+let snapshot: Text | undefined
+let countedDocument: Text | undefined
+let lastSelection = ''
+let timer: ReturnType<typeof setTimeout> | undefined
 const number=(value:number|undefined)=>(value||0).toLocaleString()
 const minutes=computed(()=>Math.ceil((result.value?.words||0)/300))
 const summary=computed(()=>props.kind==='reading'?`${minutes.value} 分钟`:props.kind==='lines'?`${number(lines.value)} 行`:props.kind==='characters'?`${number(result.value?.characters)} 字符`:props.kind==='english'?`${number(result.value?.english)} 单词`:`${number(result.value?.words)} 字`)
 const rows=computed(()=>[['字数',number(result.value?.words)],['字符（含空格）',number(result.value?.characters)],['字符（不含空白）',number(result.value?.nonSpace)],['中文汉字',number(result.value?.chinese)],['英文单词',number(result.value?.english)],['行数',number(lines.value)],['段落（非空行组）',number(result.value?.paragraphs)],['选区字数',number(selection.value?.words)],['选区字符',number(selection.value?.characters)],['阅读时间',`${minutes.value} 分钟`]])
 function leaves(text:Text):Text[]{return text.children?text.children.flatMap(leaves):[text]}
-function refresh(){
- const state=props.manager.getState(props.id);if(!state)return
- const range=state.selection.main,key=`${range.from}:${range.to}`
- if(state.doc===snapshot&&key===lastSelection)return
- snapshot=state.doc;lastSelection=key;selected=state.doc.slice(range.from,range.to);lines.value=state.doc.lines
- failure.value='';busy.value=true;worker?.terminate();if(timer)clearTimeout(timer)
- const revision=++generation,current=snapshot,chosen=selected
- timer=setTimeout(()=>{
-  const all=leaves(current),selectionLeaves=leaves(chosen),jobs=[...new Set([...all,...selectionLeaves])].filter(leaf=>!cache.has(leaf))
-  function done(){if(generation!==revision)return;result.value=combine(all.map(leaf=>cache.get(leaf)!));selection.value=combine(selectionLeaves.map(leaf=>cache.get(leaf)!));busy.value=false;worker?.terminate();worker=undefined}
-  if(!jobs.length){done();return}
-  worker=new Worker(new URL('./counts.worker.ts',import.meta.url),{type:'module'})
-  let index=0
-  worker.onerror=()=>{if(generation===revision){failure.value='统计失败';worker?.terminate();worker=undefined}}
-  worker.onmessage=event=>{if(event.data.generation!==generation)return;cache.set(jobs[event.data.index],event.data.counts);index++;if(index===jobs.length)done();else worker?.postMessage({generation:revision,index,text:jobs[index].toString()})}
-  worker.postMessage({generation:revision,index,text:jobs[0].toString()})
- },150)
+function refresh() {
+ const state = props.manager.getState(props.id)
+ if (!state) return
+ const { doc } = state
+ const range = state.selection.main
+ // A collapsed caret has no statistics. Only calculate a selection for the open panel.
+ const hasSelection = open.value && !range.empty
+ const key = hasSelection ? `${range.from}:${range.to}` : ''
+ if (doc === snapshot && key === lastSelection) return
+ snapshot = doc
+ lastSelection = key
+ lines.value = doc.lines
+ failure.value = ''
+ worker?.terminate()
+ worker = undefined
+ clearTimeout(timer)
+ const revision = ++generation
+ if (!hasSelection) selection.value = undefined
+ if (doc === countedDocument && !hasSelection) {
+  busy.value = false
+  return
+ }
+ busy.value = true
+ timer = setTimeout(() => {
+  const all = doc === countedDocument ? null : leaves(doc)
+  const selected = hasSelection ? leaves(doc.slice(range.from, range.to)) : []
+  const jobs = [...new Set([...(all ?? []), ...selected])].filter(leaf => !cache.has(leaf))
+  function done() {
+   if (generation !== revision) return
+   if (all) {
+    result.value = combine(all.map(leaf => cache.get(leaf)!))
+    countedDocument = doc
+   }
+   selection.value = selected.length ? combine(selected.map(leaf => cache.get(leaf)!)) : undefined
+   busy.value = false
+   worker?.terminate()
+   worker = undefined
+  }
+  if (!jobs.length) { done(); return }
+  const counter = new Worker(new URL('./counts.worker.ts', import.meta.url), {type: 'module'})
+  worker = counter
+  let index = 0
+  function sendLeaf() {
+   counter.postMessage({generation: revision, index, text: jobs[index].toString()})
+  }
+  counter.onerror = () => {
+   if (generation !== revision) return
+   failure.value = '统计失败'
+   counter.terminate()
+   worker = undefined
+  }
+  counter.onmessage = event => {
+   if (revision !== generation || event.data.generation !== revision) return
+   cache.set(jobs[index], event.data.counts)
+   if (++index === jobs.length) done()
+   else sendLeaf()
+  }
+  sendLeaf()
+ }, 150)
 }
 function close(focus=false){open.value=false;if(focus)trigger.value?.focus()}
 function outside(event:PointerEvent){if(!host.value?.contains(event.target as Node)&&!panel.value?.contains(event.target as Node))close()}
 function escape(event:KeyboardEvent){if(event.key==='Escape'&&open.value){event.preventDefault();close(true)}}
-watch(open,async value=>{if(value){const box=trigger.value?.getBoundingClientRect();if(box)position.value={right:`${Math.max(8,innerWidth-box.right)}px`,bottom:`${innerHeight-box.top+8}px`};await nextTick();panel.value?.querySelector('select')?.focus()}})
-watch(()=>props.id,()=>{close();snapshot=undefined;refresh()})
+watch(open,async value=>{refresh();if(value){const box=trigger.value?.getBoundingClientRect();if(box)position.value={right:`${Math.max(8,innerWidth-box.right)}px`,bottom:`${innerHeight-box.top+8}px`};await nextTick();panel.value?.querySelector('select')?.focus()}})
+watch(()=>props.id,()=>{close();snapshot=countedDocument=undefined;result.value=undefined;refresh()})
 onMounted(()=>{stop=props.manager.subscribe(refresh);refresh();document.addEventListener('pointerdown',outside);document.addEventListener('keydown',escape)})
-onUnmounted(()=>{stop?.();generation++;worker?.terminate();if(timer)clearTimeout(timer);snapshot=selected=undefined;document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape)})
+onUnmounted(()=>{stop?.();generation++;worker?.terminate();if(timer)clearTimeout(timer);snapshot=countedDocument=undefined;document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape)})
 </script>
 <style scoped>
 .stats-trigger { border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:2px 4px; }

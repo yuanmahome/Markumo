@@ -42,7 +42,12 @@ export function useMiniWindow(manager:DocumentManager,notify:(message:string)=>v
   const entering=!miniActive.value,focus=document.activeElement instanceof HTMLElement?document.activeElement:null
   const scroll=captureScroll().map(item=>!entering&&!item.el.getClientRects().length?held.get(item.el)??item:item)
   try{
-   await invoke('mini_window',{enabled:entering})
+   // Collapse the chrome before shrinking. Keep the compact layout during expansion.
+   if(entering)miniActive.value=true
+   await invoke('mini_window',{
+    enabled:entering,
+    reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,
+   })
    if(disposed)return
    miniActive.value=entering;miniPinned.value=true
    if(entering)held=new Map(scroll.map(item=>[item.el,item]))
@@ -73,10 +78,10 @@ export function useMiniWindow(manager:DocumentManager,notify:(message:string)=>v
     })
    })})
    if(!entering)held.clear()
-  }catch(error){notify(String(error))}finally{miniBusy.value=false}
+  }catch(error){miniActive.value=!entering;notify(String(error))}finally{miniBusy.value=false}
  }
  async function toggleMiniPin(){if(miniBusy.value)return;try{await invoke('mini_pin',{pinned:!miniPinned.value});miniPinned.value=!miniPinned.value}catch(error){notify('无法设置窗口置顶：'+String(error))}}
- async function dragMini(event:PointerEvent){if(event.button!==0||(event.target as Element).closest('button'))return;try{await getCurrentWindow().startDragging()}catch(error){notify('无法拖动窗口：'+String(error))}}
- async function resizeMini(direction:'North'|'South'|'East'|'West'|'NorthEast'|'NorthWest'|'SouthEast'|'SouthWest'){try{await getCurrentWindow().startResizeDragging(direction)}catch(error){notify('无法调整窗口尺寸：'+String(error))}}
+ async function dragMini(event:PointerEvent){if(miniBusy.value||event.button!==0||(event.target as Element).closest('button'))return;try{await getCurrentWindow().startDragging()}catch(error){notify('无法拖动窗口：'+String(error))}}
+ async function resizeMini(direction:'North'|'South'|'East'|'West'|'NorthEast'|'NorthWest'|'SouthEast'|'SouthWest'){if(miniBusy.value)return;try{await getCurrentWindow().startResizeDragging(direction)}catch(error){notify('无法调整窗口尺寸：'+String(error))}}
  return {miniActive,miniPinned,miniBusy,toggleMini,toggleMiniPin,dragMini,resizeMini}
 }

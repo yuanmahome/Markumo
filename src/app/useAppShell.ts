@@ -170,7 +170,14 @@ export function useAppShell() {
   const isAlive = () => alive
 
   // --- Preferences Coordinator ---
-  const {miniActive,miniPinned,miniBusy,toggleMini,toggleMiniPin,dragMini,resizeMini}=useMiniWindow(manager,toast)
+  const {miniActive,miniPinned,miniBusy,toggleMini: switchMini,toggleMiniPin,dragMini,resizeMini}=useMiniWindow(manager,toast)
+  async function toggleMini() {
+    if (fileBusy.value || files.activeOperationCount) {
+      toast('请等待当前文件操作完成。')
+      return
+    }
+    await switchMini()
+  }
   const preferences = useShellPreferences({
     desktop,
     isAlive,
@@ -360,6 +367,31 @@ export function useAppShell() {
   // --- Update Manager ---
   const updateStatus = reactive(updateState())
   const updatePanelOpen = ref(false)
+  const skippedUpdateKey = 'markumo:skipped-update'
+  const skippedUpdate = ref('')
+  try { skippedUpdate.value = localStorage.getItem(skippedUpdateKey) || '' } catch { /* Storage can be unavailable. */ }
+  let deferredUpdate = ''
+  let updateIntent = 0
+  let checkingManually = false
+  const updateActions = ['available', 'downloading', 'downloaded', 'preparing', 'installing', 'awaiting-restart']
+  function dismissUpdate() {
+    updateIntent++
+    deferredUpdate = updateStatus.version
+    updatePanelOpen.value = false
+  }
+  function skipUpdate() {
+    if (!updateStatus.version) return
+    skippedUpdate.value = updateStatus.version
+    try { localStorage.setItem(skippedUpdateKey, skippedUpdate.value) } catch { /* Remember it for this session. */ }
+    dismissUpdate()
+  }
+  function syncSkippedUpdate(event: StorageEvent) {
+    if (event.key !== skippedUpdateKey) return
+    skippedUpdate.value = event.newValue || ''
+    if (skippedUpdate.value && skippedUpdate.value === updateStatus.version) dismissUpdate()
+  }
+  onMounted(() => window.addEventListener('storage', syncSkippedUpdate))
+  onUnmounted(() => window.removeEventListener('storage', syncSkippedUpdate))
   const updateManager = markRaw(
     new UpdateManager(updateStatus, {
       check: async () => {
@@ -390,12 +422,39 @@ export function useAppShell() {
         await relaunch()
       },
       notify: toast,
+      isSkipped: version => version === skippedUpdate.value,
     }),
   )
 
+  watch([() => updateStatus.phase, () => updateStatus.version], ([phase, version]) => {
+    if (checkingManually || !version || version === deferredUpdate || version === skippedUpdate.value) return
+    if (updateActions.includes(phase)) updatePanelOpen.value = true
+  })
+
   async function openUpdatePanel() {
-    updatePanelOpen.value = true
-    if (['idle', 'error'].includes(updateStatus.phase)) await updateManager.checkForUpdates()
+    if (checkingManually) return
+    checkingManually = true
+    try {
+      await updateManager.checkForUpdates()
+      if (updateStatus.phase === 'up-to-date') toast('当前已是最新版本')
+      else if (updateStatus.phase === 'error') toast(updateStatus.error)
+      else if (updateActions.includes(updateStatus.phase)) updatePanelOpen.value = true
+    } finally {
+      checkingManually = false
+    }
+  }
+
+  async function applyUpdate() {
+    const intent = ++updateIntent
+    if (updateStatus.phase === 'available') await updateManager.downloadUpdate()
+    if (intent === updateIntent && ['downloaded', 'awaiting-restart'].includes(updateStatus.phase)) {
+      await updateManager.installUpdate()
+    }
+  }
+
+  async function openGitHub() {
+    try { await openProjectPage(desktop) }
+    catch { toast('无法打开 GitHub，请检查系统默认浏览器。') }
   }
 
   async function openUpdateRelease() {
@@ -404,15 +463,6 @@ export function useAppShell() {
     } catch (error) {
       updateStatus.error = `无法打开更新日志：${fileError(error)}`
       toast(updateStatus.error)
-    }
-  }
-
-  async function openUpdateLink(url: string) {
-    try {
-      if (desktop) await invoke('open_external_link', { url })
-      else window.open(url, '_blank', 'noopener,noreferrer')
-    } catch (error) {
-      updateStatus.error = fileError(error)
     }
   }
 
@@ -549,8 +599,11 @@ export function useAppShell() {
     }
     fileBusy.value = true
     try {
-      await files.recent(path, undefined, preview)
+      if (desktop && miniActive.value) await invoke('open_recent_in_regular_window', { path })
+      else await files.recent(path, undefined, preview)
       await refreshRecent()
+    } catch (error) {
+      toast(fileError(error))
     } finally {
       fileBusy.value = false
       void drainPending()
@@ -1220,6 +1273,8 @@ export function useAppShell() {
     toggleSidebar,
     toggleFocus,
     toggleMini,
+    openGitHub,
+    checkUpdate: openUpdatePanel,
     miniActive,
     exitFocus,
     toggleTypewriter,
@@ -1582,11 +1637,11 @@ export function useAppShell() {
     autoDownloadUpdates: preferences.autoDownloadUpdates,
     updateStatus,
     updatePanelOpen,
+    dismissUpdate,
+    skipUpdate,
+    applyUpdate,
     updateConfirmRef,
-    updateManager,
-    openUpdatePanel,
     openUpdateRelease,
-    openUpdateLink,
     caretAnimation: preferences.caretAnimation,
     outlineWidth: preferences.outlineWidth,
     markdownClipboard: preferences.markdownClipboard,

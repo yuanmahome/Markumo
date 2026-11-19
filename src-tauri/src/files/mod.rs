@@ -697,6 +697,9 @@ impl FileService {
         })
     }
     pub fn open_recent(&mut self, path: &str, encoding: Option<&str>) -> Result<OpenFile> {
+        self.open_selected(self.recent_path(path)?, encoding)
+    }
+    pub fn recent_path(&self, path: &str) -> Result<PathBuf> {
         if !self
             .preferences
             .recent
@@ -705,7 +708,7 @@ impl FileService {
         {
             return fail("scope", "该路径不在最近文件授权列表。");
         }
-        self.open_selected(PathBuf::from(path), encoding)
+        Ok(PathBuf::from(path))
     }
     pub fn reopen(&mut self, token: &str, encoding: &str) -> Result<OpenFile> {
         if encoding != "Hex" && encoding != "Media" {
@@ -1079,16 +1082,22 @@ impl FileService {
             .map(|grant| grant.owner.clone())
     }
     pub fn open_batch(&mut self, paths: Vec<PathBuf>, encoding: Option<&str>) -> OpenBatch {
+        self.open_requests(paths.into_iter().map(|path| (path, encoding)))
+    }
+    pub fn open_requests<E: AsRef<str>>(
+        &mut self,
+        requests: impl IntoIterator<Item = (PathBuf, Option<E>)>,
+    ) -> OpenBatch {
         let mut batch = OpenBatch::default();
         let mut total = 0;
-        for (index, path) in paths.into_iter().enumerate() {
+        for (index, (path, encoding)) in requests.into_iter().enumerate() {
             if index >= 20 || total >= 48 * 1024 * 1024 {
                 batch
                     .errors
                     .push("本批已达到 20 个文件或文本体积限制，余下文件请分批选择。".into());
                 break;
             }
-            match self.open_selected(path.clone(), encoding) {
+            match self.open_selected(path.clone(), encoding.as_ref().map(AsRef::as_ref)) {
                 Ok(file) => {
                     total += file
                         .class_info

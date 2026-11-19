@@ -478,6 +478,11 @@ impl FileService {
         }
     }
     pub fn open_image_inputs(&mut self, tokens: &[String]) -> super::OpenBatch {
+        let paths = self.take_file_inputs(tokens);
+        self.open_batch(paths, None)
+    }
+
+    pub fn take_file_inputs(&mut self, tokens: &[String]) -> Vec<PathBuf> {
         let paths = tokens
             .iter()
             .filter_map(|t| {
@@ -488,7 +493,7 @@ impl FileService {
             })
             .collect();
         self.release_image_inputs(tokens);
-        self.open_batch(paths, None)
+        paths
     }
 
     /// Consume only a native capability belonging to this window. Validate again

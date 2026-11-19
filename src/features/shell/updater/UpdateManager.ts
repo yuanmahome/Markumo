@@ -18,6 +18,7 @@ export interface UpdateServices {
   clearPending(): Promise<void>
   relaunch(): Promise<void>
   notify(message: string): void
+  isSkipped?(version: string): boolean
 }
 
 /** One owner per application shell/WebView, never per title-bar component.
@@ -43,7 +44,7 @@ export class UpdateManager {
   configure(preferences: UpdatePreferences, enabled = true) {
     const newlyAutomatic = !this.preferences.autoDownloadUpdates && preferences.autoDownloadUpdates
     this.preferences = {...preferences}; this.enabled = enabled; this.schedule()
-    if (newlyAutomatic && enabled && this.automatic && this.state.phase === 'available' && !this.state.error) void this.downloadUpdate()
+    if (newlyAutomatic && enabled && this.automatic && this.state.phase === 'available' && !this.state.error && !this.services.isSkipped?.(this.state.version)) void this.downloadUpdate()
   }
   private schedule() {
     if (!this.started || !this.enabled || !this.automatic || !this.preferences.autoCheckUpdates || this.disposed) {
@@ -53,9 +54,9 @@ export class UpdateManager {
     }
     if (!this.initial && !this.periodic) this.initial = setTimeout(() => {
       this.initial = undefined
-      void this.checkForUpdates()
-      this.periodic = setInterval(() => { void this.checkForUpdates() },4*60*60*1000)
-    },10000)
+      void this.checkForUpdates(true)
+      this.periodic = setInterval(() => { void this.checkForUpdates(true) },4*60*60*1000)
+    },2500)
   }
   private run(work: () => Promise<void>): Promise<void> {
     if (this.disposed) return Promise.resolve()
@@ -66,7 +67,7 @@ export class UpdateManager {
     void operation.finally(async () => { if (this.operation === operation) this.operation = null; if (this.disposed) await this.releaseUpdate() }).catch(() => {})
     return operation
   }
-  checkForUpdates(): Promise<void> {
+  checkForUpdates(automatic = false): Promise<void> {
     if (['downloading','downloaded','preparing','installing','awaiting-restart'].includes(this.state.phase)) return this.operation || Promise.resolve()
     return this.run(async () => {
       const generation = ++this.generation
@@ -78,7 +79,7 @@ export class UpdateManager {
         this.update = update
         this.state.version = update?.version || ''; this.state.notes = update?.body || ''
         this.state.phase = update ? 'available' : 'up-to-date'
-        if (update && this.preferences.autoDownloadUpdates && this.enabled && this.automatic) await this.download()
+        if (automatic && update && this.preferences.autoDownloadUpdates && this.enabled && !this.services.isSkipped?.(update.version)) await this.download()
       } catch (error) { if (!this.disposed) { this.state.phase = 'error'; this.state.error = `检查更新失败，请稍后重试。${String(error)}` } }
       finally { if (this.disposed) await this.releaseUpdate() }
     })

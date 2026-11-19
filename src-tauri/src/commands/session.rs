@@ -107,7 +107,7 @@ pub async fn initialize_launch(
         let mut service = files.lock().map_err(|e| e.to_string())?;
         service.set_owner(&label);
         if launch.kind == LaunchKind::File {
-            result.files = service.open_batch(launch.paths, None)
+            result.files = service.open_batch(launch.paths, launch.initial_encoding.as_deref())
         } else if let Some(session) = session {
             let mut bytes = 0;
             for tab in session.tabs {

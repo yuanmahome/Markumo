@@ -111,87 +111,72 @@ fn activate(app: &tauri::AppHandle, label: &str, paths: &[PathBuf]) {
     let _ = window.emit("external-activate", paths.to_vec());
 }
 
-/// External open router. One decision point for every file handed to Markumo
-/// from the shell (double-click, "open with", context menu, second instance).
-///
-/// Rules:
-/// * A file already open in any window activates that window and tab; it is never
-///   reloaded over unsaved edits and never duplicated.
-/// * A file already queued for a window stays with that window.
-/// * Otherwise the most recent single-file window takes the file as a new tab.
-/// * With no single-file window, one is created for this batch. A workspace
-///   window is never given external files, so its tabs and unsaved work stay put.
+/// The single-instance callback cannot build a WebView2 window synchronously.
 fn route_launch(app: tauri::AppHandle, paths: Vec<PathBuf>) {
-    // WebView2 window creation must run outside a synchronous event handler.
     std::thread::spawn(move || {
-        let requested = session::normalize_external_paths(paths);
-        if requested.is_empty() {
-            // No usable file arguments: surface the primary window instead.
-            let label = {
-                let state = app.state::<session::LaunchStore>();
-                let registry = match state.lock() {
-                    Ok(registry) => registry,
-                    Err(_) => return,
-                };
-                registry.owner().or_else(|| registry.latest_window())
-            };
+        if paths.is_empty() {
+            let label = app.state::<session::LaunchStore>().lock().ok().and_then(|registry| {
+                registry.latest_regular_window().or_else(|| registry.owner()).or_else(|| registry.latest_window())
+            });
             if let Some(label) = label {
-                deliver(&app, &label)
+                deliver(&app, &label);
             }
-            return;
-        }
-        // Ownership snapshot first, then one atomic registry decision. The two
-        // locks are never held at the same time, so no ordering deadlock exists.
-        // Native identities are resolved before taking the file-service lock so
-        // a locked or slow file cannot stall every window.
-        let identities: Vec<_> = requested
-            .iter()
-            .map(|path| files::file_identity(path))
-            .collect();
-        let owners: Vec<Option<String>> = {
-            let store = app.state::<FileStore>();
-            let files = match store.lock() {
-                Ok(files) => files,
-                Err(_) => return,
-            };
-            requested
-                .iter()
-                .zip(identities)
-                .map(|(path, identity)| files.owner_of_path(path, identity))
-                .collect()
-        };
-        let plan = {
-            let state = app.state::<session::LaunchStore>();
-            let mut registry = match state.lock() {
-                Ok(registry) => registry,
-                Err(_) => return,
-            };
-            session::plan_external_open(&mut registry, &requested, &owners, &|label| {
-                app.get_webview_window(label).is_some()
-            })
-        };
-        for label in &plan.deliveries {
-            deliver(&app, label)
-        }
-        for (label, paths) in &plan.activate {
-            activate(&app, label, paths)
-        }
-        if let Some((label, initial)) = plan.created {
-            if let Err(error) = register_window(&app, &label, initial) {
-                eprintln!("启动窗口失败：{error}");
-                cleanup_window(&app, &label);
-                return;
-            }
-            let mut config = app.config().app.windows[0].clone();
-            config.label = label.clone();
-            if let Err(error) = tauri::WebviewWindowBuilder::from_config(&app, &config)
-                .and_then(|builder| builder.build())
-            {
-                eprintln!("创建窗口失败：{error}");
-                cleanup_window(&app, &label);
-            }
+        } else if let Err(error) = route_open_files(&app, paths, None) {
+            eprintln!("打开文件失败：{error}");
         }
     });
+}
+
+/// Route native opens without transferring grants or loading a second copy of a document.
+fn route_open_files(
+    app: &tauri::AppHandle,
+    paths: Vec<PathBuf>,
+    encoding: Option<&str>,
+) -> Result<(), String> {
+    let requested = session::normalize_external_paths(paths);
+    if requested.is_empty() {
+        return Err("没有可打开的文件".into());
+    }
+    // Resolve identities before locking the file service. Release that lock
+    // before taking the launch registry lock so file opens cannot deadlock.
+    let identities: Vec<_> = requested.iter().map(|path| files::file_identity(path)).collect();
+    let owners: Vec<_> = {
+        let store = app.state::<FileStore>();
+        let files = store.lock().map_err(|error| error.to_string())?;
+        requested.iter().zip(identities).map(|(path, identity)| files.owner_of_path(path, identity)).collect()
+    };
+    let plan = {
+        let state = app.state::<session::LaunchStore>();
+        let mut registry = state.lock().map_err(|error| error.to_string())?;
+        session::plan_external_open(&mut registry, &requested, &owners, encoding, &|label| {
+            app.get_webview_window(label).is_some()
+        })
+    };
+    for label in &plan.deliveries {
+        deliver(app, label);
+    }
+    for (label, paths) in &plan.activate {
+        activate(app, label, paths);
+    }
+    if let Some((label, initial)) = plan.created {
+        let created = (|| {
+            register_window(app, &label, initial)?;
+            let mut config = app.config().app.windows[0].clone();
+            config.label.clone_from(&label);
+            tauri::WebviewWindowBuilder::from_config(app, &config)
+                .and_then(|builder| builder.build())
+                .map_err(|error| error.to_string())?;
+            Ok::<_, String>(())
+        })();
+        if let Err(error) = created {
+            cleanup_window(app, &label);
+            return Err(error);
+        }
+    }
+    if plan.rejected {
+        return Err("窗口数量已达上限，请先关闭一个窗口".into());
+    }
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -246,7 +231,7 @@ pub fn run() {
             let restoring_update=commands::update::restore_after_update(&app_data.join("pending-update.json"),env!("CARGO_PKG_VERSION"));
             register_window(app.handle(),"main",if restoring_update{Vec::new()}else{paths.clone()}).map_err(std::io::Error::other)?;
             if restoring_update {
-                if let Some(main)=app.state::<session::LaunchStore>().lock().map_err(|_|std::io::Error::other("会话状态损坏"))?.windows.get_mut("main"){main.pending=paths;}
+                if let Some(main)=app.state::<session::LaunchStore>().lock().map_err(|_|std::io::Error::other("会话状态损坏"))?.windows.get_mut("main"){main.pending=paths.into_iter().map(|path| session::PendingFile { path, encoding: None }).collect();}
             }
 
             Ok(())
@@ -316,7 +301,7 @@ pub fn run() {
             commands::app::open_external_link,
             commands::settings::load_editor_settings, commands::settings::save_editor_settings,
             commands::files::open_dialog, commands::files::save_dialog,
-            commands::files::open_recent, commands::files::reopen_file,
+            commands::files::open_recent, commands::files::open_recent_in_regular_window, commands::files::reopen_file,
             commands::files::save_file, commands::files::release_file,
             commands::files::check_external_file, commands::files::read_external_file, commands::files::watch_external_files,
             commands::files::begin_external_watch, commands::files::end_external_watch,
@@ -367,6 +352,15 @@ pub fn run() {
             commands::conversion::commit_docx_import,
             commands::conversion::print_to_pdf,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Markumo");
+        .build(tauri::generate_context!())
+        .expect("error while building Markumo")
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls, .. } = _event {
+                let paths: Vec<_> = urls.into_iter().filter_map(|url| url.to_file_path().ok()).collect();
+                if !paths.is_empty() {
+                    route_launch(_app.clone(), paths);
+                }
+            }
+        });
 }

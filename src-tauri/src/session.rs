@@ -20,12 +20,19 @@ pub enum LaunchKind {
 pub struct WindowLaunch {
     pub kind: LaunchKind,
     pub paths: Vec<PathBuf>,
-    pub pending: Vec<PathBuf>,
+    pub initial_encoding: Option<String>,
+    pub pending: Vec<PendingFile>,
+    pub mini: bool,
+}
+#[derive(Clone)]
+pub struct PendingFile {
+    pub path: PathBuf,
+    pub encoding: Option<String>,
 }
 #[derive(Default)]
 pub struct LaunchRegistry {
     pub windows: HashMap<String, WindowLaunch>,
-    /// Insertion order so "the most recent single-file window" is well defined.
+    /// Insertion order for choosing a window to receive external files.
     pub order: Vec<String>,
     pub next: u64,
     pub session_owner: Option<String>,
@@ -57,7 +64,9 @@ impl LaunchRegistry {
             WindowLaunch {
                 kind,
                 paths,
+                initial_encoding: None,
                 pending: Vec::new(),
+                mini: false,
             },
         );
     }
@@ -107,23 +116,20 @@ impl LaunchRegistry {
                 window
                     .paths
                     .iter()
-                    .chain(window.pending.iter())
+                    .chain(window.pending.iter().map(|file| &file.path))
                     .any(|path| &PathKey::of(path) == key)
             })
             .map(|(label, _)| label.clone())
     }
-    /// Most recently created single-file window, reused for further external
-    /// opens instead of spawning one window per double-click.
-    pub fn latest_file_window(&self) -> Option<String> {
-        self.order
-            .iter()
-            .rev()
-            .find(|label| {
-                self.windows
-                    .get(*label)
-                    .is_some_and(|window| window.kind == LaunchKind::File)
-            })
-            .cloned()
+    /// Prefer an existing file window, then any other regular editor window.
+    pub fn latest_regular_window(&self) -> Option<String> {
+        let eligible = self.order.iter().rev().filter_map(|label| {
+            let window = self.windows.get(label)?;
+            (!window.mini).then_some((label, window.kind))
+        });
+        eligible.clone().find(|(_, kind)| *kind == LaunchKind::File)
+            .or_else(|| eligible.into_iter().next())
+            .map(|(label, _)| label.clone())
     }
     /// Newest window of any kind, used when no application window exists.
     pub fn latest_window(&self) -> Option<String> {
@@ -165,6 +171,7 @@ pub struct RoutePlan {
     pub activate: Vec<(String, Vec<PathBuf>)>,
     /// A new single-file window to build, with its initial files.
     pub created: Option<(String, Vec<PathBuf>)>,
+    pub rejected: bool,
 }
 
 /// Pure routing decision for external file requests.
@@ -179,6 +186,7 @@ pub fn plan_external_open(
     registry: &mut LaunchRegistry,
     requested: &[PathBuf],
     owners: &[Option<String>],
+    encoding: Option<&str>,
     window_exists: &dyn Fn(&str) -> bool,
 ) -> RoutePlan {
     let mut plan = RoutePlan::default();
@@ -217,13 +225,15 @@ pub fn plan_external_open(
         }
     }
     if !unowned.is_empty() {
-        if let Some(label) = registry.latest_file_window() {
-            // Reuse the existing single-file window instead of spawning another.
+        if let Some(label) = registry.latest_regular_window() {
             if let Some(window) = registry.windows.get_mut(&label) {
                 for path in &unowned {
                     let key = PathKey::of(path);
                     if !window_knows(window, &key) {
-                        window.pending.push(path.clone());
+                        window.pending.push(PendingFile {
+                            path: path.clone(),
+                            encoding: encoding.map(str::to_owned),
+                        });
                     }
                 }
             }
@@ -235,7 +245,12 @@ pub fn plan_external_open(
             // the same file joins this window instead of creating a second one.
             let label = registry.next_label(LaunchKind::File);
             registry.insert(label.clone(), unowned.clone());
+            if let Some(window) = registry.windows.get_mut(&label) {
+                window.initial_encoding = encoding.map(str::to_owned);
+            }
             plan.created = Some((label, unowned));
+        } else {
+            plan.rejected = true;
         }
     }
     plan
@@ -245,7 +260,7 @@ fn window_knows(window: &WindowLaunch, key: &PathKey) -> bool {
     window
         .paths
         .iter()
-        .chain(window.pending.iter())
+        .chain(window.pending.iter().map(|file| &file.path))
         .any(|path| &PathKey::of(path) == key)
 }
 
@@ -728,5 +743,58 @@ mod owner_migration_tests {
         assert_eq!(merged.tabs.len(),1);
         assert_eq!(merged.roots,vec![root]);
         assert_eq!(merged.kind,"workspace");
+    }
+}
+
+#[cfg(test)]
+mod open_routing_tests {
+    use super::*;
+
+    #[test]
+    fn routes_new_files_to_regular_windows_even_when_a_newer_window_is_mini() {
+        let mut registry = LaunchRegistry::default();
+        registry.insert("main".into(), vec![]);
+        registry.insert("file-older".into(), vec!["existing.txt".into()]);
+        registry.windows.get_mut("file-older").unwrap().mini = true;
+        let file = PathBuf::from("new.txt");
+        let plan = plan_external_open(&mut registry, &[file.clone()], &[None], Some("GBK"), &|_| true);
+        assert_eq!(plan.deliveries, ["main"]);
+        assert!(plan.created.is_none());
+        let pending = &registry.windows["main"].pending;
+        assert_eq!(pending[0].path, file);
+        assert_eq!(pending[0].encoding.as_deref(), Some("GBK"));
+        assert!(registry.windows["file-older"].pending.is_empty());
+    }
+
+    #[test]
+    fn all_mini_creates_one_regular_window_and_reuses_it_for_rapid_opens() {
+        let mut registry = LaunchRegistry::default();
+        registry.insert("main".into(), vec![]);
+        registry.insert_detached("detached-1".into());
+        for window in registry.windows.values_mut() {
+            window.mini = true;
+        }
+        let first = PathBuf::from("first.txt");
+        let second = PathBuf::from("second.txt");
+        let created = plan_external_open(&mut registry, &[first.clone()], &[None], Some("GBK"), &|_| true);
+        let (label, paths) = created.created.unwrap();
+        assert_eq!(paths, [first.clone()]);
+        assert_eq!(registry.windows[&label].initial_encoding.as_deref(), Some("GBK"));
+        // The new WebView need not exist yet for another request to join it.
+        let next = plan_external_open(&mut registry, &[first, second.clone()], &[None, None], None, &|candidate| candidate != label);
+        assert!(next.created.is_none());
+        assert_eq!(next.deliveries, [label.clone()]);
+        assert_eq!(registry.windows[&label].pending[0].path, second);
+    }
+
+    #[test]
+    fn an_existing_document_stays_with_its_mini_editor() {
+        let mut registry = LaunchRegistry::default();
+        registry.insert("main".into(), vec![]);
+        registry.windows.get_mut("main").unwrap().mini = true;
+        let file = PathBuf::from("unsaved-changes.txt");
+        let plan = plan_external_open(&mut registry, &[file.clone()], &[Some("main".into())], None, &|_| true);
+        assert_eq!(plan.activate, [("main".to_owned(), vec![file])]);
+        assert!(plan.created.is_none());
     }
 }

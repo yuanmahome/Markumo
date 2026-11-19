@@ -77,6 +77,8 @@ export interface ShellCommandsHost {
   toggleSidebar: () => void
   miniActive: Ref<boolean>
   toggleMini: () => Promise<void>
+  openGitHub: () => Promise<void>
+  checkUpdate: () => Promise<void>
   toggleFocus: () => void
   exitFocus: () => void
   toggleTypewriter: () => void
@@ -321,6 +323,8 @@ export function useShellCommands(host: ShellCommandsHost) {
       { id: 'workspace', title: '切换到工作区模式', detail: '布局', category: 'action', action: () => host.setMode('workspace') },
       { id: 'sidebar', title: '显示/隐藏侧边栏', detail: '', category: 'action', action: host.toggleSidebar },
       { id: 'theme', title: '切换主题：深色 / 浅色 / 跟随系统', detail: '外观', category: 'action', action: host.toggleTheme },
+      { id: 'open-github', title: 'GitHub', detail: '', category: 'action', action: host.openGitHub },
+      { id: 'check-update', title: '检查更新', detail: '', category: 'action', disabled: !host.desktop, action: host.checkUpdate },
       { id: 'open-examples', title: '打开示例工作区', detail: '', category: 'action', action: async () => {
         await host.workspace.openExampleWorkspace()
       } },
