@@ -540,7 +540,8 @@ export function useAppShell() {
       pendingClose = { kind: 'window' }
       paletteRef.value?.close()
       settingsRef.value?.close()
-      discardRef.value?.open('当前窗口中的文档')
+      const count = manager.openedDocuments.filter(doc => doc.dirty).length
+      discardRef.value?.open({ kind: 'window', count })
     },
     destroy: async () => {
       await destroyNativeWindow()
@@ -775,7 +776,7 @@ export function useAppShell() {
       pendingClose = { kind: 'reopen', id: doc.id, encoding }
       paletteRef.value?.close()
       settingsRef.value?.close()
-      discardRef.value?.open(doc.name)
+      discardRef.value?.open({ kind: 'reopen', name: doc.name })
       return
     }
     fileBusy.value = true
@@ -981,7 +982,7 @@ export function useAppShell() {
       pendingClose = { kind: 'document', id, pane }
       paletteRef.value?.close()
       settingsRef.value?.close()
-      discardRef.value?.open(manager.metadata(id)?.name || '文档')
+      discardRef.value?.open({ kind: 'document', name: manager.metadata(id)?.name || '文档' })
     } else if (result === 'composing') {
       tabCloseQueue = []
       composingHint()
