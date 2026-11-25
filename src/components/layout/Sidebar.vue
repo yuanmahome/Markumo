@@ -22,13 +22,13 @@
         <div v-if="activePanel === 'files'" class="treelist">
           <!-- 已打开真实工作区 -->
           <template v-if="workspace.rootPath">
-            <div ref="treeContainer" class="workspace-tree-container" role="tree" :tabindex="flatTree.length ? -1 : 0" aria-label="工作区目录树" @scroll="onTreeScroll" @wheel.passive="treeInteraction" @pointerdown="treeInteraction" @keydown="handleTreeKeydown">
+            <div ref="treeContainer" class="workspace-tree-container" role="tree" :tabindex="flatTree.length ? -1 : 0" aria-label="工作区目录树" @scroll="onTreeScroll" @wheel.passive="treeInteraction" @pointerdown="treeInteraction" @keydown="handleTreeKeydown" @contextmenu.prevent="blankMenu">
               <div role="presentation" :style="{ height: `${treeStart * rowHeight}px` }"></div>
               <template v-for="row in visibleTree" :key="row.node.path">
               <div v-if="row.root" class="treenode folder root-folder" role="treeitem" :data-tree-path="row.root.rootPath" :aria-level="1" :aria-expanded="!collapsedRoots.includes(row.root.rootPath)" :aria-selected="isTreeSelected(row.root.rootPath)" :tabindex="isTabStop(row.root.rootPath) ? 0 : -1" :class="{ selected: isTreeSelected(row.root.rootPath) }" :title="`${row.root.name}\n${readablePath(row.root.rootPath)}`" @focus.self="selectTreePath(row.root.rootPath)" @click="handleRootClick($event,row.root.rootPath)" @dblclick="handleRootDblClick(row.root.rootPath)" @contextmenu.prevent.stop="rootMenu($event,row.root)" @keydown.shift.f10.prevent.stop="rootMenu($event,row.root)">
                 <div class="root-toggle"><span class="twisty" @click.stop="handleRootTwisty($event,row.root.rootPath)" @dblclick.stop>{{ collapsedRoots.includes(row.root.rootPath) ? '▸' : '▾' }}</span><Icon name="folder" size="small" /><span class="label">{{ row.root.name }}</span></div>
                 <div class="root-actions">
-                <button class="ib small" :aria-label="`在 ${row.root.name} 中新建文件`" title="在此文件夹中新建文件" @click.stop="handleCreateFile(row.root.rootPath)">+</button>
+                <button class="ib small" :aria-label="`在 ${row.root.name} 中新建文件`" title="在此文件夹中新建文件" aria-haspopup="menu" @click.stop="openCreationMenu($event, row.root.rootPath, true)">+</button>
                 <button class="ib small" :aria-label="`在 ${row.root.name} 中新建文件夹`" title="在此文件夹中新建文件夹" @click.stop="handleCreateDir(row.root.rootPath)"><Icon name="open" size="small" /></button>
                 <button class="ib small" :aria-label="`从工作区移除 ${row.root.name}`" title="从工作区移除（不删除文件）" @click.stop="workspace.removeFolder(row.root.rootPath)">×</button>
                 </div>
@@ -53,6 +53,7 @@
                 @toggle-folder="handleToggleFolder"
                 @toggle-compact="handleToggleCompact"
                 @create-file="handleCreateFile"
+                @refresh-tree="workspace.refreshDirectory()"
                 @rename-node="handleRenameNode"
                 @delete-node="handleDeleteNode"
                 @move-node="handleMoveNode"
@@ -117,6 +118,7 @@ import { readablePath, displayPathKey } from '../../features/shell/pathDisplay'
 import ContextMenu from '../common/ContextMenu.vue'
 import { CommandRegistry, menuCommand as cmd, separator } from '../../features/shell/menuModel'
 import { textClipboard } from '../../features/shell/clipboard'
+import { workspaceFileCreationMenu, workspaceFileTypes, type WorkspaceFileType } from '../../features/workspace/fileCreationMenu'
 
 const props = withDefaults(defineProps<{
   width: number
@@ -159,26 +161,37 @@ async function copyPath(path: string) {
 }
 function rootMenu(event: MouseEvent | KeyboardEvent, root: WorkspaceInfo) {
   selectTreePath(root.rootPath)
+  const creation = workspaceFileCreationMenu(type => handleCreateFile(root.rootPath, type))
   const registry = new CommandRegistry([
-    {id:'root-new-file',title:'新建文件…',enabled:true,run:()=>handleCreateFile(root.rootPath)},
-    {id:'root-new-folder',title:'新建文件夹…',enabled:true,run:()=>handleCreateDir(root.rootPath)},
-    {id:'root-search',title:'在此目录中查找…',enabled:true,run:()=>props.workspace.focusWorkspaceSearch(false,root.rootPath)},
-    {id:'root-replace',title:'在此目录中替换…',enabled:true,run:()=>props.workspace.focusWorkspaceSearch(true,root.rootPath)},
+    ...creation.commands,
+    {id:'root-new-folder',title:'新建文件夹',enabled:true,run:()=>handleCreateDir(root.rootPath)},
+    {id:'root-refresh',title:'刷新',enabled:true,run:()=>props.workspace.refreshDirectory()},
+    {id:'root-search',title:'在此目录中查找',enabled:true,run:()=>props.workspace.focusWorkspaceSearch(false,root.rootPath)},
+    {id:'root-replace',title:'在此目录中替换',enabled:true,run:()=>props.workspace.focusWorkspaceSearch(true,root.rootPath)},
     {id:'root-copy-path',title:'复制文件夹路径',enabled:true,run:()=>copyPath(root.rootPath)},
     {id:'root-reveal',title:'在文件管理器中显示',enabled:props.desktop,run:()=>props.workspace.revealNode(root.rootPath)},
     {id:'root-remove',title:'移除工作区根目录',enabled:true,run:()=>props.workspace.removeFolder(root.rootPath)},
     {id:'root-ignored',title:'显示忽略文件',enabled:props.desktop,run:()=>props.workspace.toggleIgnored()},
   ])
-  contextMenu.value?.open(event,[cmd('root-new-file'),cmd('root-new-folder'),cmd('root-search'),cmd('root-replace'),separator('root-path-section'),cmd('root-copy-path'),cmd('root-reveal'),{type:'checkbox',id:'root-ignored',commandId:'root-ignored',checked:props.workspace.showIgnored},separator('root-remove-section'),cmd('root-remove')],registry,'工作区根目录操作')
+  contextMenu.value?.open(event,[creation.item,cmd('root-new-folder'),cmd('root-refresh'),separator('root-search-section'),cmd('root-search'),cmd('root-replace'),separator('root-path-section'),cmd('root-copy-path'),cmd('root-reveal'),{type:'checkbox',id:'root-ignored',commandId:'root-ignored',checked:props.workspace.showIgnored},separator('root-remove-section'),cmd('root-remove')],registry,'工作区根目录操作')
 }
-function newMenu(event:MouseEvent) {
-  const parent=(activeFilePath.value&&props.workspace.rootForPath(activeFilePath.value))||props.workspace.rootPath
-  if(!parent)return
-  const registry=new CommandRegistry([
-    {id:'new-file',title:'新建文件',enabled:true,run:()=>handleCreateFile(parent)},
-    {id:'new-folder',title:'新建文件夹',enabled:true,run:()=>handleCreateDir(parent)},
+function openCreationMenu(event: MouseEvent, parent: string, atTrigger: boolean) {
+  const creation = workspaceFileCreationMenu(type => handleCreateFile(parent, type))
+  const registry = new CommandRegistry([
+    ...creation.commands,
+    { id:'new-folder', title:'新建文件夹', enabled:true, run:()=>handleCreateDir(parent) },
+    { id:'refresh-tree', title:'刷新', enabled:true, run:()=>props.workspace.refreshDirectory() },
   ])
-  contextMenu.value?.open(event,[cmd('new-file'),cmd('new-folder')],registry,'新建',true)
+  const items = [creation.item, cmd('new-folder')]
+  if (!atTrigger) items.push(cmd('refresh-tree'))
+  contextMenu.value?.open(event, items, registry, atTrigger ? '新建' : '工作区操作', atTrigger)
+}
+function newMenu(event: MouseEvent) {
+  const parent = (activeFilePath.value && props.workspace.rootForPath(activeFilePath.value)) || props.workspace.rootPath
+  if (parent) openCreationMenu(event, parent, true)
+}
+function blankMenu(event: MouseEvent) {
+  if (props.workspace.rootPath) openCreationMenu(event, props.workspace.rootPath, false)
 }
 function expandAll() {treeInteraction();if(props.workspace.expanding){props.workspace.cancelExpand();return}collapsedRoots.value=[];void props.workspace.expandAll()}
 function collapseAll() {treeInteraction();props.workspace.collapseAll();collapsedRoots.value=props.workspace.roots.map(root=>root.rootPath)}
@@ -409,11 +422,13 @@ function handleRootDblClick(rootPath: string) {
   }
 }
 
-async function handleCreateFile(parentDir: string) {
-  const name = await operationDialog.value?.ask({ title: '新建文件', description: '', confirmLabel: '创建', initialValue: '' })
-  if (name && name.trim()) {
-    void props.workspace.createFile(parentDir, name.trim())
-  }
+async function handleCreateFile(parentDir: string, type: WorkspaceFileType) {
+  const { label, extension } = workspaceFileTypes[type]
+  const input = await operationDialog.value?.ask({ title: `新建${type === 'markdown' ? ' ' : ''}${label}`, confirmLabel: '创建', initialValue: '', suffix: extension })
+  const name = input?.trim()
+  if (!name) return
+  const stem = extension && name.toLowerCase().endsWith(extension) ? name.slice(0, -extension.length) : name
+  await props.workspace.createFile(parentDir, stem + extension)
 }
 
 async function handleCreateDir(parentDir: string) {
@@ -438,7 +453,9 @@ async function handleMoveNode(node: WorkspaceNode) {
 }
 
 async function handleRenameNode(node: WorkspaceNode) {
-  const name = await operationDialog.value?.ask({ title: '重命名条目', description: node.path, confirmLabel: '重命名', initialValue: node.name })
+  const dot = node.name.lastIndexOf('.')
+  const selectEnd = !node.isDirectory && dot > 0 ? dot : node.name.length
+  const name = await operationDialog.value?.ask({ title: '重命名', description: readablePath(node.path), confirmLabel: '重命名', initialValue: node.name, selectEnd })
   if (name?.trim()) void props.workspace.renameNode(node, name.trim())
 }
 

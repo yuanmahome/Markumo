@@ -6,6 +6,7 @@ pub mod preview;
 #[cfg(test)]
 mod search_tests;
 pub mod service;
+mod watch;
 
 pub use search::{SearchManager, SearchMatch, SearchQuery, WorkspaceSearcher};
 pub use service::{WorkspaceInfo, WorkspaceNode, WorkspaceService};

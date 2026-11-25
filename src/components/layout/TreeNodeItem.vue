@@ -77,7 +77,8 @@
         @pin-file="$emit('pin-file', $event)"
         @toggle-folder="$emit('toggle-folder', $event)"
         @toggle-compact="$emit('toggle-compact', $event)"
-        @create-file="$emit('create-file', $event)"
+        @create-file="(path, type) => $emit('create-file', path, type)"
+        @refresh-tree="$emit('refresh-tree')"
         @rename-node="$emit('rename-node', $event)"
         @delete-node="$emit('delete-node', $event)"
         @move-node="$emit('move-node', $event)"
@@ -98,6 +99,7 @@ import { CommandRegistry, menuCommand as cmd, separator } from '../../features/s
 import Icon from '../common/Icon.vue'
 import FileIcon from '../common/FileIcon.vue'
 import type { WorkspaceNode } from '../../features/workspace/contracts'
+import { workspaceFileCreationMenu, type WorkspaceFileType } from '../../features/workspace/fileCreationMenu'
 import { readablePath, displayPathKey } from '../../features/shell/pathDisplay'
 
 const props = withDefaults(defineProps<{
@@ -123,7 +125,8 @@ const emit = defineEmits<{
   (e: 'pin-file', node: WorkspaceNode): void
   (e: 'toggle-folder', node: WorkspaceNode): void
   (e: 'toggle-compact', chain: WorkspaceNode[]): void
-  (e: 'create-file', parentDir: string): void
+  (e: 'create-file', parentDir: string, type: WorkspaceFileType): void
+  (e: 'refresh-tree'): void
   (e: 'rename-node', node: WorkspaceNode): void
   (e: 'delete-node', node: WorkspaceNode): void
   (e: 'move-node', node: WorkspaceNode): void
@@ -295,17 +298,20 @@ function openMenu(event: MouseEvent | KeyboardEvent) {
 }
 
 function openMenuForNode(event: MouseEvent | KeyboardEvent, target: WorkspaceNode) {
+  const creation = workspaceFileCreationMenu(type => emit('create-file', target.path, type))
   const registry = new CommandRegistry([
-    { id:'node-new-file',title:'新建文件…',enabled:target.isDirectory,run:()=>emit('create-file',target.path) },
-    {id:'node-search',title:'在此目录中查找…',enabled:target.isDirectory,run:()=>emit('search-directory',{path:target.path,replace:false})},
-    {id:'node-replace',title:'在此目录中替换…',enabled:target.isDirectory,run:()=>emit('search-directory',{path:target.path,replace:true})},
-    { id:'node-rename',title:'重命名…',enabled:true,run:()=>emit('rename-node',target) },
-    { id:'node-move',title:'移动到…',enabled:true,run:()=>emit('move-node',target) },
-    { id:'node-delete',title:'删除…',enabled:true,run:()=>emit('delete-node',target) },
+    ...creation.commands,
+    { id:'node-refresh',title:'刷新',enabled:true,run:()=>emit('refresh-tree') },
+    {id:'node-search',title:'在此目录中查找',enabled:target.isDirectory,run:()=>emit('search-directory',{path:target.path,replace:false})},
+    {id:'node-replace',title:'在此目录中替换',enabled:target.isDirectory,run:()=>emit('search-directory',{path:target.path,replace:true})},
+    { id:'node-rename',title:'重命名',enabled:true,run:()=>emit('rename-node',target) },
+    { id:'node-move',title:'移动到',enabled:true,run:()=>emit('move-node',target) },
+    { id:'node-delete',title:'删除',enabled:true,run:()=>emit('delete-node',target) },
     { id:'node-copy-path',title:'复制文件路径',enabled:true,run:()=>emit('copy-path',target.path) },
     { id:'node-reveal',title:'在文件管理器中显示',enabled:!!props.desktop,run:()=>emit('reveal-node',target.path) },
   ])
-  contextMenu.value?.open(event,[...(target.isDirectory ? [cmd('node-new-file'),cmd('node-search'),cmd('node-replace'),separator('node-create-section')] : []),cmd('node-rename'),cmd('node-move'),cmd('node-delete'),separator('node-path-section'),cmd('node-copy-path'),cmd('node-reveal')],registry,'文件与目录操作')
+  const directoryItems = target.isDirectory ? [creation.item,cmd('node-search'),cmd('node-replace'),separator('node-create-section')] : []
+  contextMenu.value?.open(event,[...directoryItems,cmd('node-rename'),cmd('node-move'),cmd('node-delete'),separator('node-path-section'),cmd('node-refresh'),cmd('node-copy-path'),cmd('node-reveal')],registry,'文件与目录操作')
 }
 </script>
 

@@ -70,6 +70,11 @@ export class WorkspaceController {
     promise: Promise<void>
   }>()
   private folderLoads = new Map<WorkspaceNode,Promise<boolean>>()
+  private treeMutationRevision = 0
+  private directoryRefresh: Promise<void> | null = null
+  private pendingTreeChanges: Set<string> | null = new Set()
+  private treeChangeTimer: ReturnType<typeof setTimeout> | undefined
+  private stopTreeChanges: (() => void) | undefined
   private pendingReads=new Map<string,Promise<Awaited<ReturnType<WorkspaceGateway['openWorkspaceFile']>>>>()
   expanding = false
   smartExpand = true
@@ -157,7 +162,9 @@ export class WorkspaceController {
 
   connect() {
     if(this.initialized||this.disposed)return
-    this.initialized=true;void this.loadRecents()
+    this.initialized = true
+    this.stopTreeChanges = this.gateway.onTreeChange?.(paths => this.queueTreeChanges(paths))
+    void this.loadRecents()
   }
   private connectSearch(){
     if (this.searchBatchUnsub || this.disposed) return
@@ -328,6 +335,7 @@ export class WorkspaceController {
     if (info.warning) this.notify(info.warning)
     this.resetSearchContext()
     void this.loadRecents()
+    this.scheduleTreeRefresh()
     this.emit()
   }
 
@@ -552,8 +560,10 @@ export class WorkspaceController {
     const known = new Map(previous.map(node => [displayPathKey(node.path), node]))
     return fresh.map(node => {
       const old = known.get(displayPathKey(node.path))
-      if (!old?.isDirectory || !node.isDirectory || !node.hasChildren) return node
-      return Object.assign(old, node, {children: old.children, isExpanded: old.isExpanded})
+      if (!old?.isDirectory || !node.isDirectory) return node
+      return Object.assign(old, node, {
+        children: node.hasChildren ? old.children : [], isExpanded: old.isExpanded, isLoading: old.isLoading,
+      })
     })
   }
 
@@ -572,51 +582,119 @@ export class WorkspaceController {
     }
   }
 
+  private queueTreeChanges(paths: Iterable<string> | null) {
+    if (paths === null) this.pendingTreeChanges = null
+    else if (this.pendingTreeChanges) {
+      for (const path of paths) this.pendingTreeChanges.add(displayPathKey(path))
+      if (this.pendingTreeChanges.size > 512) this.pendingTreeChanges = null
+    }
+    this.scheduleTreeRefresh()
+  }
+
+  private scheduleTreeRefresh() {
+    if (this.disposed || !this.rootPath || this.treeChangeTimer || this.directoryRefresh || this.pendingTreeChanges?.size === 0) return
+    this.treeChangeTimer = setTimeout(() => {
+      this.treeChangeTimer = undefined
+      if (this.operationBusy || this.directoryRefresh) { this.scheduleTreeRefresh(); return }
+      const changes = this.pendingTreeChanges
+      this.pendingTreeChanges = new Set()
+      void this.runTreeRefresh(undefined, changes)
+    }, 80)
+  }
+
   async refreshDirectory(node?: WorkspaceNode) {
-    this.cancelExpand();this.revealSequence++
-    if (!this.rootPath) return
+    this.cancelExpand()
+    this.cancelReveal()
     const revision = this.openRevision
+    while (this.directoryRefresh) await this.directoryRefresh
+    if (!this.rootPath || this.disposed || revision !== this.openRevision) return
+    await this.runTreeRefresh(node)
+  }
+
+  private async runTreeRefresh(node?: WorkspaceNode, changes?: Set<string> | null) {
+    const refresh = this.refreshTree(node, changes)
+    this.directoryRefresh = refresh
+    try { await refresh }
+    finally {
+      this.directoryRefresh = null
+      this.scheduleTreeRefresh()
+    }
+  }
+
+  private async refreshTree(node?: WorkspaceNode, changes?: Set<string> | null) {
+    const revision = this.openRevision, mutation = this.treeMutationRevision
+    const isCurrent = () => !this.disposed && revision === this.openRevision && mutation === this.treeMutationRevision
+    const automatic = changes !== undefined
+    const roots = [...this.roots]
+    const targets = changes && [...changes].sort((a, b) => a.length - b.length)
+      .map(path => ({ path, root: roots.find(root => this.isWithin(path, root.rootPath)) }))
+      .filter(target => target.root)
+    if (targets?.length === 0) return
     const rebuildIndex = this.fileIndexRevision === revision || this.fileIndexLoading
-    // Retain useful cached files while rebuilding, but fence off any older scan.
     this.invalidateFileIndex(false)
     this.quickFiles = []
-    try {
-      if (!node) {
-        for (const root of [...this.roots]) {
-          const fresh = await this.gateway.readDirectory(root.rootPath)
-          if (this.disposed || revision !== this.openRevision) return
-          this.reconcileIndexedDirectory(root.rootPath, fresh)
+    const refresh = async (root: WorkspaceInfo, directory?: WorkspaceNode, descendants = false) => {
+      if (!isCurrent()) return
+      const path = directory?.path ?? root.rootPath
+      try {
+        if (directory) await this.folderLoads.get(directory)
+        if (!isCurrent()) return
+        const fresh = await this.gateway.readDirectory(path)
+        if (!isCurrent()) return
+        this.reconcileIndexedDirectory(path, fresh)
+        if (directory) {
+          directory.children = this.mergeDirectory(directory.children || [], fresh)
+          directory.hasChildren = !!directory.children.length
+        } else {
           root.entries = this.mergeDirectory(root.entries, fresh)
+          if (root === this.roots[0]) this.entries = root.entries
         }
-        this.entries = this.roots[0]?.entries || []
-      } else if (node.isDirectory) {
-        node.isLoading = true
-        this.emit()
-        const fresh = await this.gateway.readDirectory(node.path)
-        if (this.disposed || revision !== this.openRevision) return
-        this.reconcileIndexedDirectory(node.path, fresh)
-        node.children = this.mergeDirectory(node.children || [], fresh)
-        node.hasChildren = !!node.children.length
-        node.isLoading = false
+      } catch (error) {
+        if (!automatic && isCurrent()) this.notify(String(error))
+        return
+      }
+      if (!descendants) return
+      for (const child of (directory?.children ?? root.entries)) {
+        if (child.isDirectory && !child.isSymlink && (child.isExpanded || child.isLoading || child.children?.length)) {
+          await refresh(root, child, true)
+        }
+      }
+    }
+    try {
+      if (targets) {
+        for (const { path, root } of targets) {
+          if (!root || !isCurrent()) continue
+          if (path === displayPathKey(root.rootPath)) await refresh(root)
+          else {
+            const directory = this.findNodeByPath(root.entries, path)
+            if (directory?.isDirectory && !directory.isSymlink) await refresh(root, directory)
+          }
+        }
+      } else if (!node) {
+        for (const root of roots) await refresh(root, undefined, true)
+      } else {
+        const root = roots.find(root => this.isWithin(node.path, root.rootPath))
+        if (root && node.isDirectory && !node.isSymlink) await refresh(root, node, true)
+      }
+      if (!isCurrent()) {
+        if (automatic && !this.disposed) this.queueTreeChanges(changes)
+        return
       }
       this.reconcileTreeSelection()
-      this.emit()
-    } catch (e) {
-      this.notify(String(e))
     } finally {
-      if (node) node.isLoading = false
       this.emit()
-      if (!this.disposed && revision === this.openRevision) {
+      if (isCurrent()) {
         // Quick Open may have started another scan while the directory read was
         // pending. That snapshot also predates the completed refresh.
         const rebuild = rebuildIndex || this.fileIndexLoading || this.fileIndexRevision === revision
         this.invalidateFileIndex(false)
-        if (rebuild) await this.ensureFileIndex()
+        if (!automatic && rebuild) await this.ensureFileIndex()
       }
     }
   }
 
   private reconcileIndexedDirectory(path: string, fresh: WorkspaceNode[]) {
+    if (!this.workspaceFiles.length) return
     const prefix = displayPathKey(path) + '/'
     const children = new Map(fresh.map(child => [displayPathKey(child.path), child]))
     this.workspaceFiles = this.workspaceFiles.filter(file => {
@@ -832,6 +910,7 @@ export class WorkspaceController {
       this.notify('请等待文件操作和输入完成。'); return false
     }
     this.operationBusy = true
+    this.treeMutationRevision++
     this.invalidateReplace()
     this.fileController.workspaceBusy = true
     this.cancelOpens(); this.cancelReveal()
@@ -923,6 +1002,7 @@ export class WorkspaceController {
 
   async acceptDeletedPath(path:string) {
     if(this.disposed)return
+    this.treeMutationRevision++
     this.cancelOpens();this.cancelReveal()
     const ids=this.documentManager.openedDocuments.filter(doc=>this.isWithin(doc.path,path)).map(doc=>doc.id)
     for(const id of ids)this.documentManager.closeDeletedFile(id)
@@ -951,7 +1031,7 @@ export class WorkspaceController {
   private findNodeByPath(list: WorkspaceNode[], path: string): WorkspaceNode | null {
     for (const item of list) {
       if (displayPathKey(item.path) === displayPathKey(path)) return item
-      if (item.children) {
+      if (item.children?.length && this.isWithin(path, item.path)) {
         const found = this.findNodeByPath(item.children, path)
         if (found) return found
       }
@@ -1531,6 +1611,8 @@ export class WorkspaceController {
   }
 
   destroy() {
+    this.stopTreeChanges?.()
+    clearTimeout(this.treeChangeTimer)
     this.stopSearchDocuments?.();clearTimeout(this.searchTimer);clearTimeout(this.batchTimer);this.clearSearchPreview()
     void this.gateway.clearSearchPreview?.().catch(error=>{this.searchMessage='释放预览失败：'+String(error)})
     this.cancelReplace()

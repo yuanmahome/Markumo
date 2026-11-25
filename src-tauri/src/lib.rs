@@ -31,6 +31,7 @@ fn register_window(app: &tauri::AppHandle, label: &str, paths: Vec<PathBuf>) -> 
     }
     let temporary = !paths.is_empty();
     let mut ws = workspace::WorkspaceService::default();
+    ws.watch_changes(app.clone(), label);
     ws.configure(
         app.path()
             .app_data_dir()
@@ -65,6 +66,7 @@ pub(crate) fn register_detached_window(
     }
     drop(coordinator);
     let mut ws = workspace::WorkspaceService::default();
+    ws.watch_changes(app.clone(), label);
     ws.configure(
         app.path()
             .app_data_dir()

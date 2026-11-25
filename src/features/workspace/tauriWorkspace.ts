@@ -61,13 +61,20 @@ export function mapInfo(raw: RawWorkspaceInfo): WorkspaceInfo {
 
 const pendingSubscriptions=new Set<Promise<unknown>>()
 let searchSubscriptionError=''
-function subscribe<T>(name: string, listener: (payload: T) => void): () => void {
+function subscribe<T>(name: string, listener: (payload: T) => void, search = false): () => void {
   if (!isTauri()) return () => {}
   let disposed = false, unlistenFn: (() => void) | undefined
   const ready=getCurrentWindow().listen<T>(name, event => { if (!disposed) listener(event.payload) }).then(unlisten => {
     if (disposed) unlisten(); else unlistenFn = unlisten
-  }).catch(error => {searchSubscriptionError=`工作区事件注册失败: ${String(error)}`;console.error(searchSubscriptionError)})
-  pendingSubscriptions.add(ready);void ready.finally(()=>pendingSubscriptions.delete(ready))
+  }).catch(error => {
+    const message = `工作区事件注册失败: ${String(error)}`
+    if (search) searchSubscriptionError = message
+    console.error(message)
+  })
+  if (search) {
+    pendingSubscriptions.add(ready)
+    void ready.finally(() => pendingSubscriptions.delete(ready))
+  }
   return () => { disposed = true; unlistenFn?.() }
 }
 
@@ -137,6 +144,9 @@ export const tauriWorkspace: WorkspaceGateway = {
     if (!isTauri()) return []
     return invoke<string[]>('get_recent_workspaces')
   },
+  onTreeChange(listener) {
+    return subscribe('workspace-tree-change', listener)
+  },
   async findFiles(query, includeIgnored, limit) {
     const files = await invoke<{ name: string; path: string; relative_path: string }[]>('find_workspace_files', { query, includeIgnored, limit: limit ?? null })
     return files.map(file => ({ ...file, relativePath: file.relative_path }))
@@ -156,10 +166,10 @@ export const tauriWorkspace: WorkspaceGateway = {
   },
 
   onSearchBatch(listener: (batch: SearchMatch[]) => void): () => void {
-    return subscribe('workspace-search-batch', listener)
+    return subscribe('workspace-search-batch', listener, true)
   },
 
   onSearchDone(listener: (payload: SearchDonePayload) => void): () => void {
-    return subscribe('workspace-search-done', listener)
+    return subscribe('workspace-search-done', listener, true)
   },
 }

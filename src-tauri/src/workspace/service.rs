@@ -11,6 +11,7 @@ use crate::display::display_path;
 use super::{
     guard::{relative_slash_path, validate_name, validate_under_root},
     ignore::IgnoreRuleSet,
+    watch::WorkspaceWatcher,
 };
 
 /// Workspace history only stores ten recents and sixteen roots. A file beyond
@@ -79,9 +80,25 @@ pub struct WorkspaceService {
     storage_path: Option<PathBuf>,
     preferences: WorkspacePreferences,
     pub show_ignored: bool,
+    watcher: Option<WorkspaceWatcher>,
 }
 
 impl WorkspaceService {
+    pub fn watch_changes(&mut self, app: tauri::AppHandle, label: &str) {
+        self.watcher = Some(WorkspaceWatcher::new(app, label));
+    }
+
+    fn sync_watcher(&mut self) -> Option<String> {
+        let roots = self.roots();
+        self.watcher.as_mut()?.set_roots(roots).err()
+            .map(|error| format!("无法自动刷新部分工作区目录：{error}"))
+    }
+
+    fn workspace_warning(&mut self, watch_warning: Option<String>) -> Option<String> {
+        let warnings: Vec<_> = [watch_warning, self.save_active_roots().err()].into_iter().flatten().collect();
+        (!warnings.is_empty()).then(|| warnings.join("；"))
+    }
+
     pub fn disable_persistence(&mut self) {
         self.storage_path = None;
     }
@@ -210,11 +227,13 @@ impl WorkspaceService {
             }
             self.additional_roots.push(root.clone());
         }
+        let watch_warning = self.sync_watcher();
         let entries = match self.read_directory(&root) {
             Ok(entries) => entries,
             Err(error) => {
                 if added {
                     self.additional_roots.retain(|item| item != &root);
+                    let _ = self.sync_watcher();
                 }
                 return Err(error);
             }
@@ -227,7 +246,7 @@ impl WorkspaceService {
             .recent_workspaces
             .insert(0, root_path.clone());
         self.preferences.recent_workspaces.truncate(10);
-        let warning = self.save_active_roots().err();
+        let warning = self.workspace_warning(watch_warning);
         Ok(WorkspaceInfo {
             root_path,
             name: root
@@ -278,6 +297,7 @@ impl WorkspaceService {
                 .collect();
             return Err(error);
         }
+        let _ = self.sync_watcher();
         Ok(())
     }
 
@@ -300,11 +320,13 @@ impl WorkspaceService {
 
         let previous_roots = std::mem::take(&mut self.additional_roots);
         let previous_root = self.current_root.replace(canonical_root.clone());
+        let watch_warning = self.sync_watcher();
         let entries = match self.read_directory_internal(&canonical_root) {
             Ok(entries) => entries,
             Err(error) => {
                 self.current_root = previous_root;
                 self.additional_roots = previous_roots;
+                let _ = self.sync_watcher();
                 return Err(error);
             }
         };
@@ -318,10 +340,7 @@ impl WorkspaceService {
         if self.preferences.recent_workspaces.len() > 10 {
             self.preferences.recent_workspaces.truncate(10);
         }
-        let warning = self
-            .save_active_roots()
-            .err()
-            .map(|e| format!("工作区已打开，但最近历史保存失败: {e}"));
+        let warning = self.workspace_warning(watch_warning);
 
         Ok(WorkspaceInfo {
             root_path: root_str,

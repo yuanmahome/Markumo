@@ -107,6 +107,7 @@ export interface WorkspaceGateway {
   findFiles(query: string, includeIgnored: boolean, limit?: number): Promise<{ name: string; path: string; relativePath: string }[]>
   setShowIgnored(show: boolean): Promise<WorkspaceNode[]>
   getRecentWorkspaces(): Promise<string[]>
+  onTreeChange?(listener: (directories: string[] | null) => void): () => void
   revealNode?(path:string):Promise<void>
   revealOpenFile?(token:string):Promise<void>
   searchWorkspace(query: SearchQuery): Promise<number>
