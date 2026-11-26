@@ -1,4 +1,5 @@
 import { Mark, type Node } from 'prosemirror-model'
+import { markdownBlockEnd } from '../blankLines'
 import { tableRow } from '../tableModel'
 import { parseMarkdown, sameBlockSemantics, tokenizer } from './MarkdownParser'
 import { escapeUnescapedPipes, serializeInlineFragment } from './MarkdownSerializer'
@@ -428,6 +429,41 @@ function patchInlineSubrange(
   }
 
   return null
+}
+
+/** Use the deleted item's token boundary to keep the original spelling of the
+ * rest of the list, including siblings with identical rendered content. */
+export function patchListItemJoin(before: Node, after: Node, raw: string, at: number, environment: Record<string, unknown>) {
+  const next = before.nodeAt(at)
+  if (next?.type.name !== 'list_item') return
+
+  let ordinal = 0
+  before.nodesBetween(0, at, node => { if (node.type.name === 'list_item') ordinal++ })
+  const items = tokenizer.parse(raw, {}).filter(token => token.type === 'list_item_open')
+  const line = items[ordinal]?.map?.[0]
+  if (line === undefined) return
+
+  const starts = [0, ...Array.from(raw.matchAll(/\n/g), match => match.index + 1)]
+  const start = starts[line]
+  if (!start) return
+  const end = markdownBlockEnd(raw, start, starts[line + 1] ?? raw.length)
+  let to = end
+  if (next.firstChild?.content.size) {
+    const text = raw.slice(start, end)
+    const marker = /^(?:[ \t]*>[ \t]?)*[ \t]*(?:[-+*]|\d{1,9}[.)])[ \t]+/.exec(text)?.[0]
+    if (!marker) return
+    const checkbox = next.attrs.checked === null ? '' : /^\[[ xX]\][ \t]+/.exec(text.slice(marker.length))?.[0] ?? ''
+    to = start + marker.length + checkbox.length
+  }
+
+  const from = markdownBlockEnd(raw, 0, start)
+  // At the join, trailing spaces may become visible text. Try the exact
+  // boundary first, then the boundary without Markdown's discarded padding.
+  for (const offset of new Set([from, from - (/[ \t]+$/.exec(raw.slice(0, from))?.[0].length ?? 0)])) {
+    const candidate = raw.slice(0, offset) + raw.slice(to)
+    const parsed = parseMarkdown(candidate, environment).doc
+    if (parsed.childCount === 1 && sameBlockSemantics(parsed.firstChild!, after)) return { from: offset, to }
+  }
 }
 
 /** Preserve all unaffected source, accepting a candidate only when parsing it

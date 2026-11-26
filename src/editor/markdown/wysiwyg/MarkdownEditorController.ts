@@ -4,7 +4,7 @@ import { referenceDefinitionPanel } from './ReferenceDefinitionPanel'
 import { EditorState, Plugin, TextSelection, Selection, NodeSelection, AllSelection, type Transaction, type Command } from 'prosemirror-state'
 import { EditorView, type NodeView } from 'prosemirror-view'
 import { Slice, type Node } from 'prosemirror-model'
-import { baseKeymap, chainCommands, exitCode, lift, liftEmptyBlock, setBlockType, toggleMark, wrapIn } from 'prosemirror-commands'
+import { baseKeymap, chainCommands, exitCode, joinTextblockForward, lift, liftEmptyBlock, setBlockType, toggleMark, wrapIn } from 'prosemirror-commands'
 import { keymap } from 'prosemirror-keymap'
 import { inputRules, textblockTypeInputRule, wrappingInputRule, InputRule } from 'prosemirror-inputrules'
 import { wrapInList, splitListItem, sinkListItem, liftListItem } from 'prosemirror-schema-list'
@@ -17,6 +17,7 @@ import { listNormalizationPlugin } from './listNormalization'
 import { LiveTableToolbar, type TableToolbarCommand } from './LiveTableToolbar'
 import { markdownSchema as s } from './MarkdownSchema'
 import { MarkdownSourceBridge, textPatch, type SourcePatch } from './MarkdownSourceBridge'
+import { patchListItemJoin } from './patchSourceBlock'
 import { setSourceBlockType } from './setSourceBlockType'
 import { completeInlineLinkTransaction, inlineMarkdownInputRules, trackInlineLinkDraft, type InlineLinkDraft } from './strongInputRule'
 import { mathBlockParts, mapMathSelection, mergeMathComposition, type MathSelection } from './MathSource'
@@ -388,6 +389,7 @@ export class MarkdownEditorController implements LiveEditor {
             },
             'Delete': (state, dispatch, view) => {
               if (this.deleteAdjacentMath(state, dispatch, 1)) return true
+              if (this.deleteListBoundary(state, dispatch, view)) return true
               const {empty,$from}=state.selection
               if(empty && $from.depth===1 && $from.parent.type===s.nodes.paragraph &&
                 !$from.parent.content.size && !$from.parent.attrs.editorTrailing && state.doc.childCount>1){
@@ -1061,7 +1063,19 @@ export class MarkdownEditorController implements LiveEditor {
         if (tr.selectionSet || tr.docChanged) this.scheduleTypewriterAlign()
         return true
       }
-      const prepared = this.bridge.prepare(applied.state.doc, tr.getMeta('inlineSourcePatch') as SourcePatch | undefined)
+      let sourcePatch = tr.getMeta('inlineSourcePatch') as SourcePatch | undefined
+      const listItemJoin = tr.getMeta('listItemJoin') as number | undefined
+      if (!sourcePatch && listItemJoin !== undefined) {
+        const $boundary = this.view.state.doc.resolve(listItemJoin)
+        const index = $boundary.index(0)
+        const block = this.bridge.blocks[index]
+        const node = applied.state.doc.maybeChild(index)
+        if (block && node) {
+          const patch = patchListItemJoin(block.node, node, block.raw, listItemJoin - $boundary.start(1), this.bridge.environment)
+          if (patch) sourcePatch = { from: block.from + patch.from, to: block.from + patch.to, insert: '', blockId: block.id }
+        }
+      }
+      const prepared = this.bridge.prepare(applied.state.doc, sourcePatch)
       const bridge = prepared.bridge
       let nextState = applied.state
       if (prepared.definitionsChanged) {
@@ -2873,6 +2887,41 @@ export class MarkdownEditorController implements LiveEditor {
       hasYaml,
       live: true,
     }
+  }
+
+  private deleteListBoundary(state: EditorState, dispatch?: (tr: Transaction) => void, view?: EditorView) {
+    const { empty, $from } = state.selection
+    if (!empty || $from.depth < 3 || $from.parent.type !== s.nodes.paragraph ||
+      $from.parentOffset !== $from.parent.content.size || this.options.readOnly?.() || this.composing) return false
+
+    const itemDepth = $from.depth - 1
+    if ($from.node(itemDepth).type !== s.nodes.list_item) return false
+
+    // Enter can leave an empty item in an enclosing list. Find the first
+    // following block before deciding which boundary Delete should remove.
+    let depth = itemDepth
+    while ($from.indexAfter(depth) === $from.node(depth).childCount) {
+      if (depth === 0 || $from.node(depth).type.spec.isolating) return false
+      depth--
+    }
+    const at = $from.after(depth + 1)
+    const next = $from.node(depth).child($from.indexAfter(depth))
+    if (next.type === s.nodes.list_item && next.childCount === 1 && next.firstChild?.type === s.nodes.paragraph) {
+      if (!next.firstChild.content.size) {
+        dispatch?.(state.tr.delete(at, at + next.nodeSize).setMeta('isolated', true).setMeta('listItemJoin', at).scrollIntoView())
+        return true
+      }
+      if (depth !== itemDepth - 1) return false
+      return joinTextblockForward(state, dispatch && (tr => {
+        dispatch(tr.setMeta('isolated', true).setMeta('listItemJoin', at))
+      }), view)
+    }
+
+    if (depth !== 0 || next.type !== s.nodes.paragraph || next.content.size || next.attrs.editorTrailing) return false
+
+    // A blank paragraph after the list is a standalone editable gap.
+    dispatch?.(state.tr.delete(at, at + next.nodeSize).setMeta('isolated', true).scrollIntoView())
+    return true
   }
 
   private deleteAdjacentMath(state: EditorState, dispatch: ((tr:Transaction)=>void) | undefined, direction: number) {
