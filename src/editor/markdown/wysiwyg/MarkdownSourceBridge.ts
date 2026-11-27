@@ -1,6 +1,6 @@
 import { Fragment, Slice, type Node } from 'prosemirror-model'
 import { parseMarkdown, sameBlockSemantics, type SourceBlock } from './MarkdownParser'
-import { patchTable, patchContainedTables, sameTables, serializeBlock } from './MarkdownSerializer'
+import { patchTable, patchContainedTables, sameTables, serializeBlock, serializeEscapedBlock } from './MarkdownSerializer'
 import { isTrailingParagraph, withoutTrailingParagraph } from './TrailingParagraph'
 import { isBlankParagraphNode } from '../blankLines'
 import { patchSourceBlock, sourceTextPosition } from './patchSourceBlock'
@@ -167,13 +167,21 @@ export class MarkdownSourceBridge {
       const patchBase=promotingBlank?old!.raw.replace(/(?:\r?\n)+$/,''):old?.raw
       let raw=inlineRaw??(old?.node.eq(node)?old.raw:old?(patchSourceBlock(old.node,node,patchBase!,this.environment)??patchContainedTables(old.node,node,old.raw)??(node.type.name==='table'&&old.node.type===node.type?patchTable(old.node,node,old.raw):null)??serializeBlock(node)):serializeBlock(node))
       if(!old?.node.eq(node)){
+        const matches = (value: string) => {
+          const parsed = parseMarkdown(value, this.environment).doc
+          return parsed.childCount === 1 && sameBlockSemantics(parsed.firstChild!, node)
+        }
         if (['bullet_list', 'ordered_list'].includes(node.type.name) && !containsTable(node)) {
-          const matches = (value:string) => {
-            const parsed = parseMarkdown(value, this.environment).doc
-            return parsed.childCount === 1 && sameBlockSemantics(parsed.firstChild!, node)
+          if (!matches(raw)) {
+            raw = serializeBlock(node)
+            if (!matches(raw)) {
+              raw = serializeEscapedBlock(node)
+              if (!matches(raw)) throw new Error('列表结构无法保存为一致的 Markdown，已取消本次修改。')
+            }
           }
-          if (!matches(raw)) raw = serializeBlock(node)
-          if (!matches(raw)) throw new Error('列表结构无法保存为一致的 Markdown，已取消本次修改。')
+        } else if (promotingBlank && !matches(raw)) {
+          const escaped = serializeEscapedBlock(node)
+          if (matches(escaped)) raw = escaped
         }
         let hasTable=false
         node.descendants(child=>{if(child.type.name==='table')hasTable=true})

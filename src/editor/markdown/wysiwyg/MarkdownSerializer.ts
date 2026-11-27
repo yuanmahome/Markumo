@@ -1,5 +1,5 @@
-import { MarkdownSerializer, defaultMarkdownSerializer } from 'prosemirror-markdown'
-import type { Fragment, Mark, Node } from 'prosemirror-model'
+import { MarkdownSerializer, defaultMarkdownSerializer, type MarkdownSerializerState } from 'prosemirror-markdown'
+import { Fragment, type Mark, type Node } from 'prosemirror-model'
 import { markdownSchema } from './MarkdownSchema'
 import { controlledImageHtml, parseControlledImageHtml } from './imageHtml'
 import { tableRow } from '../tableModel'
@@ -134,12 +134,107 @@ export const markdownSerializer = new MarkdownSerializer({ ...defaultMarkdownSer
     let length=Math.max(3,node.attrs.fence?.length||3)
     for(const match of node.textContent.matchAll(new RegExp(`${char==='`'?'`':'~'}{3,}`,'g')))length=Math.max(length,match[0].length+1)
     const fence=char.repeat(length)
-    state.write(fence+node.attrs.params+'\n');state.text(node.textContent,false);state.write('\n'+fence);state.closeBlock(node)
+    state.write(fence+node.attrs.params+'\n');state.text(node.textContent,false);state.text('\n'+fence,false);state.closeBlock(node)
   },
   // text(false) writes each line through the state's container delimiter.
   // write(multiline) only prefixes the first row, breaking lists/quotes on reload.
   table(state,node){state.text(serializeTable(node),false);state.closeBlock(node)},
 }, {...defaultMarkdownSerializer.marks, link: markumoLink as never, strike:{open:'~~',close:'~~',mixable:true,expelEnclosingWhitespace:true}})
+
+// Copying a fragment can omit its definitions. Saving a document block can
+// keep its references because the definitions remain in the source document.
+const sourceSerializer = new MarkdownSerializer({
+  ...markdownSerializer.nodes,
+  image(state, node, parent, index) {
+    if (node.attrs.referenceLabel && !node.attrs.htmlSource) {
+      state.write(`![${state.esc(node.attrs.alt || '')}][${node.attrs.referenceLabel}]`)
+      return
+    }
+    markdownSerializer.nodes.image(state, node, parent, index)
+  },
+}, {
+  ...markdownSerializer.marks,
+  link: {
+    ...markumoLink,
+    close(state: Parameters<typeof markumoLink.close>[0], mark: Mark) {
+      const suffix = markumoLink.close(state, mark)
+      return mark.attrs.referenceLabel ? `][${mark.attrs.referenceLabel}]` : suffix
+    },
+  } as never,
+})
+
+// A structural edit can expose whitespace or Markdown delimiters at a line
+// edge. Encode those bytes only when the ordinary serializer cannot round-trip.
+type ListSerializerState = MarkdownSerializerState & { inAutolink?: boolean; flushClose(size: number): void }
+const emphasisMark = (mark: Mark) => ['em', 'strong', 'strike'].includes(mark.type.name)
+const boundaryEntity = (value: string) => Array.from(value, char => `&#${char.codePointAt(0)};`).join('')
+const escapedSourceSerializer = new MarkdownSerializer({
+  ...sourceSerializer.nodes,
+  text(state, node, parent, index) {
+    if (!parent.isTextblock || (state as ListSerializerState).inAutolink) {
+      defaultMarkdownSerializer.nodes.text(state, node, parent, index)
+      return
+    }
+    const isBreak = (name: string) => name === 'hard_break' || name === 'soft_break'
+    const start = index === 0 || isBreak(parent.child(index - 1).type.name)
+    const end = index === parent.childCount - 1 || isBreak(parent.child(index + 1).type.name)
+    const text = node.text!
+    const marked = node.marks.some(emphasisMark)
+    let head = start || marked ? /^[ \t]+/.exec(text)?.[0] ?? '' : ''
+    let tail = end || marked ? /[ \t]+$/.exec(text.slice(head.length))?.[0] ?? '' : ''
+    let content = text.slice(head.length, text.length - tail.length)
+    const before = parent.maybeChild(index - 1), after = parent.maybeChild(index + 1)
+    // Entity-encoded spaces inside emphasis are punctuation to the delimiter
+    // scanner. Encode the touching character too when it would block the span.
+    if (!head && before?.isText && /[ \t]$/.test(before.text!) && before.marks.some(emphasisMark)) {
+      head = Array.from(content)[0] ?? ''
+      content = content.slice(head.length)
+    }
+    if (!tail && after?.isText && /^[ \t]/.test(after.text!) && after.marks.some(emphasisMark)) {
+      tail = Array.from(content).at(-1) ?? ''
+      content = content.slice(0, content.length - tail.length)
+    }
+    const body = state.esc(content, start && !head)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\\\[/g, '&#91;')
+      .replace(/^(\d+)\) /, start && !head ? '$1\\) ' : '$1) ')
+    state.text(boundaryEntity(head) + body + boundaryEntity(tail), false)
+  },
+  list_item(state, node, parent) {
+    if (node.attrs.checked !== null) state.write(node.attrs.checked ? '[x] ' : '[ ] ')
+    node.forEach((child, _, index) => {
+      if (parent.attrs.tight && index && ['heading', 'code_block', 'blockquote', 'callout'].includes(child.type.name)) {
+        (state as ListSerializerState).flushClose(1)
+      }
+      state.render(child, node, index)
+    })
+  },
+  ordered_list(state, node) {
+    const start = node.attrs.order ?? 1
+    const width = String(Math.min(start + node.childCount - 1, 999999999)).length
+    state.renderList(node, ' '.repeat(width + 2), index => String(Math.min(start + index, 999999999)).padStart(width) + '. ')
+  },
+}, {
+  ...sourceSerializer.marks,
+  em: { ...sourceSerializer.marks.em, expelEnclosingWhitespace: false },
+  strong: { ...sourceSerializer.marks.strong, expelEnclosingWhitespace: false },
+  strike: { ...sourceSerializer.marks.strike, expelEnclosingWhitespace: false },
+  link: { ...sourceSerializer.marks.link, mixable: false },
+})
+
+function wrapFormattingInLinks(node: Node): Node {
+  if (node.isInline) {
+    const link = markdownSchema.marks.link.isInSet(node.marks)
+    // `[*text*](url)` can follow a word directly. `*[text](url)*` can
+    // instead parse as literal asterisks after a join removes the separator.
+    return link && node.marks[0] !== link ? node.mark([link, ...link.removeFromSet(node.marks)]) : node
+  }
+  return node.isLeaf ? node : node.copy(Fragment.fromArray(node.content.content.map(wrapFormattingInLinks)))
+}
+
+export function serializeEscapedBlock(node: Node) {
+  return escapedSourceSerializer.serialize(markdownSchema.nodes.doc.create(null, wrapFormattingInLinks(node)))
+}
+
 export function escapeUnescapedPipes(text: string): string {
   return text.replace(/\|/g, (_pipe, offset: number) => {
     let slashes = 0
@@ -154,7 +249,7 @@ export function serializeInlineFragment(fragment: Fragment): string {
   )
 }
 
-export function serializeBlock(node:Node){return markdownSerializer.serialize(markdownSchema.nodes.doc.create(null,node))}
+export function serializeBlock(node:Node){return sourceSerializer.serialize(markdownSchema.nodes.doc.create(null,node))}
 export function serializeCell(node:Node){return escapeUnescapedPipes(markdownSerializer.serialize(markdownSchema.nodes.doc.create(null,node.content)).replace(/\\\n/g,'<br>').replace(/\n/g,'<br>'))}
 export function serializeTable(node:Node){
   const lines:string[]=[]

@@ -4,7 +4,7 @@ import { referenceDefinitionPanel } from './ReferenceDefinitionPanel'
 import { EditorState, Plugin, TextSelection, Selection, NodeSelection, AllSelection, type Transaction, type Command } from 'prosemirror-state'
 import { EditorView, type NodeView } from 'prosemirror-view'
 import { Slice, type Node } from 'prosemirror-model'
-import { baseKeymap, chainCommands, exitCode, joinTextblockForward, lift, liftEmptyBlock, setBlockType, toggleMark, wrapIn } from 'prosemirror-commands'
+import { baseKeymap, chainCommands, exitCode, joinTextblockBackward, joinTextblockForward, lift, liftEmptyBlock, setBlockType, toggleMark, wrapIn } from 'prosemirror-commands'
 import { keymap } from 'prosemirror-keymap'
 import { inputRules, textblockTypeInputRule, wrappingInputRule, InputRule } from 'prosemirror-inputrules'
 import { wrapInList, splitListItem, sinkListItem, liftListItem } from 'prosemirror-schema-list'
@@ -73,6 +73,21 @@ import './MarkdownTheme.css'
 
 interface LiveUpdate { bridge: MarkdownSourceBridge; transactions: readonly Transaction[] }
 let nodeIdentity = 0
+
+const liftMarkdownListItem = liftListItem(s.nodes.list_item)
+const continueMarkdownList = chainCommands(
+  splitListItem(s.nodes.list_item, { checked: null }),
+  (state, dispatch) => {
+    const { empty, $from } = state.selection
+    if (!empty || $from.depth < 5 || $from.parent.type !== s.nodes.paragraph || $from.parent.content.size ||
+      $from.node(-1).type !== s.nodes.list_item || $from.node(-3).type !== s.nodes.list_item) return false
+    // Lift the item as a unit. Lifting its paragraph alone would put an
+    // empty paragraph between sublists, which Markdown reads as one list.
+    return liftMarkdownListItem(state, dispatch)
+  },
+  liftEmptyBlock,
+  baseKeymap.Enter,
+)
 
 function notice(error: unknown) {
   window.dispatchEvent(new CustomEvent('editor-notice', { detail: String(error) }))
@@ -276,6 +291,8 @@ export class MarkdownEditorController implements LiveEditor {
     })
 
     const blankDecorations = new WeakMap<Node, DecorationSet>()
+    const backspaceList: Command = (state, dispatch, view) => this.deleteListBoundary(state, dispatch, view, -1)
+    const deleteList: Command = (state, dispatch, view) => this.deleteListBoundary(state, dispatch, view, 1)
     // Create ProseMirror EditorView
     this.view = new EditorView(mount, {
       state: EditorState.create({
@@ -359,6 +376,7 @@ export class MarkdownEditorController implements LiveEditor {
             'Mod-`': toggleMark(s.marks.code),
             'Backspace': (state, dispatch, view) => {
               if (this.deleteAdjacentMath(state, dispatch, -1)) return true
+              if (backspaceList(state, dispatch, view)) return true
               const selection=state.selection
               if(selection.empty && selection.$from.depth===1 && selection.$from.parent.type===s.nodes.paragraph &&
                 !selection.$from.parent.content.size && !selection.$from.parent.attrs.editorTrailing && state.doc.childCount>1){
@@ -389,7 +407,7 @@ export class MarkdownEditorController implements LiveEditor {
             },
             'Delete': (state, dispatch, view) => {
               if (this.deleteAdjacentMath(state, dispatch, 1)) return true
-              if (this.deleteListBoundary(state, dispatch, view)) return true
+              if (deleteList(state, dispatch, view)) return true
               const {empty,$from}=state.selection
               if(empty && $from.depth===1 && $from.parent.type===s.nodes.paragraph &&
                 !$from.parent.content.size && !$from.parent.attrs.editorTrailing && state.doc.childCount>1){
@@ -409,10 +427,17 @@ export class MarkdownEditorController implements LiveEditor {
               }
               return false
             },
-            'Enter': chainCommands(this.enterMathBlock,this.enterHtml,this.enterFence,this.enterHorizontalRule,splitListItem(s.nodes.list_item, { checked: null }), liftEmptyBlock, baseKeymap.Enter),
+            'Mod-Backspace': backspaceList,
+            'Shift-Backspace': backspaceList,
+            'Mod-Delete': deleteList,
+            ...(baseKeymap['Alt-Backspace'] ? {
+              'Alt-Backspace': backspaceList, 'Ctrl-h': backspaceList,
+              'Alt-Delete': deleteList, 'Ctrl-d': deleteList, 'Ctrl-Alt-Backspace': deleteList, 'Alt-d': deleteList,
+            } : {}),
+            'Enter': chainCommands(this.enterMathBlock,this.enterHtml,this.enterFence,this.enterHorizontalRule,continueMarkdownList),
             'F2': this.enterHtml,
             'Tab': chainCommands(this.nextCell(1), sinkListItem(s.nodes.list_item)),
-            'Shift-Tab': chainCommands(this.nextCell(-1), liftListItem(s.nodes.list_item)),
+            'Shift-Tab': chainCommands(this.nextCell(-1), liftMarkdownListItem),
             'Shift-Enter': (state, dispatch) => {
               dispatch?.(state.tr.replaceSelectionWith(s.nodes.hard_break.create()).scrollIntoView())
               return true
@@ -1895,7 +1920,7 @@ export class MarkdownEditorController implements LiveEditor {
             this.view.dispatch(this.view.state.tr.setSelection(TextSelection.create(this.view.state.doc,
               position ?? nearest(selection.anchor), position ?? nearest(selection.head))))
           }
-          if(command === 'enter') this.run(chainCommands(splitListItem(s.nodes.list_item,{checked:null}),liftEmptyBlock,baseKeymap.Enter),true)
+          if(command === 'enter') this.run(continueMarkdownList,true)
           else if(command === 'hard-break') { this.view.dispatch(this.view.state.tr.replaceSelectionWith(s.nodes.hard_break.create()).setMeta('isolated',true));this.view.focus() }
           else if (command === 'up' || command === 'down' || command === 'left' || command === 'right' || command === 'select-up' || command === 'select-down' || command === 'select-left' || command === 'select-right') {
             const direction = command.replace('select-', '')
@@ -2889,39 +2914,79 @@ export class MarkdownEditorController implements LiveEditor {
     }
   }
 
-  private deleteListBoundary(state: EditorState, dispatch?: (tr: Transaction) => void, view?: EditorView) {
+  private removeCurrentEmptyListItem(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, direction: -1 | 1) {
     const { empty, $from } = state.selection
-    if (!empty || $from.depth < 3 || $from.parent.type !== s.nodes.paragraph ||
-      $from.parentOffset !== $from.parent.content.size || this.options.readOnly?.() || this.composing) return false
+    if (!empty || $from.depth < 3 || $from.parent.type !== s.nodes.paragraph || $from.parent.content.size ||
+      this.options.readOnly?.() || this.composing) return false
 
     const itemDepth = $from.depth - 1
-    if ($from.node(itemDepth).type !== s.nodes.list_item) return false
+    const item = $from.node(itemDepth)
+    if (item.type !== s.nodes.list_item || item.childCount !== 1) return false
 
-    // Enter can leave an empty item in an enclosing list. Find the first
-    // following block before deciding which boundary Delete should remove.
+    const listDepth = itemDepth - 1
     let depth = itemDepth
-    while ($from.indexAfter(depth) === $from.node(depth).childCount) {
-      if (depth === 0 || $from.node(depth).type.spec.isolating) return false
+    if ($from.index(listDepth) === 0) {
+      if (listDepth === 1 || $from.index(listDepth - 1) === 0) return false
+      // When the sublist has no other items, remove its wrapper too.
+      if ($from.node(listDepth).childCount === 1) depth = listDepth
+    }
+
+    if (dispatch) {
+      const at = $from.before(depth)
+      const tr = state.tr.delete(at, $from.after(depth))
+      tr.setSelection(Selection.near(tr.doc.resolve(at), direction))
+      dispatch(tr.setMeta('isolated', true).setMeta('listItemJoin', $from.before(itemDepth)).scrollIntoView())
+    }
+    return true
+  }
+
+  private deleteListBoundary(state: EditorState, dispatch: ((tr: Transaction) => void) | undefined, view: EditorView | undefined, direction: -1 | 1) {
+    const { empty, $from } = state.selection
+    if (!empty || !$from.parent.isTextblock || (direction < 0 && $from.parent.type === s.nodes.heading) ||
+      $from.parentOffset !== (direction < 0 ? 0 : $from.parent.content.size) || this.options.readOnly?.() || this.composing) return false
+
+    let itemDepth = $from.depth - 1
+    while (itemDepth > 0 && $from.node(itemDepth).type !== s.nodes.list_item) itemDepth--
+    if (!itemDepth) return false
+    if (direction < 0 && this.removeCurrentEmptyListItem(state, dispatch, -1)) return true
+
+    let depth = $from.depth - 1
+    const index = (level: number) => direction < 0 ? $from.index(level) - 1 : $from.indexAfter(level)
+    while (index(depth) < 0 || index(depth) === $from.node(depth).childCount) {
+      if (depth <= 0 || $from.node(depth).type.spec.isolating) return false
       depth--
     }
-    const at = $from.after(depth + 1)
-    const next = $from.node(depth).child($from.indexAfter(depth))
-    if (next.type === s.nodes.list_item && next.childCount === 1 && next.firstChild?.type === s.nodes.paragraph) {
-      if (!next.firstChild.content.size) {
-        dispatch?.(state.tr.delete(at, at + next.nodeSize).setMeta('isolated', true).setMeta('listItemJoin', at).scrollIntoView())
-        return true
-      }
-      if (depth !== itemDepth - 1) return false
-      return joinTextblockForward(state, dispatch && (tr => {
-        dispatch(tr.setMeta('isolated', true).setMeta('listItemJoin', at))
-      }), view)
+    const at = direction < 0 ? $from.before(depth + 1) : $from.after(depth + 1)
+    const sibling = $from.node(depth).child(index(depth))
+    if (direction > 0 && sibling.type === s.nodes.list_item && sibling.childCount === 1 &&
+      sibling.firstChild?.type === s.nodes.paragraph && !sibling.firstChild.content.size) {
+      dispatch?.(state.tr.delete(at, at + sibling.nodeSize).setMeta('isolated', true).setMeta('listItemJoin', at).scrollIntoView())
+      return true
     }
 
-    if (depth !== 0 || next.type !== s.nodes.paragraph || next.content.size || next.attrs.editorTrailing) return false
+    if (depth === 0 && isBlankParagraphNode(sibling)) {
+      const from = direction < 0 ? at - sibling.nodeSize : at
+      dispatch?.(state.tr.delete(from, from + sibling.nodeSize).setMeta('isolated', true).scrollIntoView())
+      return true
+    }
+    if (direction > 0 && depth < itemDepth - 1 && this.removeCurrentEmptyListItem(state, dispatch, 1)) return true
+    if (depth === 0) return false
 
-    // A blank paragraph after the list is a standalone editable gap.
-    dispatch?.(state.tr.delete(at, at + next.nodeSize).setMeta('isolated', true).scrollIntoView())
-    return true
+    // Keep the edit inside a common list. Merging across separate lists can
+    // change the marker or numbering of unrelated items in the other list.
+    const container = $from.node(depth)
+    if (container.type !== s.nodes.list_item && container.type !== s.nodes.bullet_list && container.type !== s.nodes.ordered_list) return false
+    let adjacent = sibling
+    while (adjacent.type === s.nodes.list_item || adjacent.type === s.nodes.bullet_list || adjacent.type === s.nodes.ordered_list) {
+      adjacent = (direction < 0 ? adjacent.lastChild : adjacent.firstChild)!
+    }
+    if ($from.parent.type !== s.nodes.paragraph || adjacent.type !== s.nodes.paragraph) return false
+    const join = direction < 0 ? joinTextblockBackward : joinTextblockForward
+    const right = state.doc.nodeAt(at)
+    return join(state, dispatch && (tr => {
+      if (right?.type === s.nodes.list_item) tr.setMeta('listItemJoin', at)
+      dispatch(tr.setMeta('isolated', true))
+    }), view)
   }
 
   private deleteAdjacentMath(state: EditorState, dispatch: ((tr:Transaction)=>void) | undefined, direction: number) {
@@ -3065,7 +3130,7 @@ export class MarkdownEditorController implements LiveEditor {
   private contextFormat(format: MarkdownFormat, active: boolean) {
     if (this.options.readOnly?.() || this.composing) return
     if (format === 'quote' && active) { this.run(lift, true); return }
-    if ((format === 'bullet' || format === 'ordered') && active) { this.run(liftListItem(s.nodes.list_item), true); return }
+    if ((format === 'bullet' || format === 'ordered') && active) { this.run(liftMarkdownListItem, true); return }
     if (format === 'bullet' || format === 'ordered' || format === 'task') {
       const state = this.view.state, { $from } = state.selection
       for (let depth = $from.depth; depth > 0; depth--) {

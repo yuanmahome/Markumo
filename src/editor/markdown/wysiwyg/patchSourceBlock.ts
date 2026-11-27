@@ -217,6 +217,20 @@ export function sourceTextPosition(node: Node, raw: string, position: number, re
         cursor = at + source.length
       }
     }
+    if ((child.type.name === 'soft_break' || child.type.name === 'hard_break') && ranges.at(-1)?.to === pos) {
+      const newline = raw.indexOf('\n', cursor)
+      if (newline >= 0) {
+        const eol = raw[newline - 1] === '\r' ? newline - 1 : newline
+        const marker = child.type.name === 'hard_break' ? /(?:\\| {2,})$/.exec(raw.slice(cursor, eol))?.[0].length ?? 0 : 0
+        const start = eol - marker, end = newline + 1
+        ranges.push({
+          from: pos, to: pos + 1, start, end,
+          source: n => n === pos ? start : end,
+          display: n => n === end ? pos + 1 : pos,
+        })
+        cursor = end
+      }
+    }
     if (!child.isText) return
     const code = parent?.type.name === 'code_block' || child.marks.some(mark => mark.type.name === 'code')
     const variants = [code ? verbatim : plain]
@@ -434,36 +448,44 @@ function patchInlineSubrange(
 /** Use the deleted item's token boundary to keep the original spelling of the
  * rest of the list, including siblings with identical rendered content. */
 export function patchListItemJoin(before: Node, after: Node, raw: string, at: number, environment: Record<string, unknown>) {
-  const next = before.nodeAt(at)
-  if (next?.type.name !== 'list_item') return
+  const item = before.nodeAt(at)
+  if (item?.type.name !== 'list_item') return
 
   let ordinal = 0
   before.nodesBetween(0, at, node => { if (node.type.name === 'list_item') ordinal++ })
   const items = tokenizer.parse(raw, {}).filter(token => token.type === 'list_item_open')
-  const line = items[ordinal]?.map?.[0]
-  if (line === undefined) return
+  const lines = items[ordinal]?.map
+  if (!lines) return
 
+  const [line, afterItem] = lines
   const starts = [0, ...Array.from(raw.matchAll(/\n/g), match => match.index + 1)]
   const start = starts[line]
   if (!start) return
-  const end = markdownBlockEnd(raw, start, starts[line + 1] ?? raw.length)
-  let to = end
-  if (next.firstChild?.content.size) {
-    const text = raw.slice(start, end)
-    const marker = /^(?:[ \t]*>[ \t]?)*[ \t]*(?:[-+*]|\d{1,9}[.)])[ \t]+/.exec(text)?.[0]
-    if (!marker) return
-    const checkbox = next.attrs.checked === null ? '' : /^\[[ xX]\][ \t]+/.exec(text.slice(marker.length))?.[0] ?? ''
-    to = start + marker.length + checkbox.length
+  const from = markdownBlockEnd(raw, 0, start)
+  const matches = (from: number, to: number) => {
+    const parsed = parseMarkdown(raw.slice(0, from) + raw.slice(to), environment).doc
+    return parsed.childCount === 1 && sameBlockSemantics(parsed.firstChild!, after) ? { from, to } : undefined
   }
 
-  const from = markdownBlockEnd(raw, 0, start)
+  if (!item.firstChild?.content.size) {
+    // An empty task item can spell its checkbox on a continuation line.
+    // Keep the preceding separator if it defines the surviving list spacing.
+    const end = markdownBlockEnd(raw, start, starts[afterItem] ?? raw.length)
+    const nextLine = raw.indexOf('\n', end)
+    return matches(from, end) ?? (nextLine >= 0 ? matches(start, nextLine + 1) : undefined)
+  }
+
+  const lineEnd = markdownBlockEnd(raw, start, starts[line + 1] ?? raw.length)
+  const text = raw.slice(start, lineEnd)
+  const marker = /^(?:[ \t]*>[ \t]?)*[ \t]*(?:[-+*]|\d{1,9}[.)])[ \t]+/.exec(text)?.[0]
+  if (!marker) return
+  const checkbox = item.attrs.checked === null ? '' : /^\[[ xX]\][ \t]+/.exec(text.slice(marker.length))?.[0] ?? ''
+  const to = start + marker.length + checkbox.length
+
   // At the join, trailing spaces may become visible text. Try the exact
   // boundary first, then the boundary without Markdown's discarded padding.
-  for (const offset of new Set([from, from - (/[ \t]+$/.exec(raw.slice(0, from))?.[0].length ?? 0)])) {
-    const candidate = raw.slice(0, offset) + raw.slice(to)
-    const parsed = parseMarkdown(candidate, environment).doc
-    if (parsed.childCount === 1 && sameBlockSemantics(parsed.firstChild!, after)) return { from: offset, to }
-  }
+  const padding = /[ \t]+$/.exec(raw.slice(0, from))?.[0].length ?? 0
+  return matches(from, to) ?? (padding ? matches(from - padding, to) : undefined)
 }
 
 /** Preserve all unaffected source, accepting a candidate only when parsing it

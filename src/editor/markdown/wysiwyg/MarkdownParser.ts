@@ -142,13 +142,18 @@ tokenizer.inline.ruler.before('image', 'markumo_missing_image_reference', (state
 })
 // Task syntax becomes a real list-item attribute. No checkbox state lives only in DOM.
 tokenizer.core.ruler.after('inline','markumo_tasks', state => {
-  const stack: typeof state.tokens = []
-  for (const token of state.tokens) {
-    if(token.type==='list_item_open') stack.push(token)
-    if(token.type==='list_item_close') stack.pop()
-    if(token.type!=='inline' || !stack.length) continue
-    const first=token.children?.[0], match=first?.type==='text' && /^\[([ xX])\](?: |$)/.exec(first.content)
-    if(match){stack[stack.length-1].meta={checked:match[1]!==' '};first!.content=first!.content.slice(match[0].length)}
+  const tokens = state.tokens
+  for (let index = 0; index < tokens.length - 2; index++) {
+    const item = tokens[index], paragraph = tokens[index + 1], inline = tokens[index + 2]
+    if (item.type !== 'list_item_open' || paragraph.type !== 'paragraph_open' || inline.type !== 'inline') continue
+    // Only an actual marker at the start of the item is a checkbox. The
+    // decoded inline text can also begin with an escaped or encoded bracket.
+    const match = /^\[([ xX])\](?: |$)/.exec(inline.content)
+    const first = inline.children?.[0]
+    if (match && first?.type === 'text' && first.content.startsWith(match[0])) {
+      item.meta = { checked: match[1] !== ' ' }
+      first.content = first.content.slice(match[0].length)
+    }
   }
 })
 // Consume paired HTML directly from source before Markdown strips delimiters.
@@ -257,6 +262,18 @@ tokenizer.core.ruler.after('markumo_callouts', 'markumo_toc', state => {
 export const markdownParser = new MarkdownParser(s, tokenizer as unknown as ConstructorParameters<typeof MarkdownParser>[1], tokens as unknown as ConstructorParameters<typeof MarkdownParser>[2])
 export interface SourceBlock { id:string; from:number; to:number; raw:string; prefix:string; node:Node; blank?:boolean }
 let identity=0
+
+function listWhitespaceEnd(source: string, from: number, end: number, literalEnd: number) {
+  // A list token can extend through whitespace-only lines after its final
+  // item. Those lines belong to the editable gap, except inside literal blocks.
+  while (end > from && end > literalEnd) {
+    const line = source.lastIndexOf('\n', end - 1) + 1
+    if (line <= from || line < literalEnd || /[^ \t]/.test(source.slice(line, end))) break
+    end = markdownBlockEnd(source, from, line)
+  }
+  return end
+}
+
 export function parseMarkdown(source:string, referenceEnvironment:Record<string,unknown> = {}, previous?:{blocks:readonly SourceBlock[];environment:Record<string,unknown>}) {
   const starts=[0]; for(let i=0;i<source.length;i++)if(source[i]==='\n')starts.push(i+1)
   const yaml=/^---\n[\s\S]*?\n(?:---|\.\.\.)(?:\n|$)/.exec(source)
@@ -281,7 +298,7 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
   const ranges:{from:number;to:number;raw?:boolean;isHtml?:boolean;label?:string;kind?:string}[]=[]
   if(yaml)ranges.push({from:0,to:yaml[0].replace(/\n$/,'').length,raw:true,label:'YAML Front Matter'})
   let level=0
-  let topList:{range:typeof ranges[number];itemEnd?:number}|undefined
+  let topList:{range:typeof ranges[number];item?:{from:number;to:number;literalEnd:number}}|undefined
   const allTokens = [...parsed, ...definitions]
   let opening = 0, tokenFrom = 0, tokenTo = 0
   for(let tokenIndex = 0; tokenIndex < allTokens.length; tokenIndex++){
@@ -302,16 +319,22 @@ export function parseMarkdown(source:string, referenceEnvironment:Record<string,
       // Markdown permits several blank lines inside a single list. In the
       // editor these lines own editable gap paragraphs, just as they do
       // between other blocks. Keep those boundaries on reload and undo too.
-      if(topList.itemEnd!==undefined&&blankLineRanges(source,topList.itemEnd,from,'between').length){
+      const item=topList.item
+      const previousEnd=item && listWhitespaceEnd(source,item.from,item.to,item.literalEnd)
+      if(previousEnd!==undefined&&blankLineRanges(source,previousEnd,from,'between').length){
         const range={...topList.range,from}
-        topList.range.to=topList.itemEnd
+        topList.range.to=previousEnd
         ranges.push(range)
         topList.range=range
       }
-      topList.itemEnd=markdownBlockEnd(source,from,starts[token.map[1]]??source.length)
+      topList.item={from,to:markdownBlockEnd(source,from,starts[token.map[1]]??source.length),literalEnd:0}
+    }
+    if(topList?.item && token.map && ['fence','code_block','html_block'].includes(token.type)) {
+      topList.item.literalEnd=starts[token.map[1]]??source.length
     }
     level+=token.nesting
     if(level===0){
+      if(topList) tokenTo=topList.range.to=listWhitespaceEnd(source,topList.range.from,tokenTo,topList.item?.literalEnd??0)
       if (tokenTo > tokenFrom) tokenBlocks.set(`${tokenFrom}:${tokenTo}`, allTokens.slice(opening, tokenIndex + 1))
       topList=undefined
     }
